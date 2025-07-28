@@ -386,12 +386,7 @@ void gui_redraw(void)
         gui_draw_header(tab, 0);
         gui_draw_status(tab);
         gui_draw_list(tab);
-        if (tab->preview)
-        {
-            int height = RG_MIN(tab->preview->height, PREVIEW_HEIGHT);
-            int width = RG_MIN(tab->preview->width, PREVIEW_WIDTH);
-            rg_gui_draw_image(-width, -height, width, height, true, tab->preview);
-        }
+        gui_draw_preview(tab);
     }
     else
     {
@@ -402,6 +397,16 @@ void gui_redraw(void)
 
     rg_gui_set_surface(NULL);
     rg_display_submit(gui.surface, 0);
+}
+
+void gui_draw_preview(tab_t *tab)
+{
+    if (tab->preview)
+    {
+        int height = RG_MIN(tab->preview->height, PREVIEW_HEIGHT);
+        int width = RG_MIN(tab->preview->width, PREVIEW_WIDTH);
+        rg_gui_draw_image(-width, -height, width, height, true, tab->preview);
+    }
 }
 
 void gui_draw_background(tab_t *tab, int shade)
@@ -485,8 +490,8 @@ void gui_draw_status(tab_t *tab)
     char *txt_left = tab->status[tab->status[1].left[0] ? 1 : 0].left;
     char *txt_right = tab->status[tab->status[1].right[0] ? 1 : 0].right;
 
-    rg_gui_draw_text(status_x, status_y, gui.width - status_x, txt_right, gui.theme->foreground, C_TRANSPARENT, RG_TEXT_ALIGN_LEFT);
-    rg_gui_draw_text(status_x, status_y, 0, txt_left, gui.theme->foreground, C_TRANSPARENT, RG_TEXT_ALIGN_RIGHT);
+    rg_gui_draw_text(status_x, status_y, gui.width - status_x, txt_right, gui.theme->foreground, C_TRANSPARENT, RG_TEXT_ALIGN_RIGHT);
+    rg_gui_draw_text(status_x, status_y, 0, txt_left, gui.theme->foreground, C_TRANSPARENT, RG_TEXT_ALIGN_LEFT);
     rg_gui_draw_icons();
 }
 

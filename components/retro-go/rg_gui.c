@@ -21,7 +21,6 @@ static struct
     {
         const rg_font_t *font;
         int font_height;
-        int font_width;
         rg_color_t box_background;
         rg_color_t box_header;
         rg_color_t box_border;
@@ -110,7 +109,7 @@ void rg_gui_init(void)
     gui.margins = (__typeof__(gui.margins))RG_SCREEN_SAFE_AREA;
     gui.draw_buffer = get_draw_buffer(gui.screen_width, 18, C_BLACK);
     rg_gui_set_language_id(rg_settings_get_number(NS_GLOBAL, SETTING_LANGUAGE, RG_LANG_EN));
-    rg_gui_set_font(rg_settings_get_number(NS_GLOBAL, SETTING_FONTTYPE, RG_FONT_VERA_12));
+    rg_gui_set_font(rg_settings_get_number(NS_GLOBAL, SETTING_FONTTYPE, RG_FONT_VERA_11));
     rg_gui_set_theme(rg_settings_get_string(NS_GLOBAL, SETTING_THEME, NULL));
     gui.show_clock = rg_settings_get_boolean(NS_GLOBAL, SETTING_CLOCK, false);
     gui.initialized = true;
@@ -227,11 +226,10 @@ bool rg_gui_set_font(int index)
     gui.font_index = index;
     gui.style.font = font;
     gui.style.font_height = (index < 3) ? (8 + index * 4) : font->height;
-    gui.style.font_width = font->width ?: 8;
 
     rg_settings_set_number(NS_GLOBAL, SETTING_FONTTYPE, index);
 
-    RG_LOGI("Font set to: %s (points=%d, scaling=%.2f)\n",
+    RG_LOGI("Font set to: %s (height=%d, scaling=%.2f)\n",
         gui.style.font->name, gui.style.font_height, (float)gui.style.font_height / font->height);
 
     return true;
@@ -301,6 +299,7 @@ static size_t get_glyph(uint32_t *output, const rg_font_t *font, int points, int
         const uint8_t *data = glyph->data;
         if (output)
         {
+            memset(output, 0, points * 4);
             int ch = 0, mask = 0x80;
             for (int y = 0; y < height; y++)
             {
@@ -348,13 +347,13 @@ static size_t get_glyph(uint32_t *output, const rg_font_t *font, int points, int
 rg_rect_t rg_gui_draw_text(int x_pos, int y_pos, int width, const char *text, // const rg_font_t *font,
                            rg_color_t color_fg, rg_color_t color_bg, uint32_t flags)
 {
+    const rg_font_t *font = gui.style.font;
     int padding = (flags & RG_TEXT_NO_PADDING) ? 0 : 1;
     int font_height = (flags & RG_TEXT_BIGGER) ? gui.style.font_height * 2 : gui.style.font_height;
-    int monospace = ((flags & RG_TEXT_MONOSPACE) || gui.style.font->type == 0) ? gui.style.font_width : 0;
+    int monospace = ((flags & RG_TEXT_MONOSPACE) || font->type == 0) ? font->width : 0;
     int line_height = font_height + padding * 2;
     int line_count = 0;
     // int16_t line_breaks[64], line_width_cache[64];
-    const rg_font_t *font = gui.style.font;
 
     if (!text || *text == 0)
         text = " ";
@@ -393,7 +392,7 @@ rg_rect_t rg_gui_draw_text(int x_pos, int y_pos, int width, const char *text, //
     {
         int x_offset = padding;
 
-        if (flags & (RG_TEXT_ALIGN_LEFT|RG_TEXT_ALIGN_CENTER))
+        if (flags & (RG_TEXT_ALIGN_RIGHT|RG_TEXT_ALIGN_CENTER))
         {
             // Find the current line's text width
             const char *line = ptr;
@@ -407,7 +406,7 @@ rg_rect_t rg_gui_draw_text(int x_pos, int y_pos, int width, const char *text, //
             }
             if (flags & RG_TEXT_ALIGN_CENTER)
                 x_offset = (draw_width - x_offset) / 2;
-            else if (flags & RG_TEXT_ALIGN_LEFT)
+            else if (flags & RG_TEXT_ALIGN_RIGHT)
                 x_offset = draw_width - x_offset;
         }
 
@@ -418,7 +417,7 @@ rg_rect_t rg_gui_draw_text(int x_pos, int y_pos, int width, const char *text, //
 
         while (x_offset < draw_width)
         {
-            uint32_t bitmap[32] = {0};
+            uint32_t bitmap[font_height];
             const char *prev_ptr = ptr;
             int glyph_width = get_glyph(bitmap, font, font_height, rg_utf8_get_codepoint(&ptr));
             int width = monospace ?: glyph_width;
@@ -1340,7 +1339,10 @@ static rg_gui_event_t font_type_cb(rg_gui_option_t *option, rg_gui_event_t event
         return RG_DIALOG_REDRAW;
     if (event == RG_DIALOG_NEXT && rg_gui_set_font(gui.font_index + 1))
         return RG_DIALOG_REDRAW;
-    sprintf(option->value, "%s %d", gui.style.font->name, gui.style.font_height);
+    if (gui.style.font_height != gui.style.font->height)
+        sprintf(option->value, "%s (%d)", gui.style.font->name, gui.style.font_height);
+    else
+        sprintf(option->value, "%s", gui.style.font->name);
     return RG_DIALOG_VOID;
 }
 
