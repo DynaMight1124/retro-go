@@ -15,4 +15,5 @@ RUN cd /opt/esp/idf && \
 SHELL ["/bin/bash", "-c"]
 RUN . /opt/esp/idf/export.sh && \
 	python rg_tool.py --target=vmu release && \
-	python rg_tool.py --target=cyd release launcher retro-core prboom-go gwenesis
+	python rg_tool.py --target=cyd release && \
+    python rg_tool.py --target=vmu_s3 release
