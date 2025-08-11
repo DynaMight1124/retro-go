@@ -19,14 +19,14 @@ jobs:
       uses: docker/build-push-action@v6
       with:
         context: .
-        tags: retro-go:dev
+        tags: retro-go:CYD
         cache-from: type=gha
         cache-to: type=gha,mode=max
         load: true
 
     - name: Extract binaries from docker image
       run: |
-        docker run --rm -v $(pwd)/build:/build retro-go:dev sh -c "cp /app/*.img /build"
+        docker run --rm -v $(pwd)/build:/build retro-go:CYD sh -c "cp /app/*.img /build"
 
     - name: Upload artifacts
       uses: actions/upload-artifact@v4
