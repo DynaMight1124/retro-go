@@ -34,6 +34,8 @@
 #include "targets/crokpocket/config.h"
 #elif defined(RG_TARGET_CYD)
 #include "targets/cyd/config.h"
+#elif defined(RG_TARGET_VMU_S3)
+#include "targets/vmu-s3/config.h"
 #else
 #warning "No target defined. Defaulting to ODROID-GO."
 #include "targets/odroid-go/config.h"
