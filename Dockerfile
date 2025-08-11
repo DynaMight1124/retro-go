@@ -16,4 +16,4 @@ SHELL ["/bin/bash", "-c"]
 RUN . /opt/esp/idf/export.sh && \
 	python rg_tool.py --target=vmu release && \
 	python rg_tool.py --target=cyd release && \
-    python rg_tool.py --target=vmu_s3 release
+    python rg_tool.py --target=vmu-s3 release
