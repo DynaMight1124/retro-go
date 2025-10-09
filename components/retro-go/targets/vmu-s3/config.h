@@ -85,12 +85,14 @@
 #define RG_GPIO_SDSPI_CS            GPIO_NUM_10
 
 // External I2S DAC
-#define RG_GPIO_SND_I2S_BCK         41
-#define RG_GPIO_SND_I2S_WS          42
-#define RG_GPIO_SND_I2S_DATA        40
+#define RG_GPIO_SND_I2S_BCK         GPIO_NUM_41
+#define RG_GPIO_SND_I2S_WS          GPIO_NUM_42
+#define RG_GPIO_SND_I2S_DATA        GPIO_NUM_40
+#define RG_GPIO_SND_AMP_ENABLE      GPIO_NUM_21
 
 // Updater
 #define RG_UPDATER_ENABLE               1
 #define RG_UPDATER_APPLICATION          RG_APP_FACTORY
 #define RG_UPDATER_DOWNLOAD_LOCATION    RG_STORAGE_ROOT "/vmu-s3/firmware"
+
 
