@@ -1,5 +1,5 @@
 // Target definition
-#define RG_TARGET_NAME             "VMU_S3"
+#define RG_TARGET_NAME             "VMU-S3"
 
 // Storage
 #define RG_STORAGE_ROOT             "/sd"
@@ -45,29 +45,26 @@
 
 // Input
 // Refer to rg_input.h to see all available RG_KEY_* and RG_GAMEPAD_*_MAP types
-#define RG_GAMEPAD_ADC_MAP {\
-    {RG_KEY_UP,    ADC_UNIT_1, ADC_CHANNEL_5, ADC_ATTEN_DB_11, 1950, 4096},\
-    {RG_KEY_DOWN,  ADC_UNIT_1, ADC_CHANNEL_5, ADC_ATTEN_DB_11, 1024, 1900},\
-    {RG_KEY_LEFT,  ADC_UNIT_1, ADC_CHANNEL_6, ADC_ATTEN_DB_11, 1950, 4096},\
-    {RG_KEY_RIGHT, ADC_UNIT_1, ADC_CHANNEL_6, ADC_ATTEN_DB_11, 1024, 1900},\
-}
 #define RG_GAMEPAD_GPIO_MAP {\
+    {RG_KEY_UP,    .num = GPIO_NUM_7,  .pullup = 1, .level = 0},\
+    {RG_KEY_RIGHT, .num = GPIO_NUM_15, .pullup = 1, .level = 0},\
+    {RG_KEY_DOWN,  .num = GPIO_NUM_5,  .pullup = 1, .level = 0},\
+    {RG_KEY_LEFT,  .num = GPIO_NUM_6,  .pullup = 1, .level = 0},\
     {RG_KEY_MENU,  .num = GPIO_NUM_18, .pullup = 1, .level = 0},\
-    {RG_KEY_START, .num = GPIO_NUM_17,  .pullup = 1, .level = 0},\
-    {RG_KEY_A,     .num = GPIO_NUM_15, .pullup = 1, .level = 0},\
-    {RG_KEY_B,     .num = GPIO_NUM_5, .pullup = 1, .level = 0},\
+    {RG_KEY_START, .num = GPIO_NUM_17, .pullup = 1, .level = 0},\
+    {RG_KEY_A,     .num = GPIO_NUM_1,  .pullup = 1, .level = 0},\
+    {RG_KEY_B,     .num = GPIO_NUM_2,  .pullup = 1, .level = 0},\
 }
 #define RG_GAMEPAD_VIRT_MAP {\
     {RG_KEY_SELECT, .src = RG_KEY_START | RG_KEY_A},\
     {RG_KEY_OPTION, .src = RG_KEY_START | RG_KEY_B},\
 }
 
-
 // Battery
 #define RG_BATTERY_DRIVER           1
 #define RG_BATTERY_ADC_UNIT         ADC_UNIT_1
 #define RG_BATTERY_ADC_CHANNEL      ADC_CHANNEL_3
-#define RG_BATTERY_CALC_PERCENT(raw) (((raw) * 2.f - 3150.f) / (4150.f - 3150.f) * 100.f)
+#define RG_BATTERY_CALC_PERCENT(raw) (((raw) * 2.f - 3150.f) / (4150.f - 3200.f) * 100.f)
 #define RG_BATTERY_CALC_VOLTAGE(raw) ((raw) * 2.f * 0.001f)
 
 // Status LED
@@ -91,9 +88,9 @@
 #define RG_GPIO_SND_I2S_BCK         41
 #define RG_GPIO_SND_I2S_WS          42
 #define RG_GPIO_SND_I2S_DATA        40
-// #define RG_GPIO_SND_AMP_ENABLE      18
 
 // Updater
-#define RG_UPDATER_ENABLE               0
+#define RG_UPDATER_ENABLE               1
 #define RG_UPDATER_APPLICATION          RG_APP_FACTORY
 #define RG_UPDATER_DOWNLOAD_LOCATION    RG_STORAGE_ROOT "/vmu-s3/firmware"
+
