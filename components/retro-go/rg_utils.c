@@ -48,7 +48,7 @@ char *rg_json_fixup(char *json)
     return json;
 }
 
-int rg_utf8_get_codepoint(const char **ptr)
+int rg_utf8_decode(const char **ptr)
 {
     // This implementation is based solely on https://en.wikipedia.org/wiki/UTF-8#Description
     // It's probably wrong in many ways but I'm sure it'll be good enough for us :)
@@ -102,6 +102,38 @@ int rg_utf8_get_codepoint(const char **ptr)
     return codepoint;
 }
 
+size_t rg_utf8_encode(char *output, int codepoint)
+{
+    if (codepoint <= 0x7F) // 1 byte
+    {
+        output[0] = codepoint & 0xFF;
+        return 1;
+    }
+    else if (codepoint <= 0x7FF) // 2 bytes
+    {
+        output[0] = 0xC0 | ((codepoint >> 6) & 0x1F);
+        output[1] = 0x80 | (codepoint & 0x3F);
+        return 2;
+    }
+    else if (codepoint <= 0xFFFF) // 3 bytes
+    {
+        output[0] = 0xE0 | ((codepoint >> 12) & 0x0F);
+        output[1] = 0x80 | ((codepoint >> 6) & 0x3F);
+        output[2] = 0x80 | (codepoint & 0x3F);
+        return 3;
+    }
+    else if (codepoint <= 0x10FFFF) // 4 bytes
+    {
+        output[0] = 0xF0 | ((codepoint >> 18) & 0x07);
+        output[1] = 0x80 | ((codepoint >> 12) & 0x3F);
+        output[2] = 0x80 | ((codepoint >> 6) & 0x3F);
+        output[3] = 0x80 | (codepoint & 0x3F);
+        return 4;
+    }
+    RG_LOGD("Out of range codepoint 0x%X", codepoint);
+    return 0;
+}
+
 size_t rg_utf8_strlen(const char *str)
 {
     if (!str)
@@ -110,8 +142,8 @@ size_t rg_utf8_strlen(const char *str)
     size_t length = 0;
     while (*str)
     {
-        rg_utf8_get_codepoint(&str);
-        length++;
+        if (rg_utf8_decode(&str) > 0)
+            length++;
     }
     return length;
 }
@@ -319,9 +351,63 @@ const char *rg_unique_string(const char *str)
     return obj->data;
 }
 
-// Note: You should use calloc/malloc everywhere possible. This function is used to ensure
-// that some memory is put in specific regions for performance or hardware reasons.
-// Memory from this function should be freed with free()
+typedef struct rg_bucket_s
+{
+    size_t capacity;
+    size_t cursor;
+    rg_bucket_t *prev;
+    rg_bucket_t *next;
+    uint8_t data[];
+} rg_bucket_t;
+
+rg_bucket_t *rg_bucket_create(size_t capacity_bytes)
+{
+    rg_bucket_t *bucket = calloc(1, sizeof(rg_bucket_t) + capacity_bytes);
+    if (!bucket)
+        return NULL;
+    bucket->capacity = capacity_bytes;
+    return bucket;
+}
+
+void *rg_bucket_insert(rg_bucket_t *bucket, const void *item, size_t item_bytes)
+{
+    if (!bucket || bucket->capacity < item_bytes)
+    {
+        RG_LOGW("Item size exceeds bucket capacity!");
+        return NULL;
+    }
+    while (bucket->cursor + item_bytes > bucket->capacity)
+    {
+        if (!bucket->next) // End of the list, must allocate
+        {
+            rg_bucket_t *new_bucket = rg_bucket_create(bucket->capacity);
+            if (!new_bucket)
+                return NULL;
+            new_bucket->prev = bucket;
+            bucket->next = new_bucket;
+            bucket = new_bucket;
+            break;
+        }
+        bucket = bucket->next;
+    }
+    void *ptr = bucket->data + bucket->cursor;
+    if (item)
+        memcpy(ptr, item, item_bytes);
+    bucket->cursor += ((item_bytes + (sizeof(int) - 1)) / sizeof(int)) * sizeof(int);
+    // bucket->cursor += item_bytes;
+    return ptr;
+}
+
+void rg_bucket_free(rg_bucket_t *bucket)
+{
+    while (bucket)
+    {
+        rg_bucket_t *next = bucket->next;
+        free(bucket);
+        bucket = next;
+    }
+}
+
 void *rg_alloc(size_t size, uint32_t caps)
 {
     char caps_list[36] = "";

@@ -195,6 +195,7 @@ typedef struct
     float partialFPS;
     float fullFPS;
     float totalFPS;
+    float speedPercent;
     float busyPercent;
     int64_t busyTime;
     int64_t lastTick;
@@ -222,10 +223,10 @@ void rg_system_set_indicator(rg_indicator_t indicator, bool on);
 bool rg_system_get_indicator(rg_indicator_t indicator);
 void rg_system_set_indicator_mask(rg_indicator_t indicator, bool on);
 bool rg_system_get_indicator_mask(rg_indicator_t indicator);
+bool rg_system_set_led_color(rg_color_t color);
+rg_color_t rg_system_get_led_color(void);
 void rg_system_set_tick_rate(int tickRate);
 int rg_system_get_tick_rate(void);
-void rg_system_set_overclock(int level);
-int  rg_system_get_overclock(void);
 void rg_system_set_log_level(rg_log_level_t level);
 int  rg_system_get_log_level(void);
 void rg_system_tick(int busyTime);
@@ -235,7 +236,15 @@ bool rg_system_save_trace(const char *filename, bool append);
 void rg_system_event(int event, void *data);
 int64_t rg_system_timer(void);
 rg_app_t *rg_system_get_app(void);
-rg_stats_t rg_system_get_counters(void);
+// rg_config_t rg_system_get_config(void);
+rg_stats_t rg_system_get_stats(void);
+
+// Speed and Overclock
+void rg_system_set_app_speed(float speed);
+float rg_system_get_app_speed(void);
+void rg_system_set_overclock(int level);
+int rg_system_get_overclock(void);
+int rg_system_get_cpu_speed(void);
 
 // RTC and time-related functions
 void rg_system_set_timezone(const char *TZ);
@@ -282,8 +291,6 @@ bool rg_emu_reset(bool hard);
 bool rg_emu_screenshot(const char *filename, int width, int height);
 rg_emu_states_t *rg_emu_get_states(const char *romPath, size_t slots);
 uint8_t rg_emu_get_last_used_slot(const char *romPath);
-void rg_emu_set_speed(float speed);
-float rg_emu_get_speed(void);
 
 /* Utilities */
 

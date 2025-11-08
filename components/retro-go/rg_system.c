@@ -87,6 +87,7 @@ static RTC_NOINIT_ATTR panic_trace_t panicTrace;
 static RTC_NOINIT_ATTR time_t rtcValue;
 static bool panicTraceCleared = false;
 static bool exitCalled = false;
+static int overclockLevel, overclockMhz;
 static uint32_t indicators;
 static rg_color_t ledColor = -1;
 static rg_stats_t statistics;
@@ -196,8 +197,9 @@ static void update_statistics(void)
 
     if (counters.ticks && previous.ticks)
     {
+        const float usPerSecond = 1000000.f * (overclockMhz ? overclockMhz / 240.f : 1.f);
         float totalTime = counters.updateTime - previous.updateTime;
-        float totalTimeSecs = totalTime / 1000000.f;
+        float totalTimeSecs = totalTime / usPerSecond;
         float busyTime = counters.busyTime - previous.busyTime;
         float ticks = counters.ticks - previous.ticks;
         float fullFrames = counters.fullFrames - previous.fullFrames;
@@ -207,39 +209,38 @@ static void update_statistics(void)
         // Hard to fix this sync issue without a lock, which I don't want to use...
         ticks = RG_MAX(ticks, frames);
 
-        statistics.busyPercent = busyTime / totalTime * 100.f;
         statistics.totalFPS = ticks / totalTimeSecs;
         statistics.skippedFPS = (ticks - frames) / totalTimeSecs;
         statistics.fullFPS = fullFrames / totalTimeSecs;
         statistics.partialFPS = partFrames / totalTimeSecs;
+        statistics.busyPercent = busyTime / totalTime * 100.f;
+        statistics.speedPercent = app.tickRate > 0 ? (statistics.totalFPS / app.tickRate * 100.f) : 100.f;
     }
     statistics.uptime = rg_system_timer() / 1000000;
 
     update_memory_statistics();
 }
 
-static void update_indicators(void)
+static void update_indicators(bool reset_animation)
 {
     uint32_t visibleIndicators = indicators & app.indicatorsMask;
+    static int animation_step = 0;
     rg_color_t newColor = 0; // C_GREEN
+
+    if (reset_animation)
+        animation_step = 0;
+    else
+        animation_step++;
 
     if (indicators & (3 << RG_INDICATOR_CRITICAL))
         newColor = C_RED; // Make it flash rapidly!
     else if (visibleIndicators & (1 << RG_INDICATOR_POWER_LOW))
-        newColor = C_RED;
+        newColor = (animation_step & 1) ? C_NONE : C_RED;
     else if (visibleIndicators)
         newColor = C_BLUE;
 
-    // In some cases it can be costly to update the LED status, skip if unchanged
-    if (newColor == ledColor)
-        return;
-
-#if defined(ESP_PLATFORM) && defined(RG_GPIO_LED)
-    // GPIO LED doesn't support colors, so any color = on
-    if (RG_GPIO_LED != GPIO_NUM_NC)
-        gpio_set_level(RG_GPIO_LED, newColor != 0);
-#endif
-    ledColor = newColor;
+    if (newColor != ledColor)
+        rg_system_set_led_color(newColor);
 }
 
 static void system_monitor_task(void *arg)
@@ -255,15 +256,13 @@ static void system_monitor_task(void *arg)
         rtcValue = time(NULL);
 
         update_statistics();
-        // update_indicators(); // Implicitly called by rg_system_set_indicator below
 
         rg_battery_t battery = rg_input_read_battery();
-        // TODO: The flashing should eventually be handled by update_indicators instead of here...
-        rg_system_set_indicator(RG_INDICATOR_POWER_LOW, (battery.present && battery.level <= 2.f &&
-                                                           !rg_system_get_indicator(RG_INDICATOR_POWER_LOW)));
+        rg_system_set_indicator(RG_INDICATOR_POWER_LOW, (battery.present && battery.level <= 2.f));
+        update_indicators(false);
 
         // Try to avoid complex conversions that could allocate, prefer rounding/ceiling if necessary.
-        rg_system_log(RG_LOG_DEBUG, NULL, "STACK:%d, HEAP:%d+%d (%d+%d), BUSY:%d%%, FPS:%d (%d+%d+%d), BATT:%d\n",
+        rg_system_log(RG_LOG_DEBUG, NULL, "STACK:%d, HEAP:%d+%d (%d+%d), BUSY:%d%%, FPS:%d (S:%d R:%d+%d), BATT:%d",
             statistics.freeStackMain,
             statistics.freeMemoryInt / 1024,
             statistics.freeMemoryExt / 1024,
@@ -802,7 +801,7 @@ rg_app_t *rg_system_get_app(void)
     return &app;
 }
 
-rg_stats_t rg_system_get_counters(void)
+rg_stats_t rg_system_get_stats(void)
 {
     return statistics;
 }
@@ -810,7 +809,10 @@ rg_stats_t rg_system_get_counters(void)
 void rg_system_set_tick_rate(int tickRate)
 {
     app.tickRate = tickRate;
-    app.frameTime = 1000000 / (app.tickRate * app.speed);
+    if (tickRate > 0)
+        app.frameTime = 1000000 / (app.tickRate * app.speed);
+    else
+        app.frameTime = 1000000;
 }
 
 int rg_system_get_tick_rate(void)
@@ -837,7 +839,8 @@ IRAM_ATTR int64_t rg_system_timer(void)
 
 void rg_system_event(int event, void *arg)
 {
-    RG_LOGV("Dispatching event:%d arg:%p\n", event, arg);
+    // FIXME: rg_* components should have a way to listen to events too (eg rg_gui receive RG_EVENT_GEOMETRY)
+    RG_LOGV("Dispatching event:%d arg:%p", event, arg);
     if (app.handlers.event)
         app.handlers.event(event, arg);
 }
@@ -1036,9 +1039,11 @@ bool rg_system_save_trace(const char *filename, bool panic_trace)
 
 void rg_system_set_indicator(rg_indicator_t indicator, bool on)
 {
+    uint32_t old_indicators = indicators;
     indicators &= ~(1 << indicator);
     indicators |= (on << indicator);
-    update_indicators();
+    if (old_indicators != indicators)
+        update_indicators(true);
 }
 
 bool rg_system_get_indicator(rg_indicator_t indicator)
@@ -1058,6 +1063,25 @@ bool rg_system_get_indicator_mask(rg_indicator_t indicator)
     return app.indicatorsMask & (1 << indicator);
 }
 
+bool rg_system_set_led_color(rg_color_t color)
+{
+    ledColor = color;
+#if defined(RG_GPIO_LED)
+    int value = color > 0; // GPIO LED doesn't support colors, so any color = on
+    #if defined(RG_GPIO_LED_INVERT)
+    value = !value;
+    #endif
+    if (RG_GPIO_LED != GPIO_NUM_NC)
+        return gpio_set_level(RG_GPIO_LED, value) == ESP_OK;
+#endif
+    return true;
+}
+
+rg_color_t rg_system_get_led_color(void)
+{
+    return ledColor;
+}
+
 void rg_system_set_log_level(rg_log_level_t level)
 {
     if (level >= 0 && level < RG_LOG_MAX)
@@ -1071,94 +1095,107 @@ int rg_system_get_log_level(void)
     return app.logLevel;
 }
 
+void rg_system_set_app_speed(float speed)
+{
+    float newSpeed = RG_MIN(2.5f, RG_MAX(0.5f, speed));
+    if (newSpeed == app.speed)
+        return;
+    // FIXME: We need to store the actual default frameskip so we can return to it...
+    app.frameskip = (newSpeed - 0.5f) * 3;
+    app.frameTime = 1000000.f / (app.tickRate * newSpeed);
+    app.speed = newSpeed;
+    // There's a bug in esp-idf v4.4.8 where many frequencies play at the wrong speed.
+    // Still trying to find how to work around that...
+    rg_audio_set_sample_rate(app.sampleRate * newSpeed);
+    rg_system_event(RG_EVENT_SPEEDUP, NULL);
+}
+
+float rg_system_get_app_speed(void)
+{
+    return app.speed;
+}
+
 void rg_system_set_overclock(int level)
 {
-#if defined(ESP_PLATFORM) && CONFIG_IDF_TARGET_ESP32
-    // None of this is documented by espressif but can be found in the file rtc_clk.c
-    #define I2C_BBPLL                   0x66
-    #define I2C_BBPLL_ENDIV5              11
-    #define I2C_BBPLL_BBADC_DSMP           9
-    #define I2C_BBPLL_HOSTID               4
-    #define I2C_BBPLL_OC_LREF              2
-    #define I2C_BBPLL_OC_DIV_7_0           3
-    #define I2C_BBPLL_OC_DCUR              5
-    #define BBPLL_ENDIV5_VAL_320M       0x43
-    #define BBPLL_BBADC_DSMP_VAL_320M   0x84
-    #define BBPLL_ENDIV5_VAL_480M       0xc3
-    #define BBPLL_BBADC_DSMP_VAL_480M   0x74
+#if CONFIG_IDF_TARGET_ESP32 || CONFIG_IDF_TARGET_ESP32S3
+    // None of this is documented by espressif but there are comments to be found in the file `rtc_clk.c` and `clk_tree_ll.h`
     extern void rom_i2c_writeReg(uint8_t block, uint8_t host_id, uint8_t reg_add, uint8_t data);
     extern uint8_t rom_i2c_readReg(uint8_t block, uint8_t host_id, uint8_t reg_add);
-
-    uint8_t div_ref = 0;
-    uint8_t div7_0 = (level + 4) * 8;
-    uint8_t div10_8 = 0;
-    uint8_t lref = 0;
-    uint8_t dcur = 6;
-    uint8_t bw = 3;
-    uint8_t ENDIV5 = BBPLL_ENDIV5_VAL_480M;
-    uint8_t BBADC_DSMP = BBPLL_BBADC_DSMP_VAL_480M;
-    uint8_t BBADC_OC_LREF = (lref << 7) | (div10_8 << 4) | (div_ref);
-    uint8_t BBADC_OC_DIV_7_0 = div7_0;
-    uint8_t BBADC_OC_DCUR = (bw << 6) | dcur;
-
-    static uint8_t BASE_ENDIV5, BASE_BBADC_DSMP, BASE_BBADC_OC_LREF, BASE_BBADC_OC_DIV_7_0, BASE_BBADC_OC_DCUR, BASE_SAVED;
-    if (!BASE_SAVED)
+    extern int uart_set_baudrate(int uart_num, uint32_t baud_rate);
+    extern uint64_t esp_rtc_get_time_us(void);
+    extern unsigned xthal_get_ccount(void);
+    // #include "driver/uart.h"
+#if CONFIG_IDF_TARGET_ESP32
+    #define I2C_BBPLL                   0x66
+    #define I2C_BBPLL_HOSTID               4
+    #define I2C_BBPLL_OC_DIV_7_0           3    // This is the PLL divider to get the CPU clock (our main concern)
+    #define OC_MAX_LEVEL                   6
+    #define OC_MIN_LEVEL                  -5
+    #define OC_DIV7_MULTIPLIER             5
+#else // CONFIG_IDF_TARGET_ESP32S3
+    #define I2C_BBPLL                   0x66
+    #define I2C_BBPLL_HOSTID               1
+    #define I2C_BBPLL_OC_DIV_7_0           3
+    #define OC
+    #define OC_MAX_LEVEL                   8
+    #define OC_MIN_LEVEL                  -8
+    #define OC_DIV7_MULTIPLIER             1
+#endif
+    if (level < OC_MIN_LEVEL || level > OC_MAX_LEVEL)
     {
-        BASE_ENDIV5 = rom_i2c_readReg(I2C_BBPLL, I2C_BBPLL_HOSTID, I2C_BBPLL_ENDIV5);
-        BASE_BBADC_DSMP = rom_i2c_readReg(I2C_BBPLL, I2C_BBPLL_HOSTID, I2C_BBPLL_BBADC_DSMP);
-        BASE_BBADC_OC_LREF = rom_i2c_readReg(I2C_BBPLL, I2C_BBPLL_HOSTID, I2C_BBPLL_OC_LREF);
-        BASE_BBADC_OC_DIV_7_0 = rom_i2c_readReg(I2C_BBPLL, I2C_BBPLL_HOSTID, I2C_BBPLL_OC_DIV_7_0);
-        BASE_BBADC_OC_DCUR = rom_i2c_readReg(I2C_BBPLL, I2C_BBPLL_HOSTID, I2C_BBPLL_OC_DCUR);
-        BASE_SAVED = true;
-    }
-
-    if (level == 0)
-    {
-        ENDIV5 = BASE_ENDIV5;
-        BBADC_DSMP = BASE_BBADC_DSMP;
-        BBADC_OC_LREF = BASE_BBADC_OC_LREF;
-        BBADC_OC_DIV_7_0 = BASE_BBADC_OC_DIV_7_0;
-        BBADC_OC_DCUR = BASE_BBADC_OC_DCUR;
-    }
-    else if (level < -4 || level > 3)
-    {
-        RG_LOGW("Invalid level %d, min:-4 max:3", level);
+        RG_LOGW("Invalid level %d, min:%d max:%d", level, OC_MIN_LEVEL, OC_MAX_LEVEL);
         return;
     }
+    static int original_div7_0 = -1;
+    if (original_div7_0 == -1)
+        original_div7_0 = rom_i2c_readReg(I2C_BBPLL, I2C_BBPLL_HOSTID, I2C_BBPLL_OC_DIV_7_0);
+    uint8_t div7_0 = original_div7_0 + (level * OC_DIV7_MULTIPLIER);
+    rom_i2c_writeReg(I2C_BBPLL, I2C_BBPLL_HOSTID, I2C_BBPLL_OC_DIV_7_0, div7_0);
+    rg_task_delay(20);
 
-    RG_LOGW(" ");
-    RG_LOGW("BASE: %d %d %d %d %d", BASE_ENDIV5, BASE_BBADC_DSMP, BASE_BBADC_OC_LREF, BASE_BBADC_OC_DIV_7_0, BASE_BBADC_OC_DCUR);
-    RG_LOGW("NEW : %d %d %d %d %d", ENDIV5, BBADC_DSMP, BBADC_OC_LREF, BBADC_OC_DIV_7_0, BBADC_OC_DCUR);
-    RG_LOGW(" ");
+    // RTC clock isn't affected by the CPU or APB clocks, so it remains our only reliable time measurement
+    uint64_t t = esp_rtc_get_time_us(); // The - 10000 is to account for time wasted on mutexes
+    uint32_t cc = xthal_get_ccount(); // Obtain it *after* calling esp_rtc_get_time_us because it is slow
+    rg_usleep(100000);
+    int real_mhz = (double)(xthal_get_ccount() - cc) / (esp_rtc_get_time_us() - t);
+    // float factor = 240.f / real_mhz;
 
-    rom_i2c_writeReg(I2C_BBPLL, I2C_BBPLL_HOSTID, I2C_BBPLL_ENDIV5, ENDIV5);
-    rom_i2c_writeReg(I2C_BBPLL, I2C_BBPLL_HOSTID, I2C_BBPLL_BBADC_DSMP, BBADC_DSMP);
-    rom_i2c_writeReg(I2C_BBPLL, I2C_BBPLL_HOSTID, I2C_BBPLL_OC_LREF, BBADC_OC_LREF);
-    rom_i2c_writeReg(I2C_BBPLL, I2C_BBPLL_HOSTID, I2C_BBPLL_OC_DIV_7_0, BBADC_OC_DIV_7_0);
-    rom_i2c_writeReg(I2C_BBPLL, I2C_BBPLL_HOSTID, I2C_BBPLL_OC_DCUR, BBADC_OC_DCUR);
-
-    RG_LOGW("Overclock applied!");
-#if 0
-    extern uint64_t esp_rtc_get_time_us(void);
-    uint64_t start = esp_rtc_get_time_us();
-    int64_t end = rg_system_timer() + 1000000;
-    while (rg_system_timer() < end)
-        continue;
-    overclock_ratio = 1000000.f / (esp_rtc_get_time_us() - start);
+#if CONFIG_IDF_TARGET_ESP32
+    // Most audio devices rely on either the APB or the CPU clocks, which we've just skewed. So we have to
+    // compensate. The external DAC uses the APLL which is an independant clock source, no need to correct.
+    if (strcmp(rg_audio_get_sink()->name, "Ext DAC") != 0)
+        rg_audio_set_sample_rate(app.sampleRate * (240.0 / real_mhz));
+    uart_set_baudrate(0, 115200.0 * (240.0 / real_mhz));
+    // esp_timer_impl_update_apb_freq(80.0 / 240.0 * real_mhz);
+    // ets_update_cpu_frequency(real_mhz);
 #endif
-    // overclock_ratio = (240 + (app.overclock * 40)) / 240.f;
 
-    // rg_audio_set_sample_rate(app.sampleRate / overclock_ratio);
+    app.frameskip = 1;
+
+    overclockLevel = level;
+    overclockMhz = real_mhz;
+
+    RG_LOGW("Overclock level %d applied: %dMhz", level, real_mhz);
 #else
     RG_LOGE("Overclock not supported on this platform!");
 #endif
-
-    app.overclock = level;
 }
 
 int rg_system_get_overclock(void)
 {
-    return app.overclock;
+    return overclockLevel;
+}
+
+int rg_system_get_cpu_speed(void)
+{
+    if (overclockMhz)
+        return overclockMhz;
+    #if CONFIG_ESP32_DEFAULT_CPU_FREQ_MHZ
+        return CONFIG_ESP32_DEFAULT_CPU_FREQ_MHZ;
+    #elif CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ
+        return CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ;
+    #endif
+    return 0;
 }
 
 char *rg_emu_get_path(rg_path_type_t pathType, const char *filename)
@@ -1397,26 +1434,10 @@ rg_emu_states_t *rg_emu_get_states(const char *romPath, size_t slots)
 
 bool rg_emu_reset(bool hard)
 {
-    if (app.speed != 1.f)
-        rg_emu_set_speed(1.f);
+    rg_system_set_app_speed(1.f);
     if (app.handlers.reset)
         return app.handlers.reset(hard);
     return false;
-}
-
-void rg_emu_set_speed(float speed)
-{
-    app.speed = RG_MIN(2.5f, RG_MAX(0.5f, speed));
-    // FIXME: We need to store the actual default frameskip so we can return to it...
-    app.frameskip = (app.speed - 0.5f) * 3;
-    app.frameTime = 1000000.f / (app.tickRate * app.speed);
-    rg_audio_set_sample_rate(app.sampleRate * app.speed);
-    rg_system_event(RG_EVENT_SPEEDUP, NULL);
-}
-
-float rg_emu_get_speed(void)
-{
-    return app.speed;
 }
 
 #ifdef RG_ENABLE_PROFILING
