@@ -56,7 +56,7 @@
     {RG_KEY_B,     .num = GPIO_NUM_2,  .pullup = 1, .level = 0},\
 }
 #define RG_GAMEPAD_VIRT_MAP {\
-    {RG_KEY_SELECT, .src = RG_KEY_START | RG_KEY_SELECT},\
+    {RG_KEY_MENU, .src = RG_KEY_START | RG_KEY_SELECT},\
     {RG_KEY_OPTION, .src = RG_KEY_START | RG_KEY_B},\
 }
 
@@ -94,6 +94,7 @@
 #define RG_UPDATER_ENABLE               1
 #define RG_UPDATER_APPLICATION          RG_APP_FACTORY
 #define RG_UPDATER_DOWNLOAD_LOCATION    RG_STORAGE_ROOT "/vmu-s3/firmware"
+
 
 
 
