@@ -50,13 +50,13 @@
     {RG_KEY_RIGHT, .num = GPIO_NUM_15, .pullup = 1, .level = 0},\
     {RG_KEY_DOWN,  .num = GPIO_NUM_5,  .pullup = 1, .level = 0},\
     {RG_KEY_LEFT,  .num = GPIO_NUM_6,  .pullup = 1, .level = 0},\
-    {RG_KEY_MENU,  .num = GPIO_NUM_18, .pullup = 1, .level = 0},\
+    {RG_KEY_SELECT,.num = GPIO_NUM_18, .pullup = 1, .level = 0},\
     {RG_KEY_START, .num = GPIO_NUM_17, .pullup = 1, .level = 0},\
     {RG_KEY_A,     .num = GPIO_NUM_1,  .pullup = 1, .level = 0},\
     {RG_KEY_B,     .num = GPIO_NUM_2,  .pullup = 1, .level = 0},\
 }
 #define RG_GAMEPAD_VIRT_MAP {\
-    {RG_KEY_SELECT, .src = RG_KEY_START | RG_KEY_A},\
+    {RG_KEY_SELECT, .src = RG_KEY_START | RG_KEY_SELECT},\
     {RG_KEY_OPTION, .src = RG_KEY_START | RG_KEY_B},\
 }
 
@@ -94,5 +94,6 @@
 #define RG_UPDATER_ENABLE               1
 #define RG_UPDATER_APPLICATION          RG_APP_FACTORY
 #define RG_UPDATER_DOWNLOAD_LOCATION    RG_STORAGE_ROOT "/vmu-s3/firmware"
+
 
 
