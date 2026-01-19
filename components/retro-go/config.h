@@ -1,4 +1,6 @@
-#if defined(RG_TARGET_ODROID_GO)
+#if defined(RG_TARGET_BRUTZELBOY)
+#include "targets/brutzelboy/config.h"
+#elif defined(RG_TARGET_ODROID_GO)
 #include "targets/odroid-go/config.h"
 #elif defined(RG_TARGET_MRGC_G32)
 #include "targets/mrgc-g32/config.h"
@@ -32,6 +34,8 @@
 #include "targets/cyd/config.h"
 #elif defined(RG_TARGET_VMU_S3)
 #include "targets/vmu-s3/config.h"
+#elif defined(RG_TARGET_REDROID_GO)
+#include "targets/redroid-go/config.h"
 #else
 #warning "No target defined. Defaulting to ODROID-GO."
 #include "targets/odroid-go/config.h"
