@@ -20,10 +20,12 @@
 #define RG_SCREEN_BACKLIGHT         1
 #define RG_SCREEN_WIDTH             240
 #define RG_SCREEN_HEIGHT            300
-#define RG_SCREEN_ROTATE            3
+#define RG_SCREEN_ROTATE            0
 #define RG_SCREEN_VISIBLE_AREA      {0, 55, 0, 30} // Left, Top, Right, Bottom
 #define RG_SCREEN_SAFE_AREA         {0, 0, 0, 0} // Left, Top, Right, Bottom
 #define RG_SCREEN_INIT()                                                                                         \
+    ILI9341_CMD(0x36, 0x60);                 /* Display Rotation */                                              \
+    ILI9341_CMD(0x36, 0x68);                 /* Memory Access Control  (MX|MV|BGR) */                            \
     ILI9341_CMD(0xC0, 0x1B);                 /* Power control   //VRH[5:0] */                                    \
     ILI9341_CMD(0xC1, 0x12);                 /* Power control   //SAP[2:0];BT[3:0] */                            \
     ILI9341_CMD(0xC5, 0x32, 0x3C);           /* VCM control */                                                   \
@@ -87,3 +89,4 @@
 #define RG_UPDATER_APPLICATION          RG_APP_FACTORY
 
 #define RG_UPDATER_DOWNLOAD_LOCATION    RG_STORAGE_ROOT "/retro-go/updates"
+
