@@ -24,22 +24,14 @@
 #define RG_SCREEN_VISIBLE_AREA      {0, 55, 0, 30} // Left, Top, Right, Bottom
 #define RG_SCREEN_SAFE_AREA         {0, 0, 0, 0} // Left, Top, Right, Bottom
 #define RG_SCREEN_INIT()                                                                                         \
-    ILI9341_CMD(0xCF, 0x00, 0xc3, 0x30);                                                                         \
-    ILI9341_CMD(0xED, 0x64, 0x03, 0x12, 0x81);                                                                   \
-    ILI9341_CMD(0xE8, 0x85, 0x00, 0x78);                                                                         \
-    ILI9341_CMD(0xCB, 0x39, 0x2c, 0x00, 0x34, 0x02);                                                             \
-    ILI9341_CMD(0xF7, 0x20);                                                                                     \
-    ILI9341_CMD(0xEA, 0x00, 0x00);                                                                               \
-    ILI9341_CMD(0x36, 0x60);                    /* Display Rotation */                                           \
-    ILI9341_CMD(0xC0, 0x1B);                    /* Power control   //VRH[5:0] */                                 \
-    ILI9341_CMD(0xC1, 0x12);                    /* Power control   //SAP[2:0];BT[3:0] */                         \
-    ILI9341_CMD(0xC5, 0x32, 0x3C);              /* VCM control */                                                \
-    ILI9341_CMD(0xC7, 0x91);                    /* VCM control2 */                                               \
-    ILI9341_CMD(0x36, 0x68);                    /* Memory Access Control  (MX|MV|BGR) */                         \
-    ILI9341_CMD(0xB1, 0x00, 0x10);              /* Frame Rate Control (1B=70, 1F=61, 10=119) */                  \
-    ILI9341_CMD(0xB6, 0x0A, 0xA2);              /* Display Function Control */                                   \
-    ILI9341_CMD(0xF6, 0x01, 0x30);                                                                               \
-    ILI9341_CMD(0xF2, 0x00);                    /* 3Gamma Function Disable */                                    \
+    ILI9341_CMD(0xC0, 0x1B);                 /* Power control   //VRH[5:0] */                                    \
+    ILI9341_CMD(0xC1, 0x12);                 /* Power control   //SAP[2:0];BT[3:0] */                            \
+    ILI9341_CMD(0xC5, 0x32, 0x3C);           /* VCM control */                                                   \
+    ILI9341_CMD(0xC7, 0x91);                 /* VCM control2 */                                                  \
+    ILI9341_CMD(0xB2, 0x0C, 0x0C, 0x00, 0x33, 0x33);  /* Porch Setting (0x0C, 0x0C=Std or 0x0F, 0x0F=Slow */     \
+    ILI9341_CMD(0xC6, 0x03);          /* ST7789 Frame Rate Control (0F=60, 07 to 00=75 to 119, 6Hz steps) */     \
+    ILI9341_CMD(0xB6, 0x0A, 0x82);           /* Gate Scan Direction (82=Std, A2=Inv, 22=Alt) */                  \
+    ILI9341_CMD(0xF6, 0x01, 0x00);           /* Interface Control (01=Std, 21=Interleave */                      \
     ILI9341_CMD(0xE0, 0xD0, 0x00, 0x05, 0x0E, 0x15, 0x0D, 0x37, 0x43, 0x47, 0x09, 0x15, 0x12, 0x16, 0x19);       \
     ILI9341_CMD(0xE1, 0xD0, 0x00, 0x05, 0x0D, 0x0C, 0x06, 0x2D, 0x44, 0x40, 0x0E, 0x1C, 0x18, 0x16, 0x19);       \
 
@@ -93,8 +85,4 @@
 // Updater
 #define RG_UPDATER_ENABLE               1
 #define RG_UPDATER_APPLICATION          RG_APP_FACTORY
-#define RG_UPDATER_DOWNLOAD_LOCATION    RG_STORAGE_ROOT "/vmu-s3/firmware"
-
-
-
-
+#define RG_UPDATER_DOWNLOAD_LOCATION    RG_STORAGE_ROOT "/retro-go/updates"
