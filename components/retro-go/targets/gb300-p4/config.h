@@ -1,11 +1,7 @@
  /****************************************************************************
- * Configuration for GB300-P4
+ * Target definition for GB300-P4
  * Guide: https://www.instructables.com/GB300-P4-a-ESP32-P4-Based-Retro-Handheld-Using-the
  * Command to build: python rg_tool.py --target gb300-p4 build-img --no-networking
- ****************************************************************************/
-
-/****************************************************************************
- * Target definition for ESP32-P4 Board                                     *
  ****************************************************************************/
 #define RG_TARGET_NAME             "GB300-P4"
 
@@ -40,11 +36,11 @@
 #define RG_STORAGE_SDMMC_HOST          SDMMC_HOST_SLOT_1
 #define RG_STORAGE_SDMMC_SPEED         SDMMC_FREQ_HIGHSPEED // SDMMC_FREQ_PROBING, SDMMC_FREQ_HIGHSPEED or SDMMC_FREQ_DEFAULT
 #define RG_GPIO_SDMMC_CLK              GPIO_NUM_42
-#define RG_GPIO_SDMMC_CMD	       GPIO_NUM_41
-#define RG_GPIO_SDMMC_D0	       GPIO_NUM_43
-#define RG_GPIO_SDMMC_D1	       GPIO_NUM_44
-#define RG_GPIO_SDMMC_D2	       GPIO_NUM_39
-#define RG_GPIO_SDMMC_D3	       GPIO_NUM_40
+#define RG_GPIO_SDMMC_CMD              GPIO_NUM_41
+#define RG_GPIO_SDMMC_D0               GPIO_NUM_43
+#define RG_GPIO_SDMMC_D1               GPIO_NUM_44
+#define RG_GPIO_SDMMC_D2               GPIO_NUM_39
+#define RG_GPIO_SDMMC_D3               GPIO_NUM_40
 // #define RG_STORAGE_FLASH_PARTITION  "vfs"
 
 
@@ -65,7 +61,7 @@
  ****************************************************************************/
 #define RG_SCREEN_DRIVER            0   // 0 = ILI9341/ST7789
 #define RG_SCREEN_HOST              SPI2_HOST
-#define RG_SCREEN_SPEED             SPI_MASTER_FREQ_80M // SPI_MASTER_FREQ_40M or SPI_MASTER_FREQ_40M
+#define RG_SCREEN_SPEED             SPI_MASTER_FREQ_80M // SPI_MASTER_FREQ_40M or SPI_MASTER_FREQ_80M
 #define RG_SCREEN_BACKLIGHT         1
 #define RG_SCREEN_WIDTH             320
 #define RG_SCREEN_HEIGHT            240
@@ -75,18 +71,18 @@
 #define RG_SCREEN_VISIBLE_AREA      {0, 0, 0, 0}  // Left, Top, Right, Bottom
 #define RG_SCREEN_SAFE_AREA         {0, 0, 0, 0}  // Left, Top, Right, Bottom
 #define RG_SCREEN_PARTIAL_UPDATES   1
-#define RG_SCREEN_INIT()                                                                                     \
-ILI9341_CMD(0x21);                       /* Inversion */                                                     \
-ILI9341_CMD(0xC0, 0x1B);                 /* Power control   //VRH[5:0] */                                    \
-ILI9341_CMD(0xC1, 0x12);                 /* Power control   //SAP[2:0];BT[3:0] */                            \
-ILI9341_CMD(0xC5, 0x32, 0x3C);           /* VCM control */                                                   \
-ILI9341_CMD(0xC7, 0x91);                 /* VCM control2 */                                                  \
-ILI9341_CMD(0xB2, 0x0F, 0x0F, 0x00, 0x33, 0x33);  /* Porch Setting (0x0C, 0x0C=Std or 0x0F, 0x0F=Slow */     \
-ILI9341_CMD(0xC6, 0x03);          /* ST7789 Frame Rate Control (0F=60, 07 to 00=75 to 119, 6Hz steps) */     \
-ILI9341_CMD(0xB6, 0x0A, 0x82);           /* Gate Scan Direction (82=Std, A2=Inv, 22=Alt) */                  \
-ILI9341_CMD(0xF6, 0x01, 0x00);           /* Interface Control (01=Std, 21=Interleave */                      \
-ILI9341_CMD(0xE0, 0xD0, 0x00, 0x02, 0x07, 0x0A, 0x28, 0x32, 0x44, 0x42, 0x06, 0x0E, 0x12, 0x14, 0x17);       \
-ILI9341_CMD(0xE1, 0xD0, 0x00, 0x02, 0x07, 0x0A, 0x28, 0x31, 0x54, 0x47, 0x0E, 0x1C, 0x17, 0x1B, 0x1E);       \
+#define RG_SCREEN_INIT()                                                                                         \
+    ILI9341_CMD(0x21);                       /* Inversion */                                                     \
+    ILI9341_CMD(0xC0, 0x1B);                 /* Power control   //VRH[5:0] */                                    \
+    ILI9341_CMD(0xC1, 0x12);                 /* Power control   //SAP[2:0];BT[3:0] */                            \
+    ILI9341_CMD(0xC5, 0x32, 0x3C);           /* VCM control */                                                   \
+    ILI9341_CMD(0xC7, 0x91);                 /* VCM control2 */                                                  \
+    ILI9341_CMD(0xB2, 0x0C, 0x0C, 0x00, 0x33, 0x33);  /* Porch Setting (0x0C, 0x0C=Std or 0x0F, 0x0F=Slow */     \
+    ILI9341_CMD(0xC6, 0x03);          /* ST7789 Frame Rate Control (0F=60, 07 to 00=75 to 119, 6Hz steps) */     \
+    ILI9341_CMD(0xB6, 0x0A, 0x82);           /* Gate Scan Direction (82=Std, A2=Inv, 22=Alt) */                  \
+    ILI9341_CMD(0xF6, 0x01, 0x00);           /* Interface Control (01=Std, 21=Interleave */                      \
+    ILI9341_CMD(0xE0, 0xD0, 0x00, 0x05, 0x0E, 0x15, 0x0D, 0x37, 0x43, 0x47, 0x09, 0x15, 0x12, 0x16, 0x19);       \
+    ILI9341_CMD(0xE1, 0xD0, 0x00, 0x05, 0x0D, 0x0C, 0x06, 0x2D, 0x44, 0x40, 0x0E, 0x1C, 0x18, 0x16, 0x19);       \
 
 
 #define RG_GPIO_LCD_MISO            GPIO_NUM_18
@@ -118,7 +114,7 @@ ILI9341_CMD(0xE1, 0xD0, 0x00, 0x02, 0x07, 0x0A, 0x28, 0x31, 0x54, 0x47, 0x0E, 0x
     {RG_KEY_R,      .num = GPIO_NUM_14, .pullup = 1, .level = 0},\
 }
 #define RG_GAMEPAD_VIRT_MAP {\
-    {RG_KEY_MENU, .src = RG_KEY_START | RG_KEY_SELECT},\
+    {RG_KEY_MENU,   .src = RG_KEY_START | RG_KEY_SELECT},\
     {RG_KEY_OPTION, .src = RG_KEY_START | RG_KEY_A},\
 }
 
@@ -136,7 +132,7 @@ ILI9341_CMD(0xE1, 0xD0, 0x00, 0x02, 0x07, 0x0A, 0x28, 0x31, 0x54, 0x47, 0x0E, 0x
 /****************************************************************************
  * Updater                                                                  *
  ****************************************************************************/
-#define RG_UPDATER_ENABLE               0
+#define RG_UPDATER_ENABLE               1
 #define RG_UPDATER_APPLICATION          RG_APP_FACTORY
 #define RG_UPDATER_DOWNLOAD_LOCATION    RG_STORAGE_ROOT "/retro-go/updates"
 
@@ -150,6 +146,4 @@ ILI9341_CMD(0xE1, 0xD0, 0x00, 0x02, 0x07, 0x0A, 0x28, 0x31, 0x54, 0x47, 0x0E, 0x
 #define RG_CUSTOM_PLATFORM_INIT() \
     /* Arbitrary code executed very early during retro-go init */
 
-
 // See components/retro-go/config.h for more things you can define here!
-
