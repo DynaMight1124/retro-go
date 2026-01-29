@@ -20,7 +20,7 @@
 #define RG_SCREEN_BACKLIGHT         1
 #define RG_SCREEN_WIDTH             240
 #define RG_SCREEN_HEIGHT            300
-#define RG_SCREEN_ROTATE            0
+#define RG_SCREEN_ROTATE            3
 #define RG_SCREEN_VISIBLE_AREA      {0, 55, 0, 30} // Left, Top, Right, Bottom
 #define RG_SCREEN_SAFE_AREA         {0, 0, 0, 0} // Left, Top, Right, Bottom
 #define RG_SCREEN_INIT()                                                                                         \
@@ -85,4 +85,5 @@
 // Updater
 #define RG_UPDATER_ENABLE               1
 #define RG_UPDATER_APPLICATION          RG_APP_FACTORY
+
 #define RG_UPDATER_DOWNLOAD_LOCATION    RG_STORAGE_ROOT "/retro-go/updates"
