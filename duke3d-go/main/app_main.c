@@ -1,0 +1,186 @@
+#include <rg_system.h>
+#include <inttypes.h>
+#include "music.h"
+#include "game.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+
+// Duke3D is stack heavy. We use 144KB.
+#define DUKE_STACK_SIZE (144 * 1024)
+
+static TaskHandle_t duke_task_handle = NULL;
+// Flag to signal Core 0 that Core 1 has finished cleanup and is ready for reboot
+volatile bool reboot_ready_flag = false;
+
+static void ensure_dir(const char *path)
+{
+    char tmp[512];
+    char *p = NULL;
+    size_t len;
+
+    snprintf(tmp, sizeof(tmp), "%s", path);
+    len = strlen(tmp);
+    if (tmp[len - 1] == '/') tmp[len - 1] = 0;
+    
+    // Skip the root / mount point
+    char *start = tmp + 1;
+    if (strncmp(tmp, "/sd/", 4) == 0) start = tmp + 4;
+
+    for (p = start; *p; p++)
+    {
+        if (*p == '/')
+        {
+            *p = 0;
+            if (!rg_storage_exists(tmp)) {
+                rg_storage_mkdir(tmp);
+            }
+            *p = '/';
+        }
+    }
+    if (!rg_storage_exists(tmp)) {
+        rg_storage_mkdir(tmp);
+    }
+}
+
+#include "rg_system.h"
+#include "game.h"
+#include "controls.h"
+
+const key_mapping_t keymap[] = {
+    // Navigation (Any mode)
+    {RG_KEY_UP,     SDL_SCANCODE_UP,    SDLK_UP,    RG_MODE_ANY},
+    {RG_KEY_DOWN,   SDL_SCANCODE_DOWN,  SDLK_DOWN,  RG_MODE_ANY},
+    {RG_KEY_LEFT,   SDL_SCANCODE_LEFT,  SDLK_LEFT,  RG_MODE_ANY},
+    {RG_KEY_RIGHT,  SDL_SCANCODE_RIGHT, SDLK_RIGHT, RG_MODE_ANY},
+    
+    // A button
+    {RG_KEY_A,      SDL_SCANCODE_LCTRL,  SDLK_LCTRL,    RG_MODE_GAME}, // Fire in game
+    {RG_KEY_A,      SDL_SCANCODE_KP_ENTER, SDLK_KP_ENTER, RG_MODE_MENU}, // Confirm in menu
+    {RG_KEY_A,      SDL_SCANCODE_RETURN,   SDLK_RETURN,   RG_MODE_MENU}, // Alternative confirm
+    
+    // B button
+    {RG_KEY_B,      SDL_SCANCODE_A,      SDLK_a,        RG_MODE_GAME}, // Jump in game
+    {RG_KEY_B,      SDL_SCANCODE_ESCAPE, SDLK_ESCAPE,   RG_MODE_MENU}, // Back in menu
+    
+    // Start button
+    {RG_KEY_START,  SDL_SCANCODE_SPACE,  SDLK_SPACE,    RG_MODE_GAME}, // Use/Open in game
+    {RG_KEY_START,  SDL_SCANCODE_KP_ENTER, SDLK_KP_ENTER, RG_MODE_MENU}, // Confirm in menu
+    {RG_KEY_START,  SDL_SCANCODE_RETURN,   SDLK_RETURN,   RG_MODE_MENU}, // Alternative confirm
+    
+    // Select: Weapon Cycle
+    {RG_KEY_SELECT, SDL_SCANCODE_APOSTROPHE, SDLK_QUOTE, RG_MODE_GAME},
+    
+    // X: Crouch
+    {RG_KEY_X,      SDL_SCANCODE_Z,      SDLK_z,        RG_MODE_GAME},
+    
+    // Y: Use Steriods
+    {RG_KEY_Y,      SDL_SCANCODE_R,      SDLK_r,        RG_MODE_GAME},
+    
+    // Shoulder buttons: Strafe
+    {RG_KEY_L,      SDL_SCANCODE_COMMA,  SDLK_COMMA,    RG_MODE_GAME},
+    {RG_KEY_R,      SDL_SCANCODE_PERIOD, SDLK_PERIOD,   RG_MODE_GAME},
+
+    // Dedicated Menu button always sends ESC to toggle menu
+    {RG_KEY_MENU,   SDL_SCANCODE_ESCAPE, SDLK_ESCAPE,   RG_MODE_ANY},
+    
+    // Option: Use Steriods
+    {RG_KEY_OPTION, SDL_SCANCODE_R, SDLK_r, RG_MODE_GAME},
+};
+
+const size_t keymap_count = sizeof(keymap) / sizeof(keymap[0]);
+
+void dukeTask(void *pvParameters)
+{
+    void audio_shutdown(void);
+
+    RG_LOGI("dukeTask: Starting main loop on Core %d with %dKB stack\n", 
+           xPortGetCoreID(), DUKE_STACK_SIZE / 1024);
+#if CONFIG_IDF_TARGET_ESP32
+    char *argv[]={"duke3d", "/nm", NULL};
+    int argc = 2;
+#else
+    char *argv[]={"duke3d", NULL};
+    int argc = 1;
+#endif
+    while (!rg_system_should_exit())
+    {
+        main(argc, argv);
+        break; // main returned, we are done
+    }
+    RG_LOGW("dukeTask: Main loop exited.");
+    
+    // Give some time for background tasks or final OS cleanup on this core
+    vTaskDelay(pdMS_TO_TICKS(50));
+
+    // Signal Core 0 to perform the reboot
+    reboot_ready_flag = true;
+    
+    // We are done. Core 1 will now run the idle task.
+    vTaskDelete(NULL);
+}
+
+static void event_handler(int event, void *arg)
+{
+    // Default handlers
+}
+
+void app_main(void)
+{
+#if CONFIG_IDF_TARGET_ESP32
+    int sample_rate = 22050;
+#else
+    int sample_rate = 11025;
+#endif
+
+    const rg_config_t config = {
+        .sampleRate = sample_rate,
+        .frameRate = 30,
+        .storageRequired = true,
+        .romRequired = false,
+#if CONFIG_IDF_TARGET_ESP32
+        .mallocAlwaysInternal = 512,
+#else
+        .mallocAlwaysInternal = 1024,
+#endif
+        .handlers.event = &event_handler,
+    };
+
+    rg_system_init(&config);
+
+    ensure_dir(RG_BASE_PATH_SAVES "/duke3d");
+
+    RG_LOGI("app_main: Spawning Duke3D task...");
+    
+    // Use manual static allocation in SPIRAM for all targets. 
+    // 144KB is too large for Internal RAM on most ESP32 variants.
+    static StaticTask_t duke_task_buffer;
+    void *stack_ptr = rg_alloc(DUKE_STACK_SIZE, MEM_SLOW);
+    if (!stack_ptr) {
+        RG_LOGE("Failed to allocate %dKB stack in SPIRAM!", DUKE_STACK_SIZE / 1024);
+        return;
+    }
+    
+    duke_task_handle = xTaskCreateStaticPinnedToCore(
+        dukeTask,           /* Function that implements the task. */
+        "dukeTask",         /* Text name for the task. */
+        DUKE_STACK_SIZE,    /* Stack size in bytes. */
+        NULL,               /* Parameter passed into the task. */
+        5,                  /* Priority at which the task is created. */
+        stack_ptr,          /* Stack buffer allocated in SPIRAM */
+        &duke_task_buffer,  /* Task buffer */
+        1                   /* Core 1 for the engine */
+    );
+
+    if (duke_task_handle == NULL) {
+        RG_LOGE("Failed to create dukeTask!");
+    }
+
+    while (1) {
+        vTaskDelay(pdMS_TO_TICKS(10));
+        if (reboot_ready_flag) {
+            vTaskDelay(pdMS_TO_TICKS(250)); // Final safety buffer
+            RG_LOGI("app_main: Rebooting system...");
+            rg_system_exit();
+        }
+    }
+}
