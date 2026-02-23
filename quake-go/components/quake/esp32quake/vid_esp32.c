@@ -89,6 +89,9 @@ void VID_Init(unsigned char *palette)
     d_pzbuffer = (short *)zbuffer;
     D_InitCaches(surfcache, sizeof(surfcache));
     
+    // Force full screen scaling
+    rg_display_set_scaling(RG_DISPLAY_SCALING_FULL);
+
     RG_LOGI("VID_Init: %dx%d, double-buffering, zbuffer at %p (DRAM), surfaces at %p and %p", 
             BASEWIDTH, BASEHEIGHT, zbuffer, rg_surfaces[0]->data, rg_surfaces[1]->data);
 }
