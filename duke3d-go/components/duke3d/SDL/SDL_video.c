@@ -260,7 +260,9 @@ int SDL_Flip(SDL_Surface *screen)
     fb->surface.data = fb->pixels;
 
     if (screen->w == INTERNAL_RES_W && screen->h == INTERNAL_RES_H) {
-        rg_display_set_scaling(RG_DISPLAY_SCALING_FULL);
+        if (rg_display_get_scaling() != RG_DISPLAY_SCALING_FULL) {
+            rg_display_set_scaling(RG_DISPLAY_SCALING_FULL);
+        }
     }
 
     // printf("SDL_Flip: memcpy pixels\n");

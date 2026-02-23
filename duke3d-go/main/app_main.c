@@ -5,8 +5,13 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
-// Duke3D is stack heavy. We use 144KB.
+// Duke3D stack usage peaked at ~36KB in testing. We use 48KB in Internal DRAM for ESP32.
+// S3/P4 use the original 144KB in PSRAM.
+#if CONFIG_IDF_TARGET_ESP32
+#define DUKE_STACK_SIZE (48 * 1024)
+#else
 #define DUKE_STACK_SIZE (144 * 1024)
+#endif
 
 static TaskHandle_t duke_task_handle = NULL;
 // Flag to signal Core 0 that Core 1 has finished cleanup and is ready for reboot
@@ -126,10 +131,10 @@ static void event_handler(int event, void *arg)
 
 void app_main(void)
 {
-#if CONFIG_IDF_TARGET_ESP32
-    int sample_rate = 22050;
-#else
     int sample_rate = 11025;
+
+#if defined(RG_AUDIO_USE_INT_DAC) && RG_AUDIO_USE_INT_DAC > 0
+    sample_rate = 22050;
 #endif
 
     const rg_config_t config = {
@@ -151,12 +156,17 @@ void app_main(void)
 
     RG_LOGI("app_main: Spawning Duke3D task...");
     
-    // Use manual static allocation in SPIRAM for all targets. 
-    // 144KB is too large for Internal RAM on most ESP32 variants.
     static StaticTask_t duke_task_buffer;
-    void *stack_ptr = rg_alloc(DUKE_STACK_SIZE, MEM_SLOW);
+    void *stack_ptr = NULL;
+
+#if CONFIG_IDF_TARGET_ESP32
+    stack_ptr = rg_alloc(DUKE_STACK_SIZE, MEM_FAST); // Force Internal DRAM
+#else
+    stack_ptr = rg_alloc(DUKE_STACK_SIZE, MEM_SLOW); // S3/P4 can stay in PSRAM
+#endif
+
     if (!stack_ptr) {
-        RG_LOGE("Failed to allocate %dKB stack in SPIRAM!", DUKE_STACK_SIZE / 1024);
+        RG_LOGE("Failed to allocate %dKB stack!", DUKE_STACK_SIZE / 1024);
         return;
     }
     
@@ -166,7 +176,7 @@ void app_main(void)
         DUKE_STACK_SIZE,    /* Stack size in bytes. */
         NULL,               /* Parameter passed into the task. */
         5,                  /* Priority at which the task is created. */
-        stack_ptr,          /* Stack buffer allocated in SPIRAM */
+        stack_ptr,          /* Stack buffer */
         &duke_task_buffer,  /* Task buffer */
         1                   /* Core 1 for the engine */
     );

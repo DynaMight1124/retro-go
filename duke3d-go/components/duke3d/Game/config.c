@@ -73,8 +73,8 @@ int32_t BFullScreen = 0;
 //
 
 int32_t ScreenMode=2;
-int32_t ScreenWidth = 640;
-int32_t ScreenHeight = 480;
+int32_t ScreenWidth = 320;
+int32_t ScreenHeight = 240;
 
 //
 // Mouse variables
@@ -193,13 +193,12 @@ void CONFIG_SetDefaults( void )
    FXVolume = 64;
    MusicVolume = 156;
    FXDevice = SoundScape;
-   #if defined(CONFIG_IDF_TARGET_ESP32P4)
+   #if defined(CONFIG_IDF_TARGET_ESP32P4) || defined(CONFIG_IDF_TARGET_ESP32S3)
        MusicDevice = Adlib;
-       MixRate = 22050;
    #else
-       MusicDevice = NumSoundCards; // Disable music on S3/ESP32 by default
-       MixRate = 11000;
+       MusicDevice = NumSoundCards; // Disable music on base ESP32 by default
    #endif
+   MixRate = 11000;
    
    ReverseStereo = 0;
    

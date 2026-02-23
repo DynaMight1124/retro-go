@@ -1036,8 +1036,8 @@ static int get_dimensions_from_str(const char  *str, int32_t *_w, int32_t *_h)
 
 static __inline void get_max_screen_res(int32_t *max_w, int32_t *max_h)
 {
-    int32_t w = DEFAULT_MAXRESWIDTH;
-    int32_t h = DEFAULT_MAXRESHEIGHT;
+    int32_t w = INTERNAL_RES_W;
+    int32_t h = INTERNAL_RES_H;
     const char  *envr = getenv(BUILD_MAXSCREENRES);
 
     if (envr != NULL)
@@ -1045,8 +1045,8 @@ static __inline void get_max_screen_res(int32_t *max_w, int32_t *max_h)
         if (!get_dimensions_from_str(envr, &w, &h))
         {
             printf("User's resolution ceiling [%s] is bogus!\n", envr);
-            w = DEFAULT_MAXRESWIDTH;
-            h = DEFAULT_MAXRESHEIGHT;
+            w = INTERNAL_RES_W;
+            h = INTERNAL_RES_H;
         } /* if */
     } /* if */
 

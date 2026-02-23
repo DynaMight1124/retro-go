@@ -13,8 +13,15 @@
    #include <inttypes.h>
 #endif
 
+#include "esp_attr.h"
+
+#ifdef CONFIG_IDF_TARGET_ESP32
 #define MAXSPRITES 4096
 #define MAXSTATUS 1024
+#else
+#define MAXSPRITES 8192
+#define MAXSTATUS 2048
+#endif
 
 #if defined(CONFIG_IDF_TARGET_ESP32P4)
 #define MAXSPRITESONSCREEN 1024
@@ -27,21 +34,23 @@
 #ifdef CONFIG_IDF_TARGET_ESP32
 #define MAXSECTORS 512
 #define MAXWALLS 4096
+#define MAXXDIM 320
+#define MAXYDIM 240
 #else
-#define MAXSECTORS 1024
+#define MAXSECTORS 2048
 #define MAXWALLS 8192
+#define MAXXDIM 1600
+#define MAXYDIM 1200
 #endif
 #define MAXTILES 9216
 #define MAXPLAYERS 16
-#define MAXXDIM 320
-#define MAXYDIM 240
 
 #ifdef CONFIG_IDF_TARGET_ESP32
 #define INTERNAL_RES_W 240
 #define INTERNAL_RES_H 160
 #else
-#define INTERNAL_RES_W MAXXDIM
-#define INTERNAL_RES_H MAXYDIM
+#define INTERNAL_RES_W 320
+#define INTERNAL_RES_H 240
 #endif
 #define MAXPALOOKUPS 256
 #define MAXPSKYTILES 256
@@ -61,6 +70,12 @@
 #else
 	#define EXTERN extern
 	#define EXTERN_ATTR
+#endif
+
+#ifdef CONFIG_IDF_TARGET_ESP32
+#define FAST_RAM_ATTR DRAM_ATTR
+#else
+#define FAST_RAM_ATTR
 #endif
 
 #pragma pack(1)
@@ -182,13 +197,13 @@ EXTERN uint8_t  vidoption;
 EXTERN int32_t xdim, ydim, numpages;
 
 // Fast way to retrive the start of a column in the framebuffer, given a screenspace X coordinate.
-EXTERN EXTERN_ATTR int32_t ylookup[MAXYDIM+1];
+EXTERN FAST_RAM_ATTR int32_t ylookup[MAXYDIM+1];
 
 EXTERN int32_t yxaspect, viewingrange;
 
 EXTERN int32_t validmodecnt;
 EXTERN short validmode[256];
-EXTERN EXTERN_ATTR int32_t validmodexdim[256], validmodeydim[256];
+EXTERN FAST_RAM_ATTR int32_t validmodexdim[256], validmodeydim[256];
 
 EXTERN short numsectors, numwalls;
 EXTERN volatile int32_t totalclock;
@@ -202,7 +217,7 @@ EXTERN int32_t parallaxyoffs, parallaxyscale;
 EXTERN int32_t visibility, parallaxvisibility;
 
 EXTERN int32_t windowx1, windowy1, windowx2, windowy2;
-EXTERN EXTERN_ATTR short startumost[MAXXDIM], startdmost[MAXXDIM];
+EXTERN FAST_RAM_ATTR short startumost[MAXXDIM], startdmost[MAXXDIM];
 
 EXTERN short pskyoff[MAXPSKYTILES], pskybits;
 

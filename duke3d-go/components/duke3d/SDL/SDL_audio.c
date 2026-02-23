@@ -19,7 +19,11 @@ IRAM_ATTR void updateTask(void *arg)
   audio_task_running = true;
   if (!mono_buffer) mono_buffer = malloc(SAMPLECOUNT * sizeof(int16_t));
   if (!music_buffer) music_buffer = malloc(SAMPLECOUNT * 2 * sizeof(int16_t));
+#if CONFIG_IDF_TARGET_ESP32
+  if (!stereo_buffer) stereo_buffer = malloc(SAMPLECOUNT * 2 * sizeof(rg_audio_frame_t));
+#else
   if (!stereo_buffer) stereo_buffer = malloc(SAMPLECOUNT * sizeof(rg_audio_frame_t));
+#endif
 
   while(audio_task_running)
   {
@@ -39,14 +43,25 @@ IRAM_ATTR void updateTask(void *arg)
                 stereo_buffer[i].left = mixed_l;
                 stereo_buffer[i].right = mixed_r;
             }
+			rg_audio_submit(stereo_buffer, SAMPLECOUNT);
+#else
+            int final_count = SAMPLECOUNT;
+#if defined(RG_AUDIO_USE_INT_DAC) && RG_AUDIO_USE_INT_DAC > 0
+            for (int i = 0; i < SAMPLECOUNT; i++) {
+                stereo_buffer[i*2].left = mono_buffer[i];
+                stereo_buffer[i*2].right = mono_buffer[i];
+                stereo_buffer[i*2+1].left = mono_buffer[i];
+                stereo_buffer[i*2+1].right = mono_buffer[i];
+            }
+            final_count = SAMPLECOUNT * 2;
 #else
             for (int i = 0; i < SAMPLECOUNT; i++) {
                 stereo_buffer[i].left = mono_buffer[i];
                 stereo_buffer[i].right = mono_buffer[i];
             }
 #endif
-
-			rg_audio_submit(stereo_buffer, SAMPLECOUNT);
+			rg_audio_submit(stereo_buffer, final_count);
+#endif
             vTaskDelay(pdMS_TO_TICKS(1)); // Yield to other tasks
 	  } else {
 		  vTaskDelay(pdMS_TO_TICKS(10));
@@ -77,7 +92,11 @@ int SDL_OpenAudio(SDL_AudioSpec *desired, SDL_AudioSpec *obtained)
     obtained->userdata = desired->userdata;
 	memcpy(&as, obtained, sizeof(SDL_AudioSpec));
 
-    rg_audio_set_sample_rate(obtained->freq);
+    int final_freq = obtained->freq;
+#if defined(RG_AUDIO_USE_INT_DAC) && RG_AUDIO_USE_INT_DAC > 0
+    if (final_freq < 22050) final_freq = 22050;
+#endif
+    rg_audio_set_sample_rate(final_freq);
 #if !CONFIG_IDF_TARGET_ESP32
     opl_synth_player.init(obtained->freq);
 #endif
@@ -97,7 +116,7 @@ void SDL_CloseAudio(void)
     if (audio_task_running) {
         audio_task_running = false;
         // Wait for task to exit
-        int retry = 200;
+        int retry = 500;
         while (audio_task_handle != NULL && retry-- > 0) {
             vTaskDelay(pdMS_TO_TICKS(1));
         }

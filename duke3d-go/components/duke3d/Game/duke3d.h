@@ -36,7 +36,7 @@ extern "C" {
 #define MAXVOLUMES 7
 #define MAXLEVELS 32
 #define NUM_SOUNDS 1024
-#define MAXSCRIPTSIZE 131072
+#define MAXSCRIPTSIZE 20460
 #define MAXANIMWALLS 512
 #ifdef CONFIG_IDF_TARGET_ESP32
 #define MAXCACHEOBJECTS 4096
@@ -194,8 +194,6 @@ typedef struct
         short last_weapon, weapon_pos, kickback_pic;
 
 } STATUSBARTYPE;
-
-#define EXTERN_ATTR
 
 extern EXTERN_ATTR input inputfifo[MOVEFIFOSIZ][MAXPLAYERS], dukeSyncArray[MAXPLAYERS];
 extern EXTERN_ATTR input recsync[RECSYNCBUFSIZ];
