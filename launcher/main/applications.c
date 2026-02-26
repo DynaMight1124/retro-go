@@ -110,10 +110,42 @@ static void application_init(retro_app_t *app)
 
     rg_storage_mkdir(app->paths.covers);
     rg_storage_mkdir(app->paths.saves);
-    rg_storage_mkdir(app->paths.roms);
+    if (strcmp(app->short_name, "ports") != 0)
+        rg_storage_mkdir(app->paths.roms);
 
-    rg_storage_scandir(app->paths.roms, scan_folder_cb, app, RG_SCANDIR_RECURSIVE);
-    rg_storage_scandir(app->paths.saves, scan_saves_cb, app, RG_SCANDIR_RECURSIVE);
+    if (strcmp(app->short_name, "ports") == 0)
+    {
+        const char *folders[] = {"doom", "quake", "duke3d"};
+        const char *partitions[] = {"prboom-go", "quake-go", "duke3d-go"};
+        for (int i = 0; i < 3; i++)
+        {
+            if (!rg_system_have_app(partitions[i]))
+                continue;
+
+            char path[RG_PATH_MAX];
+            snprintf(path, sizeof(path), RG_BASE_PATH_ROMS "/%s", folders[i]);
+
+            rg_stat_t stat = rg_storage_stat(path);
+            if (stat.exists && stat.is_dir)
+            {
+                rg_scandir_t entry = {0};
+                strncpy(entry.path, path, sizeof(entry.path) - 1);
+                entry.basename = folders[i];
+                entry.dirname = RG_BASE_PATH_ROMS;
+                entry.is_dir = true;
+                scan_folder_cb(&entry, app);
+            }
+
+            rg_storage_scandir(path, scan_folder_cb, app, RG_SCANDIR_RECURSIVE);
+            snprintf(path, sizeof(path), RG_BASE_PATH_SAVES "/%s", folders[i]);
+            rg_storage_scandir(path, scan_saves_cb, app, RG_SCANDIR_RECURSIVE);
+        }
+    }
+    else
+    {
+        rg_storage_scandir(app->paths.roms, scan_folder_cb, app, RG_SCANDIR_RECURSIVE);
+        rg_storage_scandir(app->paths.saves, scan_saves_cb, app, RG_SCANDIR_RECURSIVE);
+    }
     // rg_storage_scandir(app->paths.covers, scan_folder_cb3, app, RG_SCANDIR_RECURSIVE);
 
     app->use_crc_covers = rg_storage_exists(strcat(app->paths.covers, "/0"));
@@ -135,6 +167,33 @@ static void application_start(retro_file_t *file, int load_state)
     RG_ASSERT_ARG(file);
     char *part = strdup(file->app->partition);
     char *name = strdup(file->app->short_name);
+
+    if (strcmp(name, "ports") == 0)
+    {
+        free(part);
+        free(name);
+        if (rg_extension_match(file->name, "wad zip"))
+        {
+            part = strdup("prboom-go");
+            name = strdup("doom");
+        }
+        else if (rg_extension_match(file->name, "pak"))
+        {
+            part = strdup("quake-go");
+            name = strdup("quake");
+        }
+        else if (rg_extension_match(file->name, "grp"))
+        {
+            part = strdup("duke3d-go");
+            name = strdup("duke3d");
+        }
+        else
+        {
+            part = strdup("unknown");
+            name = strdup("unknown");
+        }
+    }
+
     char *path = strdup(get_file_path(file));
     int flags = (gui.startup_mode ? RG_BOOT_ONCE : 0) | (load_state != -1 ? RG_BOOT_RESUME : 0);
     bookmark_add(BOOK_TYPE_RECENT, file); // This could relocate *file, but we no longer need it
@@ -480,15 +539,41 @@ bool application_path_to_file(const char *path, retro_file_t *file)
 
     for (int i = 0; i < apps_count; ++i)
     {
-        size_t baselen = strlen(apps[i]->paths.roms);
-        if (strncmp(path, apps[i]->paths.roms, baselen) == 0 && path[baselen] == '/')
+        retro_app_t *app = apps[i];
+        bool match = false;
+
+        if (strcmp(app->short_name, "ports") == 0)
+        {
+            const char *folders[] = {"doom", "quake", "duke3d"};
+            for (int j = 0; j < 3; j++)
+            {
+                char base[RG_PATH_MAX];
+                snprintf(base, sizeof(base), RG_BASE_PATH_ROMS "/%s", folders[j]);
+                size_t baselen = strlen(base);
+                if (strncmp(path, base, baselen) == 0 && path[baselen] == '/')
+                {
+                    match = true;
+                    break;
+                }
+            }
+        }
+        else
+        {
+            size_t baselen = strlen(app->paths.roms);
+            if (strncmp(path, app->paths.roms, baselen) == 0 && path[baselen] == '/')
+            {
+                match = true;
+            }
+        }
+
+        if (match)
         {
             *file = (retro_file_t) {
                 .name = strdup(rg_basename(path)),
                 .folder = rg_unique_string(rg_dirname(path)),
                 .saves = 0xFF, // We don't know, but we want gui_load_preview to check if needed
                 .type = RETRO_TYPE_FILE,
-                .app = apps[i],
+                .app = app,
             };
             return true;
         }
@@ -655,9 +740,9 @@ void application_show_file_menu(retro_file_t *file, bool advanced)
 
 static void application(const char *desc, const char *name, const char *exts, const char *part, uint16_t crc_offset)
 {
-    RG_ASSERT_ARG(desc && name && exts && part);
+    RG_ASSERT_ARG(desc && name && exts);
 
-    if (!rg_system_have_app(part))
+    if (part && !rg_system_have_app(part))
     {
         RG_LOGI("Application '%s' (%s) not present, skipping", desc, part);
         return;
@@ -668,12 +753,15 @@ static void application(const char *desc, const char *name, const char *exts, co
 
     snprintf(app->description, sizeof(app->description), "%s", desc);
     snprintf(app->short_name, sizeof(app->short_name), "%s", name);
-    snprintf(app->partition, sizeof(app->partition), "%s", part);
+    snprintf(app->partition, sizeof(app->partition), "%s", part ?: "");
     snprintf(app->extensions, sizeof(app->extensions), " %s ", exts);
     snprintf(app->paths.covers, RG_PATH_MAX, RG_BASE_PATH_COVERS "/%s", app->short_name);
     snprintf(app->paths.saves, RG_PATH_MAX, RG_BASE_PATH_SAVES "/%s", app->short_name);
-    snprintf(app->paths.roms, RG_PATH_MAX, RG_BASE_PATH_ROMS "/%s", app->short_name);
-    app->available = rg_system_have_app(app->partition);
+    if (strcmp(name, "ports") == 0)
+        snprintf(app->paths.roms, RG_PATH_MAX, RG_BASE_PATH_ROMS);
+    else
+        snprintf(app->paths.roms, RG_PATH_MAX, RG_BASE_PATH_ROMS "/%s", app->short_name);
+    app->available = part ? rg_system_have_app(app->partition) : true;
     app->files = calloc(100, sizeof(retro_file_t));
     app->files_capacity = 100;
     app->filenames = rg_bucket_create(4096);
@@ -699,7 +787,11 @@ void applications_init(void)
     application("Atari Lynx", "lnx", "lnx zip", "retro-core", 64);
     // application("Atari 2600", "a26", "a26 zip", "stella-go", 0);
     // application("Neo Geo Pocket Color", "ngp", "ngp ngc zip", "ngpocket-go", 0);
-    application("DOOM", "doom", "wad zip", "prboom-go", 0);
+    // application("DOOM", "doom", "wad zip", "prboom-go", 0);
+    // application("Quake", "quake", "pak", "quake-go", 0);
+    // application("Duke Nukem 3D", "duke3d", "grp", "duke3d-go", 0);
+    if (rg_system_have_app("prboom-go") || rg_system_have_app("quake-go") || rg_system_have_app("duke3d-go"))
+        application("Ports", "ports", "wad pak grp zip", NULL, 0);
     application("MSX", "msx", "rom mx1 mx2 dsk", "fmsx", 0);
 
     // Special app to bootstrap native esp32 binaries from the SD card

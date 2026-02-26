@@ -581,7 +581,19 @@ void gui_load_preview(tab_t *tab)
 
     retro_file_t *file = item->arg;
     retro_app_t *app = file->app;
+    char covers_path[RG_PATH_MAX];
     uint32_t errors = 0;
+
+    strncpy(covers_path, app->paths.covers, sizeof(covers_path));
+    if (strcmp(app->short_name, "ports") == 0)
+    {
+        if (rg_extension_match(file->name, "wad zip"))
+            snprintf(covers_path, sizeof(covers_path), RG_BASE_PATH_COVERS "/doom");
+        else if (rg_extension_match(file->name, "pak"))
+            snprintf(covers_path, sizeof(covers_path), RG_BASE_PATH_COVERS "/quake");
+        else if (rg_extension_match(file->name, "grp"))
+            snprintf(covers_path, sizeof(covers_path), RG_BASE_PATH_COVERS "/duke3d");
+    }
 
     while (order && !tab->preview)
     {
@@ -599,14 +611,21 @@ void gui_load_preview(tab_t *tab)
             continue;
 
         if (type == 0x1 && app->use_crc_covers && application_get_file_crc32(file)) // Game cover (old format)
-            path_len = snprintf(path, RG_PATH_MAX, "%s/%X/%08X.art", app->paths.covers, (int)(file->checksum >> 28), (int)file->checksum);
+            path_len = snprintf(path, RG_PATH_MAX, "%s/%X/%08X.art", covers_path, (int)(file->checksum >> 28), (int)file->checksum);
         else if (type == 0x2 && app->use_crc_covers && application_get_file_crc32(file)) // Game cover (png)
-            path_len = snprintf(path, RG_PATH_MAX, "%s/%X/%08X.png", app->paths.covers, (int)(file->checksum >> 28), (int)file->checksum);
+            path_len = snprintf(path, RG_PATH_MAX, "%s/%X/%08X.png", covers_path, (int)(file->checksum >> 28), (int)file->checksum);
         else if (type == 0x3) // Game cover (based on filename)
         {
-            path_len = snprintf(path, RG_PATH_MAX, "%s/%s", app->paths.covers, file->name);
-            if (path_len < RG_PATH_MAX - 3) // Don't bother if we already have an overflow
-                strcpy(path + path_len - strlen(rg_extension(file->name) ?: ""), "png");
+            const char *ext = rg_extension(file->name);
+            if (ext)
+            {
+                path_len = snprintf(path, RG_PATH_MAX, "%s/%s", covers_path, file->name);
+                strcpy(path + path_len - strlen(ext), "png");
+            }
+            else
+            {
+                path_len = snprintf(path, RG_PATH_MAX, "%s/%s.png", covers_path, file->name);
+            }
         }
         else if (type == 0x4 && file->saves > 0) // Save state screenshot (png)
         {
