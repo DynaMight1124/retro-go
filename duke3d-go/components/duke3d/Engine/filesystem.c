@@ -168,6 +168,14 @@ int32_t initgroupfile(const char  *filename)
 	{
 		archive->crc32=CRC_BASE_GRP_ATOMIC_15;
 		printf("Version: Atomic 1.5\n");
+	} else if(length == 44348015)
+	{
+		archive->crc32=CRC_BASE_GRP_PLUTONIUM_14;
+		printf("Version: Plutonium 1.4\n");
+	} else if(length == 26524524)
+	{
+		archive->crc32=CRC_BASE_GRP_FULL_13;
+		printf("Version: Full 1.3d\n");
 	} else if(length == 11035779)
 	{
 		archive->crc32=CRC_BASE_GRP_SHAREWARE_13;
