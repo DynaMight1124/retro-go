@@ -1,0 +1,18 @@
+[mapping:pcsx_rearmed_core]
+archive: libpcsx_rearmed.a
+entries:
+    r3000a: psxRegs (extram)
+    psxcounters: rcnts (extram)
+    cdrom: cdr (extram)
+    mdec: mdec (extram)
+    * (extram)
+
+[mapping:retro_go_core]
+archive: libretro-go.a
+entries:
+    * (extram)
+
+[mapping:fatfs_core]
+archive: libfatfs.a
+entries:
+    * (extram)

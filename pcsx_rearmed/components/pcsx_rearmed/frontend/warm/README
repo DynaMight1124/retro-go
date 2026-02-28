@@ -1,0 +1,101 @@
+About
+-----
+
+wARM is a combination of library and Linux kernel module for ARM processor
+control. It was created because ARM processor allows to perform certain
+operations in privileged modes only, and ARM Linux kernel is only providing
+limited functionality through some private system calls. The code was
+developed for GPH GP2X/Wiz consoles, but it should be possible to use it
+on other ARM Linux systems (probably with modifications).
+
+Currently wARM provides various cache control operations and supports only
+ARM9 family processors.
+
+
+Usage
+-----
+
+The library consists of just 2 files: warm.c and warm.h, which should be
+compiled into your program. The library performs module loading and
+communication with it all by itself, you just need to call the right
+functions. You will need to have a matching kernel module available for
+kernel running on your device, several precompiled modules can be found
+in bin/ directory:
+
+  warm_2.4.25.o        - for GP2X F100/F200 GPH firmwares
+  warm_2.4.26-open2x.o - for GP2X F100/F200 Open2x firmware
+  warm_2.6.24.ko       - for Wiz GPH firmwares
+
+When the module is loaded into kernel, it creates /proc/warm file, which
+can be read for some information about the CPU.
+
+
+API
+---
+
+warm_init   - must be called on startup. You must do it with current working
+              directory set to where kernel module can be found.
+
+warm_finish - should be called before exit to close internal files and unload
+              the module.
+
+warm_cache_op_range -
+              call to perform cache invalidation or clean operations (can
+              specify both with binary or - '|') for virtual address ranges.
+              In all cases write buffer is flushed (no operation can be
+              specified to just flush the write buffer).
+
+warm_cache_op_all -
+              same as above, only affects the whole cache.
+
+warm_change_cb_range -
+              set or clear C and/or B bits for memory region (if is_set is
+              nonzero, sets, else clears). The meaning of C and B bit
+              combinations is processor specific, for ARM9 C enables both
+              caching and buffering, B enables write buffer (when C is
+              cleared), or enables write-back caching (when C is set).
+              Note that in some cases the region needs to be accessed
+              before calling this function, so that kernel maps actual pages.
+
+warm_change_cb_upper -
+              same as above, only affects "upper" memory (RAM memory above
+              Linux accessible range, can be found in GP2X and Wiz).
+
+warm_virt2phys -
+              Converts virtual address to physical address. Note that the
+              returned address is only valid for one page where the address
+              points to (4KB in Linux). Next page will most likely point to
+              completely different physical memory location, instead of next
+              one.
+
+note: all operations except warm_cache_op_all() affect calling process only.
+
+
+License
+-------
+
+ * Copyright (c) Gražvydas "notaz" Ignotas, 2009
+ * notasas a gmail d com
+ *
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions are met:
+ *     * Redistributions of source code must retain the above copyright
+ *       notice, this list of conditions and the following disclaimer.
+ *     * Redistributions in binary form must reproduce the above copyright
+ *       notice, this list of conditions and the following disclaimer in the
+ *       documentation and/or other materials provided with the distribution.
+ *     * Neither the name of the organization nor the
+ *       names of its contributors may be used to endorse or promote products
+ *       derived from this software without specific prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+ * ARE DISCLAIMED. IN NO EVENT SHALL COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+ * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+ * SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+ * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+ * OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+

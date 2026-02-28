@@ -1,0 +1,23 @@
+ifndef KERNEL_DIR
+$(error specify KERNEL_DIR)
+endif
+
+CROSS_COMPILE = arm-linux-
+INCLUDE  = $(KERNEL_DIR)/include
+CPPFLAGS = -Wall -O2 -DMODULE -D__KERNEL__ -msoft-float -nostdinc -isystem ${INCLUDE}
+CPPFLAGS+= -isystem $(shell $(CC) -print-file-name=include)
+CC       = $(CROSS_COMPILE)gcc
+LD       = $(CROSS_COMPILE)ld
+
+TARGET   = warm.o
+OBJS     = warm_main.o warm_ops.o
+
+all: $(TARGET)
+
+$(TARGET): $(OBJS)
+	$(LD) -r -o $@ $(OBJS)
+
+
+clean:
+	rm -rf $(TARGET) $(OBJS)
+
