@@ -970,7 +970,7 @@ const char *get_save_path(const char *filename)
     char *dot = strrchr(name_no_ext, '.');
     if (dot && strcasecmp(dot, ".sav") == 0) *dot = '\0';
 
-    char name_with_dir[512];
+    char name_with_dir[600];
     snprintf(name_with_dir, sizeof(name_with_dir), "duke3d/%s", name_no_ext);
     
     char *rg_path = rg_emu_get_path(RG_PATH_SAVE_STATE, name_with_dir);
@@ -980,6 +980,7 @@ const char *get_save_path(const char *filename)
     } else {
         snprintf(path, sizeof(path), RG_BASE_PATH_SAVES "/duke3d/%s", filename);
     }
+    rg_storage_mkdir(rg_dirname(path));
     return path;
 }
 
@@ -992,7 +993,7 @@ const char *get_config_path(const char *filename)
     char *dot = strrchr(name_no_ext, '.');
     if (dot && strcasecmp(dot, ".cfg") == 0) *dot = '\0';
 
-    char name_with_dir[512];
+    char name_with_dir[600];
     snprintf(name_with_dir, sizeof(name_with_dir), "duke3d/%s", name_no_ext);
 
     char *rg_path = rg_emu_get_path(RG_PATH_GAME_CONFIG, name_with_dir);
@@ -1002,5 +1003,6 @@ const char *get_config_path(const char *filename)
     } else {
         snprintf(path, sizeof(path), RG_BASE_PATH_CONFIG "/%s", filename);
     }
+    rg_storage_mkdir(rg_dirname(path));
     return path;
 }
