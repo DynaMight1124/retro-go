@@ -1364,7 +1364,9 @@ int VBE_setPalette(uint8_t  *palettebuffer)
         fmt_swap[i].b = (palettebuffer[i*4+0] << 2) | (palettebuffer[i*4+0] >> 4);
     }
 
-    return(SDL_SetColors(surface, fmt_swap, 0, 256));
+    int ret = SDL_SetColors(surface, fmt_swap, 0, 256);
+    _updateScreenRect(0, 0, 0, 0);
+    return ret;
 }
 
 
