@@ -61,7 +61,7 @@ void app_main(void)
 {
         const rg_config_t config = {
             .sampleRate = 11025,
-            .frameRate = 60,
+            .frameRate = -1, // Disable auto frameskip for native engine
             .storageRequired = true,
             .romRequired = false,
             .handlers = {
