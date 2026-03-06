@@ -41,10 +41,12 @@ char *SDL_VideoDriverName(char *namebuf, int maxlen)
 
 SDL_Rect **SDL_ListModes(SDL_PixelFormat *format, Uint32 flags)
 {
-    static SDL_Rect mode = {0, 0, 320, 240};
-    static SDL_Rect *modes[2];
-    modes[0] = &mode;
-    modes[1] = NULL;
+    static SDL_Rect modes_data[] = {
+        {0, 0, 320, 240},
+        {0, 0, 240, 160},
+        {0, 0, 0, 0}
+    };
+    static SDL_Rect *modes[] = { &modes_data[0], &modes_data[1], NULL };
     return modes;
 }
 
@@ -195,8 +197,10 @@ int SDL_SetColors(SDL_Surface *surface, SDL_Color *colors, int firstcolor, int n
 SDL_Surface *SDL_SetVideoMode(int width, int height, int bpp, Uint32 flags)
 {
     if (primary_surface) {
-        if (primary_surface->w == width && primary_surface->h == height)
-            return primary_surface;
+        primary_surface->w = width;
+        primary_surface->h = height;
+        primary_surface->pitch = width * (primary_surface->format->BitsPerPixel / 8);
+        return primary_surface;
     }
 	return SDL_GetVideoSurface();
 }

@@ -27,7 +27,7 @@
 #ifndef OPL_OPL_H
 #define OPL_OPL_H
 
-typedef void (*opl_callback_t)(void *data);
+#include <stdint.h>
 
 typedef enum
 {
@@ -63,61 +63,23 @@ typedef enum
 //
 
 // Initialize the OPL subsystem.
-
-int OPL_Init(unsigned int port_base);
+int OPL_Init(unsigned int samplerate);
 
 // Shut down the OPL subsystem.
-
 void OPL_Shutdown(void);
 
-
-// Write to one of the OPL I/O ports:
-
-void OPL_WritePort(opl_port_t port, unsigned int value);
-
-// Read from one of the OPL I/O ports:
-
-unsigned int OPL_ReadPort(opl_port_t port);
-
-//
-// Higher-level functions.
-//
-
-// Read the cuurrent status byte of the OPL chip.
-
-unsigned int OPL_ReadStatus(void);
-
 // Write to an OPL register.
-
 void OPL_WriteRegister(int reg, int value);
 
-// Perform a detection sequence to determine that an
-// OPL chip is present.
-
-int OPL_Detect(void);
-
 // Initialize all registers, performed on startup.
-
 void OPL_InitRegisters(void);
 
-
-// Block until the specified number of milliseconds have elapsed.
-
-void OPL_Delay(unsigned int ms);
-
-// Pause the OPL callbacks.
-
+// Pause the OPL rendering.
 void OPL_SetPaused(int paused);
-
 
 extern unsigned int opl_sample_rate;
 
-void OPL_Render_Samples (void *dest, unsigned nsamp);
-
-
-void OPL_SetCallback(unsigned int ms, opl_callback_t callback, void *data);
-
-void OPL_ClearCallbacks(void);
+// Render OPL samples into the destination buffer.
+void OPL_Render_Samples(void *dest, unsigned nsamp);
 
 #endif
-

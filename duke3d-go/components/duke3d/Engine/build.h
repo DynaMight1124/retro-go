@@ -45,13 +45,11 @@
 #define MAXTILES 9216
 #define MAXPLAYERS 16
 
-#ifdef CONFIG_IDF_TARGET_ESP32
-#define INTERNAL_RES_W 240
-#define INTERNAL_RES_H 160
-#else
 #define INTERNAL_RES_W 320
 #define INTERNAL_RES_H 240
-#endif
+#define DEFAULT_RES_W  240
+#define DEFAULT_RES_H  160
+
 #define MAXPALOOKUPS 256
 #define MAXPSKYTILES 256
 
@@ -270,13 +268,13 @@ SPRITE VARIABLES:
 	EXTERN short nextspritesect[MAXSPRITES], nextspritestat[MAXSPRITES];
 
 	Example: if the linked lists look like the following:
-		 ��������������������������������������������������������������Ŀ
-		 �      Sector lists:               Status lists:               �
-		 ��������������������������������������������������������������Ĵ
-		 �  Sector0:  4, 5, 8             Status0:  2, 0, 8             �
-		 �  Sector1:  16, 2, 0, 7         Status1:  4, 5, 16, 7, 3, 9   �
-		 �  Sector2:  3, 9                                              �
-		 ����������������������������������������������������������������
+		 Ŀ
+		       Sector lists:               Status lists:               
+		 Ĵ
+		   Sector0:  4, 5, 8             Status0:  2, 0, 8             
+		   Sector1:  16, 2, 0, 7         Status1:  4, 5, 16, 7, 3, 9   
+		   Sector2:  3, 9                                              
+		 
 	Notice that each number listed above is shown exactly once on both the
 		left and right side.  This is because any sprite that exists must
 		be in some sector, and must have some kind of status that you define.
@@ -363,6 +361,3 @@ int FindDistance2D(int ix, int iy);
 #endif  /* defined _INCLUDE_BUILD_H_ */
 
 /* end of build.h ... */
-
-
-

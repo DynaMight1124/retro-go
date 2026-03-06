@@ -6,7 +6,6 @@
 SDL_AudioSpec as;
 bool paused = true;
 bool locked = false;
-SemaphoreHandle_t xSemaphoreAudio = NULL;
 
 static int16_t *mono_buffer = NULL;
 static int16_t *music_buffer = NULL;
@@ -14,55 +13,44 @@ static rg_audio_frame_t *stereo_buffer = NULL;
 TaskHandle_t audio_task_handle = NULL;
 static bool audio_task_running = false;
 
+#define ENGINE_RATE 11025
+#define HW_RATE     22050
+
 IRAM_ATTR void updateTask(void *arg)
 {
   audio_task_running = true;
   if (!mono_buffer) mono_buffer = malloc(SAMPLECOUNT * sizeof(int16_t));
   if (!music_buffer) music_buffer = malloc(SAMPLECOUNT * 2 * sizeof(int16_t));
-#if CONFIG_IDF_TARGET_ESP32
   if (!stereo_buffer) stereo_buffer = malloc(SAMPLECOUNT * 2 * sizeof(rg_audio_frame_t));
-#else
-  if (!stereo_buffer) stereo_buffer = malloc(SAMPLECOUNT * sizeof(rg_audio_frame_t));
-#endif
 
   while(audio_task_running)
   {
 	  if(!paused && !locked && as.callback){
+			// Ask engine for sound effects (at 11025Hz)
+            memset(mono_buffer, 0, SAMPLECOUNT * sizeof(int16_t));
 			(*as.callback)(as.userdata, (uint8_t *)mono_buffer, SAMPLECOUNT * sizeof(int16_t));
 
-#if !CONFIG_IDF_TARGET_ESP32
+            // Ask OPL synth for music (at 11025Hz)
             memset(music_buffer, 0, SAMPLECOUNT * 2 * sizeof(int16_t));
             opl_synth_player.render(music_buffer, SAMPLECOUNT);
 
             for (int i = 0; i < SAMPLECOUNT; i++) {
                 int32_t mixed_l = mono_buffer[i] + music_buffer[i*2];
                 int32_t mixed_r = mono_buffer[i] + music_buffer[i*2+1];
+                
                 // Clamp
                 if (mixed_l > 32767) mixed_l = 32767; else if (mixed_l < -32768) mixed_l = -32768;
                 if (mixed_r > 32767) mixed_r = 32767; else if (mixed_r < -32768) mixed_r = -32768;
-                stereo_buffer[i].left = mixed_l;
-                stereo_buffer[i].right = mixed_r;
+                
+                // 2x Oversampling (duplicate samples) to fill HW_RATE buffer
+                stereo_buffer[i*2].left = mixed_l;
+                stereo_buffer[i*2].right = mixed_r;
+                stereo_buffer[i*2+1].left = mixed_l;
+                stereo_buffer[i*2+1].right = mixed_r;
             }
-			rg_audio_submit(stereo_buffer, SAMPLECOUNT);
-#else
-            int final_count = SAMPLECOUNT;
-#if defined(RG_AUDIO_USE_INT_DAC) && RG_AUDIO_USE_INT_DAC > 0
-            for (int i = 0; i < SAMPLECOUNT; i++) {
-                stereo_buffer[i*2].left = mono_buffer[i];
-                stereo_buffer[i*2].right = mono_buffer[i];
-                stereo_buffer[i*2+1].left = mono_buffer[i];
-                stereo_buffer[i*2+1].right = mono_buffer[i];
-            }
-            final_count = SAMPLECOUNT * 2;
-#else
-            for (int i = 0; i < SAMPLECOUNT; i++) {
-                stereo_buffer[i].left = mono_buffer[i];
-                stereo_buffer[i].right = mono_buffer[i];
-            }
-#endif
-			rg_audio_submit(stereo_buffer, final_count);
-#endif
-            vTaskDelay(pdMS_TO_TICKS(1)); // Yield to other tasks
+            
+			rg_audio_submit(stereo_buffer, SAMPLECOUNT * 2);
+            vTaskDelay(pdMS_TO_TICKS(1)); // Yield
 	  } else {
 		  vTaskDelay(pdMS_TO_TICKS(10));
       }
@@ -84,7 +72,7 @@ int SDL_OpenAudio(SDL_AudioSpec *desired, SDL_AudioSpec *obtained)
 	SDL_AudioInit();
 	memset(obtained, 0, sizeof(SDL_AudioSpec));
     
-	obtained->freq = desired->freq;
+	obtained->freq = ENGINE_RATE;
 	obtained->format = desired->format;
 	obtained->channels = 1;
 	obtained->samples = SAMPLECOUNT;
@@ -92,17 +80,11 @@ int SDL_OpenAudio(SDL_AudioSpec *desired, SDL_AudioSpec *obtained)
     obtained->userdata = desired->userdata;
 	memcpy(&as, obtained, sizeof(SDL_AudioSpec));
 
-    int final_freq = obtained->freq;
-#if defined(RG_AUDIO_USE_INT_DAC) && RG_AUDIO_USE_INT_DAC > 0
-    if (final_freq < 22050) final_freq = 22050;
-#endif
-    rg_audio_set_sample_rate(final_freq);
-#if !CONFIG_IDF_TARGET_ESP32
-    opl_synth_player.init(obtained->freq);
-#endif
+    rg_audio_set_sample_rate(HW_RATE);
+    opl_synth_player.init(ENGINE_RATE); // Synth renders at 11kHz
 
 	xTaskCreatePinnedToCore(&updateTask, "audioTask", 8192, NULL, 15, &audio_task_handle, 0);
-	printf("audio task started at %d Hz on Core 0 (Priority 15)\n", obtained->freq);
+	printf("audio task started at %d Hz output (Rendering at %d Hz)\n", HW_RATE, ENGINE_RATE);
 	return 0;
 }
 
@@ -115,14 +97,9 @@ void SDL_CloseAudio(void)
 {
     if (audio_task_running) {
         audio_task_running = false;
-        // Wait for task to exit
         int retry = 500;
         while (audio_task_handle != NULL && retry-- > 0) {
             vTaskDelay(pdMS_TO_TICKS(1));
-        }
-        if (audio_task_handle != NULL) {
-            RG_LOGW("SDL_CloseAudio: audioTask timed out! It might still be running.");
-            // Do NOT force deletion, it's safer to just return and let the system reboot later.
         }
     }
 }
@@ -143,23 +120,17 @@ int SDL_BuildAudioCVT(SDL_AudioCVT *cvt, Uint16 src_format, Uint8 src_channels, 
 	return 0;
 }
 
-IRAM_ATTR int SDL_ConvertAudio(SDL_AudioCVT *cvt)
+int SDL_ConvertAudio(SDL_AudioCVT *cvt)
 {
-    // No-op for now as we try to match requested format
 	return 0;
 }
 
 void SDL_LockAudio(void)
 {
 	locked = true;
-	//if( xSemaphoreAudio != NULL )
-	//	xSemaphoreTake( xSemaphoreAudio, 100 );
 }
 
 void SDL_UnlockAudio(void)
 {
     locked = false;
-	//if( xSemaphoreAudio != NULL )
-	//	 xSemaphoreGive( xSemaphoreAudio );
 }
-

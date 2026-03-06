@@ -73,8 +73,13 @@ int32_t BFullScreen = 0;
 //
 
 int32_t ScreenMode=2;
+#ifdef CONFIG_IDF_TARGET_ESP32
+int32_t ScreenWidth = 240;
+int32_t ScreenHeight = 160;
+#else
 int32_t ScreenWidth = 320;
 int32_t ScreenHeight = 240;
+#endif
 
 //
 // Mouse variables
@@ -191,18 +196,21 @@ void CONFIG_SetDefaults( void )
    AmbienceToggle = 1;
    OpponentSoundToggle = 1;
    FXVolume = 64;
-   MusicVolume = 156;
+   MusicVolume = 124;
    FXDevice = SoundScape;
-   #if defined(CONFIG_IDF_TARGET_ESP32P4) || defined(CONFIG_IDF_TARGET_ESP32S3)
-       MusicDevice = Adlib;
-   #else
-       MusicDevice = NumSoundCards; // Disable music on base ESP32 by default
-   #endif
-   MixRate = 11000;
+   MusicDevice = Adlib;
+#ifdef CONFIG_IDF_TARGET_ESP32
+   ScreenWidth = 240;
+   ScreenHeight = 160;
+#else
+   ScreenWidth = 320;
+   ScreenHeight = 240;
+#endif
+   MixRate = 11025;
    
    ReverseStereo = 0;
    
-   NumVoices = 32;
+   NumVoices = 16;
    NumChannels = 1;
    NumBits = 16;
       // mouse
@@ -703,13 +711,13 @@ void CONFIG_ReadSetup( void )
    SCRIPT_GetNumber( scripthandle, "Sound Setup", "AmbienceToggle",(int32_t*)&AmbienceToggle);
    SCRIPT_GetNumber( scripthandle, "Sound Setup", "OpponentSoundToggle",(int32_t*)&OpponentSoundToggle);   
    SCRIPT_GetNumber( scripthandle, "Sound Setup", "NumVoices",(int32_t*)&NumVoices);
-   NumVoices = 32;
+   NumVoices = 16;
    SCRIPT_GetNumber( scripthandle, "Sound Setup", "NumChannels",(int32_t*)&NumChannels);
    NumChannels = 1;
    SCRIPT_GetNumber( scripthandle, "Sound Setup", "NumBits",(int32_t*)&NumBits);
    NumBits = 16;
    SCRIPT_GetNumber( scripthandle, "Sound Setup", "MixRate",(int32_t*)&MixRate);
-   MixRate = 11000;
+   MixRate = 11025;
    SCRIPT_GetNumber( scripthandle, "Sound Setup", "MidiPort",(int32_t*)&MidiPort);
    SCRIPT_GetNumber( scripthandle, "Sound Setup", "BlasterAddress",(int32_t*)&dummy);
    BlasterConfig.Address = dummy;

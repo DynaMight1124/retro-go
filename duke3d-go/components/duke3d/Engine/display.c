@@ -1226,7 +1226,7 @@ void getvalidvesamodes(void)
     int i;
     SDL_Rect **modes = NULL;
     int stdres[][2] = {
-                        {320, 200}, {320, 240}, {640, 350}, {640, 480},
+                        {240, 160}, {320, 200}, {320, 240}, {640, 350}, {640, 480},
                         {800, 600}, {1024, 768}
                       };
 
@@ -1237,7 +1237,8 @@ void getvalidvesamodes(void)
    	validmodecnt = 0;
     vidoption = 1;  /* !!! tmp */
 
-    add_vesa_mode("internal", INTERNAL_RES_W, INTERNAL_RES_H);
+    add_vesa_mode("internal", 320, 240);
+    add_vesa_mode("internal", 240, 160);
 
         /* fill in the standard resolutions... */
     for (i = 0; i < sizeof (stdres) / sizeof (stdres[0]); i++)

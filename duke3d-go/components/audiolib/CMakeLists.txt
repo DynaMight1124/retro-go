@@ -14,7 +14,6 @@ set(COMPONENT_SRCS
     "midifile.c"
     "opl.c"
     "dbopl.c"
-    "opl_queue.c"
     "oplplayer.c"
 )
 set(COMPONENT_ADD_INCLUDEDIRS ".")

@@ -16,7 +16,7 @@ char *MUSIC_ErrorString(int ErrorNumber) { return ""; }
 
 int MUSIC_Init(int SoundCard, int Address) {
     if (music_initialized) return MUSIC_Ok;
-    if (opl_synth_player.init(22050)) {
+    if (opl_synth_player.init(11025)) {
         music_initialized = 1;
         return MUSIC_Ok;
     }

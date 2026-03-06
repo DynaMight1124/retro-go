@@ -78,8 +78,8 @@ const key_mapping_t keymap[] = {
     // X: Crouch
     {RG_KEY_X,      SDL_SCANCODE_Z,      SDLK_z,        RG_MODE_GAME},
     
-    // Y: Use Steriods
-    {RG_KEY_Y,      SDL_SCANCODE_R,      SDLK_r,        RG_MODE_GAME},
+    // Y: Jetpack
+    {RG_KEY_Y,      SDL_SCANCODE_J,      SDLK_j,        RG_MODE_GAME},
     
     // Shoulder buttons: Strafe
     {RG_KEY_L,      SDL_SCANCODE_COMMA,  SDLK_COMMA,    RG_MODE_GAME},
@@ -88,11 +88,20 @@ const key_mapping_t keymap[] = {
     // Dedicated Menu button always sends ESC to toggle menu
     {RG_KEY_MENU,   SDL_SCANCODE_ESCAPE, SDLK_ESCAPE,   RG_MODE_ANY},
     
-    // Option: Use Steriods
-    {RG_KEY_OPTION, SDL_SCANCODE_R, SDLK_r, RG_MODE_GAME},
+    // Option: Crouch
+    {RG_KEY_OPTION, SDL_SCANCODE_Z,      SDLK_z,        RG_MODE_GAME},
 };
 
 const size_t keymap_count = sizeof(keymap) / sizeof(keymap[0]);
+
+const key_mapping_t shifted_keymap[] = {
+    {RG_KEY_UP,    SDL_SCANCODE_RETURN,      SDLK_RETURN,       RG_MODE_GAME}, // Use Inventory Item
+    {RG_KEY_DOWN,  SDL_SCANCODE_J,           SDLK_j,            RG_MODE_GAME}, // Jetpack
+    {RG_KEY_LEFT,  SDL_SCANCODE_LEFTBRACKET, SDLK_LEFTBRACKET,  RG_MODE_GAME}, // Previous Item
+    {RG_KEY_RIGHT, SDL_SCANCODE_RIGHTBRACKET,SDLK_RIGHTBRACKET, RG_MODE_GAME}, // Next Item
+};
+
+const size_t shifted_keymap_count = sizeof(shifted_keymap) / sizeof(shifted_keymap[0]);
 
 void dukeTask(void *pvParameters)
 {

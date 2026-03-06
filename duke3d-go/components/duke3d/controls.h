@@ -21,4 +21,7 @@ typedef struct {
 extern const key_mapping_t keymap[];
 extern const size_t keymap_count;
 
+extern const key_mapping_t shifted_keymap[];
+extern const size_t shifted_keymap_count;
+
 #endif
