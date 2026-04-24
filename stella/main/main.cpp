@@ -21,6 +21,7 @@
 static rg_app_t *app;
 extern "C" rg_surface_t *screen;
 static uint16_t *audio_buffer;
+static int32_t paddle_resistance = 500000; // Start at center
 
 extern Console* theConsole;
 extern TIA theTIA;
@@ -185,6 +186,14 @@ extern "C" void app_main(void) {
         myStellaEvent.set(Event::JoystickZeroFire,  joy & (RG_KEY_A | RG_KEY_B));
         myStellaEvent.set(Event::ConsoleSelect,     joy & RG_KEY_SELECT);
         myStellaEvent.set(Event::ConsoleReset,      joy & RG_KEY_START);
+
+        // Paddle Support: Map D-pad and A/B buttons to Paddle 0
+        // Typical range is 0 to 1,000,000 ohms.
+        if (joy & RG_KEY_RIGHT) paddle_resistance = (paddle_resistance < 15000) ? 0 : paddle_resistance - 15000;
+        if (joy & RG_KEY_LEFT)  paddle_resistance = (paddle_resistance > 1000000 - 15000) ? 1000000 : paddle_resistance + 15000;
+        
+        myStellaEvent.set(Event::PaddleZeroResistance, paddle_resistance);
+        myStellaEvent.set(Event::PaddleZeroFire, (joy & (RG_KEY_A | RG_KEY_B)) ? 1 : 0);
         
         if (theConsole) {
             target_fps = (myCartInfo.tv_type == PAL) ? 50 : 60;
@@ -192,6 +201,10 @@ extern "C" void app_main(void) {
             screen->data = theTIA.myCurrentFrameBuffer[theTIA.myCurrentFrame];
             // StellaDS logic uses BG_GFX as the render target
             BG_GFX = (uint8_t *)screen->data;
+
+            // Update surface height to match game's active lines for scaling
+            screen->height = myCartInfo.displayNumScalines;
+
             theConsole->update();
         }
 
