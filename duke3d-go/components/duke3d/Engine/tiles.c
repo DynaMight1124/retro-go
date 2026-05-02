@@ -13,6 +13,10 @@
 
 #include <rg_system.h>
 #include "esp_attr.h"
+#include <lodepng.h>
+#include <ctype.h>
+#include <stdlib.h>
+#include <string.h>
 
 char  artfilename[20];
 
@@ -25,6 +29,389 @@ int32_t artversion;
 uint8_t  *pic = NULL;
 
 EXT_RAM_BSS_ATTR uint8_t  gotpic[(MAXTILES+7)>>3];
+
+#define TILE_OVERRIDE_NAME_MAX 128
+
+typedef struct tile_override_s {
+    short tileId;
+    char fileName[TILE_OVERRIDE_NAME_MAX];
+    struct tile_override_s *next;
+} tile_override_t;
+
+static tile_override_t *tileOverridesHead = NULL;
+
+static int ci_starts_with(const char *s, const char *prefix)
+{
+    while (*prefix)
+    {
+        if (tolower((unsigned char)*s) != tolower((unsigned char)*prefix))
+            return 0;
+        s++;
+        prefix++;
+    }
+    return 1;
+}
+
+static void clear_tile_overrides(void)
+{
+    tile_override_t *entry = tileOverridesHead;
+    while (entry)
+    {
+        tile_override_t *next = entry->next;
+        free(entry);
+        entry = next;
+    }
+    tileOverridesHead = NULL;
+}
+
+static tile_override_t *find_tile_override(short tileId)
+{
+    tile_override_t *entry = tileOverridesHead;
+    while (entry)
+    {
+        if (entry->tileId == tileId)
+            return entry;
+        entry = entry->next;
+    }
+    return NULL;
+}
+
+static int set_tile_override(short tileId, const char *fileName)
+{
+    tile_override_t *entry;
+
+    if (!fileName || !fileName[0])
+        return 0;
+
+    entry = find_tile_override(tileId);
+    if (!entry)
+    {
+        entry = (tile_override_t *)malloc(sizeof(tile_override_t));
+        if (!entry)
+            return 0;
+        entry->tileId = tileId;
+        entry->next = tileOverridesHead;
+        tileOverridesHead = entry;
+    }
+
+    strncpy(entry->fileName, fileName, TILE_OVERRIDE_NAME_MAX - 1);
+    entry->fileName[TILE_OVERRIDE_NAME_MAX - 1] = '\0';
+    return 1;
+}
+
+static const char *get_tile_override_file(short tileId)
+{
+    tile_override_t *entry = find_tile_override(tileId);
+    return entry ? entry->fileName : NULL;
+}
+
+static int find_keyword_ci(const char *start, const char *end, const char *keyword, const char **out)
+{
+    size_t kwlen = strlen(keyword);
+    const char *p;
+
+    if ((start == NULL) || (end == NULL) || (start >= end) || (kwlen == 0))
+        return 0;
+
+    for (p = start; p + kwlen <= end; p++)
+    {
+        if ((p > start) && (isalnum((unsigned char)p[-1]) || p[-1] == '_'))
+            continue;
+
+        if (ci_starts_with(p, keyword))
+        {
+            const char after = p[kwlen];
+            if (!(isalnum((unsigned char)after) || after == '_'))
+            {
+                if (out) *out = p;
+                return 1;
+            }
+        }
+    }
+
+    return 0;
+}
+
+static int parse_file_token_from_block(const char *blockStart, const char *blockEnd, char *outName, size_t outNameSize)
+{
+    const char *kw = NULL;
+    const char *p;
+
+    if (!find_keyword_ci(blockStart, blockEnd, "file", &kw))
+        return 0;
+
+    p = kw + 4;
+    while ((p < blockEnd) && isspace((unsigned char)*p))
+        p++;
+
+    if (p >= blockEnd)
+        return 0;
+
+    if ((*p == '"') || (*p == '\''))
+    {
+        const char quote = *p++;
+        const char *start = p;
+        while ((p < blockEnd) && (*p != quote))
+            p++;
+
+        if ((p <= start) || (p > blockEnd))
+            return 0;
+
+        {
+            size_t len = (size_t)(p - start);
+            if (len >= outNameSize)
+                len = outNameSize - 1;
+            memcpy(outName, start, len);
+            outName[len] = '\0';
+            return (len > 0);
+        }
+    }
+    else
+    {
+        const char *start = p;
+        while ((p < blockEnd) && !isspace((unsigned char)*p) && (*p != '}'))
+            p++;
+
+        if (p <= start)
+            return 0;
+
+        {
+            size_t len = (size_t)(p - start);
+            if (len >= outNameSize)
+                len = outNameSize - 1;
+            memcpy(outName, start, len);
+            outName[len] = '\0';
+            return (len > 0);
+        }
+    }
+}
+
+static void parse_tile_overrides_from_def(void)
+{
+    int32_t defHandle;
+
+    clear_tile_overrides();
+
+    defHandle = kopen4load("duke3d.def", 1);
+    if (defHandle == -1)
+        return;
+
+    {
+        int32_t defSize = kfilelength(defHandle);
+        char *defText;
+        const char *scan;
+        const char *end;
+
+        if (defSize <= 0)
+        {
+            kclose(defHandle);
+            return;
+        }
+
+        defText = (char *)malloc((size_t)defSize + 1);
+        if (defText == NULL)
+        {
+            kclose(defHandle);
+            return;
+        }
+
+        if (kread(defHandle, defText, defSize) != defSize)
+        {
+            free(defText);
+            kclose(defHandle);
+            return;
+        }
+
+        defText[defSize] = '\0';
+        kclose(defHandle);
+
+        scan = defText;
+        end = defText + defSize;
+
+        while (scan < end)
+        {
+            const char *kw = NULL;
+            long tileId;
+            const char *p;
+            const char *braceOpen;
+            const char *braceClose;
+            char pngName[TILE_OVERRIDE_NAME_MAX];
+
+            if (!find_keyword_ci(scan, end, "tilefromtexture", &kw))
+                break;
+
+            p = kw + strlen("tilefromtexture");
+            while ((p < end) && isspace((unsigned char)*p))
+                p++;
+
+            if (p >= end)
+                break;
+
+            tileId = strtol(p, (char **)&p, 10);
+
+            if ((tileId < 0) || (tileId >= MAXTILES))
+            {
+                scan = kw + 1;
+                continue;
+            }
+
+            while ((p < end) && (*p != '{'))
+                p++;
+
+            if ((p >= end) || (*p != '{'))
+            {
+                scan = kw + 1;
+                continue;
+            }
+
+            braceOpen = p + 1;
+            braceClose = braceOpen;
+            while ((braceClose < end) && (*braceClose != '}'))
+                braceClose++;
+
+            if (braceClose >= end)
+                break;
+
+            if (parse_file_token_from_block(braceOpen, braceClose, pngName, sizeof(pngName)))
+                set_tile_override((short)tileId, pngName);
+
+            scan = braceClose + 1;
+        }
+
+        free(defText);
+    }
+}
+
+static uint8_t nearest_palette_index(uint8_t r, uint8_t g, uint8_t b)
+{
+    int bestIdx = 0;
+    int bestDist = 0x7fffffff;
+    int i;
+
+    for (i = 0; i < 256; i++)
+    {
+        const int pr = palette[i * 3 + 0] << 2;
+        const int pg = palette[i * 3 + 1] << 2;
+        const int pb = palette[i * 3 + 2] << 2;
+        const int dr = (int)r - pr;
+        const int dg = (int)g - pg;
+        const int db = (int)b - pb;
+        const int dist = dr * dr + dg * dg + db * db;
+
+        if (dist < bestDist)
+        {
+            bestDist = dist;
+            bestIdx = i;
+            if (dist == 0)
+                break;
+        }
+    }
+
+    return (uint8_t)bestIdx;
+}
+
+static int try_loadtile_from_override_png(short tilenume)
+{
+    int32_t fileHandle;
+    int32_t fileSize;
+    uint8_t *pngBytes = NULL;
+    unsigned char *rgba = NULL;
+    unsigned width = 0;
+    unsigned height = 0;
+    unsigned err;
+    uint8_t *dst;
+    int32_t pixelCount;
+    int32_t i;
+
+    const char *overrideFile;
+
+    if ((tilenume < 0) || (tilenume >= MAXTILES))
+        return 0;
+
+    overrideFile = get_tile_override_file(tilenume);
+    if (!overrideFile)
+        return 0;
+
+    fileHandle = TCkopen4load(overrideFile, 0);
+    if (fileHandle == -1)
+        return 0;
+
+    fileSize = kfilelength(fileHandle);
+    if (fileSize <= 0)
+    {
+        kclose(fileHandle);
+        return 0;
+    }
+
+    pngBytes = (uint8_t *)malloc((size_t)fileSize);
+    if (pngBytes == NULL)
+    {
+        kclose(fileHandle);
+        return 0;
+    }
+
+    if (kread(fileHandle, pngBytes, fileSize) != fileSize)
+    {
+        free(pngBytes);
+        kclose(fileHandle);
+        return 0;
+    }
+    kclose(fileHandle);
+
+    err = lodepng_decode32(&rgba, &width, &height, pngBytes, (size_t)fileSize);
+    free(pngBytes);
+    if (err != 0 || rgba == NULL)
+        return 0;
+
+    if ((width == 0) || (height == 0) || (width > 32767) || (height > 32767) ||
+        ((uint64_t)width * (uint64_t)height > 0x7fffffffULL))
+    {
+        free(rgba);
+        return 0;
+    }
+
+    tiles[tilenume].dim.width = (short)width;
+    tiles[tilenume].dim.height = (short)height;
+
+    pixelCount = (int32_t)(width * height);
+
+    {
+        int j;
+        j = 15;
+        while ((j > 1) && (pow2long[j] > (int32_t)width))
+            j--;
+        picsiz[tilenume] = (uint8_t)j;
+
+        j = 15;
+        while ((j > 1) && (pow2long[j] > (int32_t)height))
+            j--;
+        picsiz[tilenume] += (uint8_t)(j << 4);
+    }
+
+    if (tiles[tilenume].data == NULL)
+    {
+        tiles[tilenume].lock = 199;
+        allocache(&tiles[tilenume].data, pixelCount, (uint8_t *)&tiles[tilenume].lock);
+        if (tiles[tilenume].data == NULL)
+        {
+            free(rgba);
+            return 0;
+        }
+    }
+
+    dst = tiles[tilenume].data;
+    for (i = 0; i < pixelCount; i++)
+    {
+        const uint8_t r = rgba[i * 4 + 0];
+        const uint8_t g = rgba[i * 4 + 1];
+        const uint8_t b = rgba[i * 4 + 2];
+        const uint8_t a = rgba[i * 4 + 3];
+        dst[i] = (a < 128) ? 255 : nearest_palette_index(r, g, b);
+    }
+
+    free(rgba);
+    return 1;
+}
 
 void setviewtotile(short tilenume, int32_t tileWidth, int32_t tileHeight)
 {
@@ -117,6 +504,9 @@ void loadtile(short tilenume)
 
 
     if ((uint32_t)tilenume >= (uint32_t)MAXTILES)
+        return;
+
+    if (try_loadtile_from_override_png(tilenume))
         return;
 
     tileFilesize = tiles[tilenume].dim.width * tiles[tilenume].dim.height;
@@ -278,6 +668,8 @@ int loadpics(char  *filename, char * gamedir)
     while (k != numtilefiles);
 
     RG_LOGD("Art files loaded");
+
+    parse_tile_overrides_from_def();
 
     clearbuf(gotpic,(MAXTILES+31)>>5,0L);
 
