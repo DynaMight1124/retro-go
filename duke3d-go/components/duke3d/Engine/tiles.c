@@ -31,6 +31,8 @@ uint8_t  *pic = NULL;
 EXT_RAM_BSS_ATTR uint8_t  gotpic[(MAXTILES+7)>>3];
 
 #define TILE_OVERRIDE_NAME_MAX 128
+#define MAX_ART_FILES_SCAN 1000
+#define ART_MISS_STREAK_STOP 32
 
 typedef struct tile_override_s {
     short tileId;
@@ -517,7 +519,19 @@ void loadtile(short tilenume)
     tileFilesize = tiles[tilenume].dim.width * tiles[tilenume].dim.height;
 
     if (tileFilesize <= 0)
+    {
+        static int missingTileWarnBudget = 64;
+        if (missingTileWarnBudget > 0)
+        {
+            missingTileWarnBudget--;
+            printf("loadtile: tile %d has invalid size %" PRId32 " (w=%d h=%d, artfile=%d).\n",
+                   (int)tilenume, tileFilesize,
+                   (int)tiles[tilenume].dim.width,
+                   (int)tiles[tilenume].dim.height,
+                   (int)tilefilenum[tilenume]);
+        }
         return;
+    }
 
     i = tilefilenum[tilenume];
     if (i != artfilnum){
@@ -608,7 +622,10 @@ int loadpics(char  *filename, char * gamedir)
 
 {
     int32_t offscount, localtilestart, localtileend, dasiz;
-    short fil, i, j, k;
+    short fil, i, j;
+    int32_t k;
+    int32_t missingStreak = 0;
+    int32_t seenAnyArt = 0;
 
 
     strcpy(artfilename,filename);
@@ -623,56 +640,63 @@ int loadpics(char  *filename, char * gamedir)
     artsize = 0L;
 
     numtilefiles = 0;
-    do
+    for (k = 0; k < MAX_ART_FILES_SCAN; k++)
     {
-        k = numtilefiles;
-
         artfilename[7] = (k%10)+48;
         artfilename[6] = ((k/10)%10)+48;
         artfilename[5] = ((k/100)%10)+48;
 
-
-
-        if ((fil = TCkopen4load(artfilename,0)) != -1)
+        fil = TCkopen4load(artfilename,0);
+        if (fil == -1)
         {
-            RG_LOGD("loadpics: Loading '%s'...", artfilename);
-            kread32(fil,&artversion);
-            if (artversion != 1) return(-1);
-
-            kread32(fil,&numTiles);
-            kread32(fil,&localtilestart);
-            kread32(fil,&localtileend);
-
-            /*kread(fil,&tilesizx[localtilestart],(localtileend-localtilestart+1)<<1);*/
-            for (i = localtilestart; i <= localtileend; i++)
-                kread16(fil,&tiles[i].dim.width);
-
-            /*kread(fil,&tilesizy[localtilestart],(localtileend-localtilestart+1)<<1);*/
-            for (i = localtilestart; i <= localtileend; i++)
-                kread16(fil,&tiles[i].dim.height);
-
-            /*kread(fil,&picanm[localtilestart],(localtileend-localtilestart+1)<<2);*/
-            for (i = localtilestart; i <= localtileend; i++)
-                kread32(fil,&tiles[i].animFlags);
-
-            offscount = 4+4+4+4+((localtileend-localtilestart+1)<<3);
-            for(i=localtilestart; i<=localtileend; i++)
+            if (seenAnyArt)
             {
-                tilefilenum[i] = k;
-                tilefileoffs[i] = offscount;
-                dasiz = tiles[i].dim.width*tiles[i].dim.height;
-                offscount += dasiz;
-                artsize += ((dasiz+15)&0xfffffff0);
+                missingStreak++;
+                if (missingStreak == 1)
+                    printf("loadpics: missing '%s', continuing scan for sparse ART sets...\n", artfilename);
+                if (missingStreak >= ART_MISS_STREAK_STOP)
+                    break;
             }
-            kclose(fil);
-
-            numtilefiles++;
-
+            continue;
         }
-    }
-    while (k != numtilefiles);
 
-    RG_LOGD("Art files loaded");
+        seenAnyArt = 1;
+        missingStreak = 0;
+        printf("loadpics: Loading '%s'...\n", artfilename);
+        kread32(fil,&artversion);
+        if (artversion != 1) return(-1);
+
+        kread32(fil,&numTiles);
+        kread32(fil,&localtilestart);
+        kread32(fil,&localtileend);
+
+        /*kread(fil,&tilesizx[localtilestart],(localtileend-localtilestart+1)<<1);*/
+        for (i = localtilestart; i <= localtileend; i++)
+            kread16(fil,&tiles[i].dim.width);
+
+        /*kread(fil,&tilesizy[localtilestart],(localtileend-localtilestart+1)<<1);*/
+        for (i = localtilestart; i <= localtileend; i++)
+            kread16(fil,&tiles[i].dim.height);
+
+        /*kread(fil,&picanm[localtilestart],(localtileend-localtilestart+1)<<2);*/
+        for (i = localtilestart; i <= localtileend; i++)
+            kread32(fil,&tiles[i].animFlags);
+
+        offscount = 4+4+4+4+((localtileend-localtilestart+1)<<3);
+        for(i=localtilestart; i<=localtileend; i++)
+        {
+            tilefilenum[i] = (short)k;
+            tilefileoffs[i] = offscount;
+            dasiz = tiles[i].dim.width*tiles[i].dim.height;
+            offscount += dasiz;
+            artsize += ((dasiz+15)&0xfffffff0);
+        }
+        kclose(fil);
+
+        numtilefiles++;
+    }
+
+    printf("Art files loaded: %" PRId32 " file(s) found by sparse scan\n", numtilefiles);
 
     parse_tile_overrides_from_def();
 
