@@ -321,7 +321,7 @@ static int try_loadtile_from_override_png(short tilenume)
     unsigned err;
     uint8_t *dst;
     int32_t pixelCount;
-    int32_t i;
+    int32_t x, y;
 
     const char *overrideFile;
 
@@ -400,13 +400,18 @@ static int try_loadtile_from_override_png(short tilenume)
     }
 
     dst = tiles[tilenume].data;
-    for (i = 0; i < pixelCount; i++)
+    for (y = 0; y < (int32_t)height; y++)
     {
-        const uint8_t r = rgba[i * 4 + 0];
-        const uint8_t g = rgba[i * 4 + 1];
-        const uint8_t b = rgba[i * 4 + 2];
-        const uint8_t a = rgba[i * 4 + 3];
-        dst[i] = (a < 128) ? 255 : nearest_palette_index(r, g, b);
+        for (x = 0; x < (int32_t)width; x++)
+        {
+            const int32_t srcIndex = (y * (int32_t)width + x) * 4;
+            const int32_t dstIndex = x * (int32_t)height + y;
+            const uint8_t r = rgba[srcIndex + 0];
+            const uint8_t g = rgba[srcIndex + 1];
+            const uint8_t b = rgba[srcIndex + 2];
+            const uint8_t a = rgba[srcIndex + 3];
+            dst[dstIndex] = (a < 128) ? 255 : nearest_palette_index(r, g, b);
+        }
     }
 
     free(rgba);
