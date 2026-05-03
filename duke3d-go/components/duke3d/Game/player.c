@@ -32,59 +32,6 @@ Prepared for public release: 03/21/2003 - Charlie Wiederhold, 3D Realms
 int32 turnheldtime; //MED
 int32 lastcontroltime; //MED
 
-static void debug_player_z_drift(short snum, struct player_struct *p, int32_t oldPosz, int32_t fz, int32_t cz, short psectlotag, uint32_t sb_snum, uint8_t shrunk)
-{
-    static int logBudget = 512;
-    int32_t dz;
-
-    if (snum < 0 || snum >= MAXPLAYERS)
-        return;
-
-    dz = p->posz - oldPosz;
-
-    if (logBudget > 0)
-    {
-        if (dz < -128 || dz > 128)
-        {
-            logBudget--;
-            printf("zdbg: p%d posz %" PRId32 "->%" PRId32 " dz=%" PRId32 " poszv=%" PRId32 " on_ground=%d jetpack=%d sectlotag=%d sb=0x%08" PRIx32 " fz=%" PRId32 " cz=%" PRId32 " truefz=%" PRId32 " truecz=%" PRId32 " pic=%d tile=%dx%d anim=0x%08" PRIx32 " shrunk=%d\n",
-                   (int)snum,
-                   oldPosz, p->posz, dz,
-                   p->poszv,
-                   (int)p->on_ground,
-                   (int)p->jetpack_on,
-                   (int)psectlotag,
-                   (uint32_t)sb_snum,
-                   fz, cz,
-                   p->truefz,
-                   p->truecz,
-                   (int)sprite[p->i].picnum,
-                   (int)tiles[sprite[p->i].picnum].dim.width,
-                   (int)tiles[sprite[p->i].picnum].dim.height,
-                   (uint32_t)tiles[sprite[p->i].picnum].animFlags,
-                   (int)shrunk);
-        }
-
-        if ((p->jetpack_on != 0) && ((sb_snum & 3) == 0))
-        {
-            logBudget--;
-            printf("zdbg: p%d jetpack_on=%d without vertical input sb=0x%08" PRIx32 " posz=%" PRId32 " poszv=%" PRId32 "\n",
-                   (int)snum, (int)p->jetpack_on, (uint32_t)sb_snum, p->posz, p->poszv);
-        }
-
-        if ((tiles[sprite[p->i].picnum].dim.height > 256 || tiles[sprite[p->i].picnum].dim.height <= 0) && (logBudget > 0))
-        {
-            logBudget--;
-            printf("zdbg: p%d suspicious player tile height=%d pic=%d anim=0x%08" PRIx32 "\n",
-                   (int)snum,
-                   (int)tiles[sprite[p->i].picnum].dim.height,
-                   (int)sprite[p->i].picnum,
-                   (uint32_t)tiles[sprite[p->i].picnum].animFlags);
-        }
-    }
-
-}
-
 void setpal(struct player_struct *p)
 {
     if(p->heat_on) p->palette = slimepal;
@@ -2399,7 +2346,6 @@ void checkweapons(struct player_struct *p)
 void processinput(short snum)
 {
     int32_t j, i, k, doubvel, fz, cz, hz, lz, truefdist, x, y;
-    int32_t debugStartPosz;
     uint8_t  shrunk;
     uint32_t sb_snum;
     short psect, psectlotag,*kb, tempsect, pi;
@@ -2412,7 +2358,6 @@ void processinput(short snum)
     s = &sprite[pi];
 
     kb = &p->kickback_pic;
-    debugStartPosz = p->posz;
 
     if(p->cheat_phase <= 0) sb_snum = dukeSyncArray[snum].bits;
     else sb_snum = 0;
@@ -3166,8 +3111,6 @@ void processinput(short snum)
             p->posz = cz+(4<<8);
         }
     }
-
-    debug_player_z_drift(snum, p, debugStartPosz, fz, cz, psectlotag, sb_snum, shrunk);
 
     //Do the quick lefts and rights
 
