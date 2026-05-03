@@ -33,6 +33,8 @@ EXT_RAM_BSS_ATTR uint8_t  gotpic[(MAXTILES+7)>>3];
 #define TILE_OVERRIDE_NAME_MAX 128
 #define MAX_ART_FILES_SCAN 1000
 #define ART_MISS_STREAK_STOP 32
+#define PNG_HEADER_READ_SIZE 33
+#define OVERRIDE_PAL_CACHE_SLOTS 4096
 
 typedef struct tile_override_s {
     short tileId;
@@ -41,6 +43,10 @@ typedef struct tile_override_s {
 } tile_override_t;
 
 static tile_override_t *tileOverridesHead = NULL;
+
+EXT_RAM_BSS_ATTR static uint32_t overridePalCacheKey[OVERRIDE_PAL_CACHE_SLOTS];
+EXT_RAM_BSS_ATTR static uint8_t overridePalCacheValue[OVERRIDE_PAL_CACHE_SLOTS];
+static int overridePalCacheInit = 0;
 
 static int ci_starts_with(const char *s, const char *prefix)
 {
@@ -284,6 +290,122 @@ static void parse_tile_overrides_from_def(void)
     }
 }
 
+static uint32_t read_be_u32(const uint8_t *p)
+{
+    return ((uint32_t)p[0] << 24) |
+           ((uint32_t)p[1] << 16) |
+           ((uint32_t)p[2] << 8) |
+           ((uint32_t)p[3] << 0);
+}
+
+static int read_png_dimensions(const char *fileName, short *outWidth, short *outHeight)
+{
+    int32_t fileHandle;
+    uint8_t header[PNG_HEADER_READ_SIZE];
+    uint32_t width, height;
+
+    if (!fileName || !outWidth || !outHeight)
+        return 0;
+
+    fileHandle = TCkopen4load(fileName, 0);
+    if (fileHandle == -1)
+        return 0;
+
+    if (kread(fileHandle, header, PNG_HEADER_READ_SIZE) != PNG_HEADER_READ_SIZE)
+    {
+        kclose(fileHandle);
+        return 0;
+    }
+    kclose(fileHandle);
+
+    if (memcmp(header, "\x89PNG\r\n\x1a\n", 8) != 0)
+        return 0;
+
+    if (read_be_u32(&header[8]) != 13 || memcmp(&header[12], "IHDR", 4) != 0)
+        return 0;
+
+    width = read_be_u32(&header[16]);
+    height = read_be_u32(&header[20]);
+
+    if ((width == 0) || (height == 0) || (width > 32767) || (height > 32767))
+        return 0;
+
+    *outWidth = (short)width;
+    *outHeight = (short)height;
+    return 1;
+}
+
+static void prime_tile_override_metadata_from_png_headers(void)
+{
+    tile_override_t *entry;
+    int32_t okCount = 0;
+    int32_t failCount = 0;
+    int32_t mismatchCount = 0;
+    int32_t logBudget = 32;
+
+    for (entry = tileOverridesHead; entry != NULL; entry = entry->next)
+    {
+        short w = 0, h = 0;
+
+        if (read_png_dimensions(entry->fileName, &w, &h))
+        {
+            if (tiles[entry->tileId].dim.width <= 0 || tiles[entry->tileId].dim.height <= 0)
+            {
+                int j;
+                tiles[entry->tileId].dim.width = w;
+                tiles[entry->tileId].dim.height = h;
+
+                j = 15;
+                while ((j > 1) && (pow2long[j] > (int32_t)w))
+                    j--;
+                picsiz[entry->tileId] = (uint8_t)j;
+
+                j = 15;
+                while ((j > 1) && (pow2long[j] > (int32_t)h))
+                    j--;
+                picsiz[entry->tileId] += (uint8_t)(j << 4);
+                okCount++;
+            }
+            else
+            {
+                if ((tiles[entry->tileId].dim.width != w) || (tiles[entry->tileId].dim.height != h))
+                {
+                    mismatchCount++;
+                    if (logBudget > 0)
+                    {
+                        logBudget--;
+                        printf("loadpics: override tile %d PNG=%dx%d differs from tile metadata=%dx%d (will scale at decode)\n",
+                               (int)entry->tileId, (int)w, (int)h,
+                               (int)tiles[entry->tileId].dim.width,
+                               (int)tiles[entry->tileId].dim.height);
+                    }
+                }
+            }
+        }
+        else
+        {
+            failCount++;
+            if (logBudget > 0)
+            {
+                logBudget--;
+                printf("loadpics: override metadata failed for tile %d file '%s'\n",
+                       (int)entry->tileId, entry->fileName);
+            }
+        }
+    }
+
+    printf("loadpics: override metadata primed from PNG headers: new=%" PRId32 ", fail=%" PRId32 ", size-mismatch=%" PRId32 "\n",
+           okCount, failCount, mismatchCount);
+}
+
+static void init_override_palette_cache(void)
+{
+    int i;
+    for (i = 0; i < OVERRIDE_PAL_CACHE_SLOTS; i++)
+        overridePalCacheKey[i] = 0xffffffffu;
+    overridePalCacheInit = 1;
+}
+
 static uint8_t nearest_palette_index(uint8_t r, uint8_t g, uint8_t b)
 {
     int bestIdx = 0;
@@ -312,6 +434,22 @@ static uint8_t nearest_palette_index(uint8_t r, uint8_t g, uint8_t b)
     return (uint8_t)bestIdx;
 }
 
+static uint8_t nearest_palette_index_cached(uint8_t r, uint8_t g, uint8_t b)
+{
+    const uint32_t key = ((uint32_t)r << 16) | ((uint32_t)g << 8) | (uint32_t)b;
+    const uint32_t slot = (key * 2654435761u) >> (32 - 12);
+
+    if (!overridePalCacheInit)
+        init_override_palette_cache();
+
+    if (overridePalCacheKey[slot] == key)
+        return overridePalCacheValue[slot];
+
+    overridePalCacheKey[slot] = key;
+    overridePalCacheValue[slot] = nearest_palette_index(r, g, b);
+    return overridePalCacheValue[slot];
+}
+
 static int try_loadtile_from_override_png(short tilenume)
 {
     int32_t fileHandle;
@@ -324,6 +462,8 @@ static int try_loadtile_from_override_png(short tilenume)
     uint8_t *dst;
     int32_t pixelCount;
     int32_t x, y;
+    int32_t targetWidth;
+    int32_t targetHeight;
 
     const char *overrideFile;
 
@@ -333,6 +473,9 @@ static int try_loadtile_from_override_png(short tilenume)
     overrideFile = get_tile_override_file(tilenume);
     if (!overrideFile)
         return 0;
+
+    if (tiles[tilenume].data != NULL)
+        return 1;
 
     fileHandle = TCkopen4load(overrideFile, 0);
     if (fileHandle == -1)
@@ -372,20 +515,41 @@ static int try_loadtile_from_override_png(short tilenume)
         return 0;
     }
 
-    tiles[tilenume].dim.width = (short)width;
-    tiles[tilenume].dim.height = (short)height;
+    targetWidth = (tiles[tilenume].dim.width > 0) ? (int32_t)tiles[tilenume].dim.width : (int32_t)width;
+    targetHeight = (tiles[tilenume].dim.height > 0) ? (int32_t)tiles[tilenume].dim.height : (int32_t)height;
 
-    pixelCount = (int32_t)(width * height);
+    if ((targetWidth <= 0) || (targetHeight <= 0) ||
+        ((int64_t)targetWidth * (int64_t)targetHeight > 0x7fffffffLL))
+    {
+        free(rgba);
+        return 0;
+    }
+
+    if ((targetWidth != (int32_t)width) || (targetHeight != (int32_t)height))
+    {
+        static int overrideSizeWarnBudget = 128;
+        if (overrideSizeWarnBudget > 0)
+        {
+            overrideSizeWarnBudget--;
+            printf("loadtile: tile %d override '%s' PNG=%ux%u, using metadata size=%" PRId32 "x%" PRId32 " (scaled)\n",
+                   (int)tilenume, overrideFile, width, height, targetWidth, targetHeight);
+        }
+    }
+
+    tiles[tilenume].dim.width = (short)targetWidth;
+    tiles[tilenume].dim.height = (short)targetHeight;
+
+    pixelCount = targetWidth * targetHeight;
 
     {
         int j;
         j = 15;
-        while ((j > 1) && (pow2long[j] > (int32_t)width))
+        while ((j > 1) && (pow2long[j] > targetWidth))
             j--;
         picsiz[tilenume] = (uint8_t)j;
 
         j = 15;
-        while ((j > 1) && (pow2long[j] > (int32_t)height))
+        while ((j > 1) && (pow2long[j] > targetHeight))
             j--;
         picsiz[tilenume] += (uint8_t)(j << 4);
     }
@@ -402,17 +566,29 @@ static int try_loadtile_from_override_png(short tilenume)
     }
 
     dst = tiles[tilenume].data;
-    for (y = 0; y < (int32_t)height; y++)
+    for (y = 0; y < targetHeight; y++)
     {
-        for (x = 0; x < (int32_t)width; x++)
+        for (x = 0; x < targetWidth; x++)
         {
-            const int32_t srcIndex = (y * (int32_t)width + x) * 4;
-            const int32_t dstIndex = x * (int32_t)height + y;
+            const int32_t srcX = (x * (int32_t)width) / targetWidth;
+            const int32_t srcY = (y * (int32_t)height) / targetHeight;
+            const int32_t srcIndex = (srcY * (int32_t)width + srcX) * 4;
+            const int32_t dstIndex = x * targetHeight + y;
             const uint8_t r = rgba[srcIndex + 0];
             const uint8_t g = rgba[srcIndex + 1];
             const uint8_t b = rgba[srcIndex + 2];
             const uint8_t a = rgba[srcIndex + 3];
-            dst[dstIndex] = (a < 128) ? 255 : nearest_palette_index(r, g, b);
+            dst[dstIndex] = (a < 128) ? 255 : nearest_palette_index_cached(r, g, b);
+        }
+    }
+
+    {
+        static int overrideDecodeLogBudget = 128;
+        if (overrideDecodeLogBudget > 0)
+        {
+            overrideDecodeLogBudget--;
+            printf("loadtile: decoded override tile %d from '%s' (png=%ux%u -> tile=%" PRId32 "x%" PRId32 ", %" PRId32 " px)\n",
+                   (int)tilenume, overrideFile, width, height, targetWidth, targetHeight, pixelCount);
         }
     }
 
@@ -657,6 +833,8 @@ int loadpics(char  *filename, char * gamedir)
                 if (missingStreak >= ART_MISS_STREAK_STOP)
                     break;
             }
+            if (!seenAnyArt && k >= ART_MISS_STREAK_STOP)
+                break;
             continue;
         }
 
@@ -697,8 +875,11 @@ int loadpics(char  *filename, char * gamedir)
     }
 
     printf("Art files loaded: %" PRId32 " file(s) found by sparse scan\n", numtilefiles);
+    if (!seenAnyArt)
+        printf("loadpics: no ART files found; relying on DEF PNG overrides and header metadata\n");
 
     parse_tile_overrides_from_def();
+    prime_tile_override_metadata_from_png_headers();
 
     clearbuf(gotpic,(MAXTILES+31)>>5,0L);
 
