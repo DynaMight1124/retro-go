@@ -194,6 +194,33 @@ static int parse_file_token_from_block(const char *blockStart, const char *block
     }
 }
 
+static void apply_animtilerange_to_tiles(long startTile, long endTile, long speed, long animation)
+{
+    long i;
+    int32_t frameCount;
+    uint32_t animTypeBits;
+    uint32_t speedBits;
+
+    if ((startTile < 0) || (endTile < startTile) || (endTile >= MAXTILES))
+        return;
+
+    if ((speed < 0) || (speed > 15) || (animation < 0) || (animation > 3))
+        return;
+
+    frameCount = (int32_t)(endTile - startTile);
+    if (frameCount > 63)
+        frameCount = 63;
+
+    animTypeBits = ((uint32_t)animation & 3u) << 6;
+    speedBits = ((uint32_t)speed & 15u) << 24;
+
+    for (i = startTile; i <= endTile; i++)
+    {
+        uint32_t baseFlags = ((uint32_t)tiles[i].animFlags) & 0xF0FFFF00u;
+        tiles[i].animFlags = (int32_t)(baseFlags | (uint32_t)frameCount | animTypeBits | speedBits);
+    }
+}
+
 static void parse_tile_overrides_from_def(void)
 {
     int32_t defHandle;
@@ -284,6 +311,66 @@ static void parse_tile_overrides_from_def(void)
                 set_tile_override((short)tileId, pngName);
 
             scan = braceClose + 1;
+        }
+
+        scan = defText;
+        while (scan < end)
+        {
+            const char *kw = NULL;
+            const char *p;
+            const char *parseStart;
+            long startTile;
+            long endTile;
+            long speed;
+            long animation;
+
+            if (!find_keyword_ci(scan, end, "animtilerange", &kw))
+                break;
+
+            p = kw + strlen("animtilerange");
+
+            while ((p < end) && isspace((unsigned char)*p))
+                p++;
+            parseStart = p;
+            startTile = strtol(p, (char **)&p, 10);
+            if (p == parseStart)
+            {
+                scan = kw + 1;
+                continue;
+            }
+
+            while ((p < end) && isspace((unsigned char)*p))
+                p++;
+            parseStart = p;
+            endTile = strtol(p, (char **)&p, 10);
+            if (p == parseStart)
+            {
+                scan = kw + 1;
+                continue;
+            }
+
+            while ((p < end) && isspace((unsigned char)*p))
+                p++;
+            parseStart = p;
+            speed = strtol(p, (char **)&p, 10);
+            if (p == parseStart)
+            {
+                scan = kw + 1;
+                continue;
+            }
+
+            while ((p < end) && isspace((unsigned char)*p))
+                p++;
+            parseStart = p;
+            animation = strtol(p, (char **)&p, 10);
+            if (p == parseStart)
+            {
+                scan = kw + 1;
+                continue;
+            }
+
+            apply_animtilerange_to_tiles(startTile, endTile, speed, animation);
+            scan = p;
         }
 
         free(defText);
