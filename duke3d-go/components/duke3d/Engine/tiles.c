@@ -20,7 +20,8 @@
 
 char  artfilename[20];
 
-tile_t *tiles;//[MAXTILES];
+static EXT_RAM_BSS_ATTR tile_t tiles_static[MAXTILES];
+tile_t *tiles = tiles_static;
 
 int32_t numTiles;
 
@@ -970,7 +971,10 @@ int loadpics(char  *filename, char * gamedir)
 
     clearbuf(gotpic,(MAXTILES+31)>>5,0L);
 
-    cachesize = max(artsize,1048576);
+    // When the primary GRP is memory-backed (ZIP extracted to RAM), use a
+    // moderate cache floor to improve runtime reuse while staying memory-safe.
+    const int32_t min_cache_size = groupfile_primary_is_memory_backed() ? (512 * 1024) : (1024 * 1024);
+    cachesize = max(artsize, min_cache_size);
     cachesize = (cachesize + 15) & ~15; // Align size to 16 bytes
 
 #ifdef CONFIG_IDF_TARGET_ESP32
