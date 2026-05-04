@@ -48,6 +48,8 @@ Prepared for public release: 03/21/2003 - Charlie Wiederhold, 3D Realms
 #include <inttypes.h>
 #include "music.h"
 #include "rg_system.h"
+#include "rg_storage.h"
+#include "rg_utils.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
@@ -114,6 +116,7 @@ uint8_t  debug_on = 0,actor_tog = 0,memorycheckoveride=0;
 uint8_t *rtsptr;
 
 static volatile bool engine_exit_requested = false;
+static char g_unzipped_grp_path[512] = {0};
 
 bool rg_system_should_exit(void)
 {
@@ -2505,6 +2508,12 @@ void gameexit(char  *msg)
     }
 
     uninitgroupfile();
+
+    if (g_unzipped_grp_path[0] != '\0')
+    {
+        unlink(g_unzipped_grp_path);
+        g_unzipped_grp_path[0] = '\0';
+    }
 
     unlink("duke3d.tmp");
 
@@ -8109,6 +8118,29 @@ void findGRPToUse(char * groupfilefullpath){
 
     if (app && app->romPath && app->romPath[0] != '\0')
     {
+        if (rg_extension_match(app->romPath, "zip"))
+        {
+            void *grp_data = NULL;
+            size_t grp_size = 0;
+
+            if (!rg_storage_unzip_file(app->romPath, NULL, &grp_data, &grp_size, 0))
+            {
+                Error(EXIT_SUCCESS, "Unable to unzip ROM archive: %s\n", app->romPath);
+            }
+
+            snprintf(g_unzipped_grp_path, sizeof(g_unzipped_grp_path), "%s/duke3d.rom.grp", RG_BASE_PATH_CACHE);
+            if (!rg_storage_write_file(g_unzipped_grp_path, grp_data, grp_size, RG_FILE_ATOMIC_WRITE))
+            {
+                free(grp_data);
+                Error(EXIT_SUCCESS, "Unable to write temporary GRP file: %s\n", g_unzipped_grp_path);
+            }
+
+            free(grp_data);
+            snprintf(groupfilefullpath, 512, "%s", g_unzipped_grp_path);
+            RG_LOGI("Using Duke3D GRP extracted from ZIP: %s -> %s", app->romPath, groupfilefullpath);
+            return;
+        }
+
         snprintf(groupfilefullpath, 512, "%s", app->romPath);
         RG_LOGI("Using Duke3D GRP from boot config: %s", groupfilefullpath);
         return;
