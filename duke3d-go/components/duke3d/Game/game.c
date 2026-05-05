@@ -46,6 +46,9 @@ Prepared for public release: 03/21/2003 - Charlie Wiederhold, 3D Realms
 
 #include "duke3d.h"
 #include <inttypes.h>
+#include <ctype.h>
+#include <stdlib.h>
+#include <string.h>
 #include "music.h"
 #include "rg_system.h"
 #include "rg_storage.h"
@@ -7756,6 +7759,242 @@ void ShutDown( void )
 ===================
 */
 
+static int def_ci_starts_with(const char *s, const char *prefix)
+{
+    while (*prefix)
+    {
+        if (tolower((unsigned char)*s) != tolower((unsigned char)*prefix))
+            return 0;
+        s++;
+        prefix++;
+    }
+    return 1;
+}
+
+static int def_find_keyword_ci(const char *start, const char *end, const char *keyword, const char **out)
+{
+    size_t kwlen = strlen(keyword);
+    const char *p;
+
+    if ((start == NULL) || (end == NULL) || (start >= end) || (kwlen == 0))
+        return 0;
+
+    for (p = start; p + kwlen <= end; p++)
+    {
+        if ((p > start) && (isalnum((unsigned char)p[-1]) || p[-1] == '_'))
+            continue;
+
+        if (def_ci_starts_with(p, keyword))
+        {
+            const char after = p[kwlen];
+            if (!(isalnum((unsigned char)after) || after == '_'))
+            {
+                if (out) *out = p;
+                return 1;
+            }
+        }
+    }
+
+    return 0;
+}
+
+static int def_parse_string_value(const char *blockStart, const char *blockEnd, const char *key, char *out, size_t outSize)
+{
+    const char *kw = NULL;
+    const char *p;
+
+    if (!def_find_keyword_ci(blockStart, blockEnd, key, &kw))
+        return 0;
+
+    p = kw + strlen(key);
+    while ((p < blockEnd) && isspace((unsigned char)*p))
+        p++;
+
+    if (p >= blockEnd)
+        return 0;
+
+    if ((*p == '"') || (*p == '\''))
+    {
+        const char quote = *p++;
+        const char *start = p;
+        while ((p < blockEnd) && (*p != quote))
+            p++;
+        if (p <= start)
+            return 0;
+
+        {
+            size_t len = (size_t)(p - start);
+            if (len >= outSize)
+                len = outSize - 1;
+            memcpy(out, start, len);
+            out[len] = '\0';
+            return (len > 0);
+        }
+    }
+    else
+    {
+        const char *start = p;
+        while ((p < blockEnd) && !isspace((unsigned char)*p) && (*p != '}'))
+            p++;
+        if (p <= start)
+            return 0;
+
+        {
+            size_t len = (size_t)(p - start);
+            if (len >= outSize)
+                len = outSize - 1;
+            memcpy(out, start, len);
+            out[len] = '\0';
+            return (len > 0);
+        }
+    }
+}
+
+static int def_parse_int_value(const char *blockStart, const char *blockEnd, const char *key, int *out)
+{
+    const char *kw = NULL;
+    const char *p;
+    char *endp;
+    long v;
+
+    if (!def_find_keyword_ci(blockStart, blockEnd, key, &kw))
+        return 0;
+
+    p = kw + strlen(key);
+    while ((p < blockEnd) && isspace((unsigned char)*p))
+        p++;
+
+    if (p >= blockEnd)
+        return 0;
+
+    v = strtol(p, &endp, 10);
+    if (endp == p)
+        return 0;
+
+    *out = (int)v;
+    return 1;
+}
+
+static void apply_sound_overrides_from_def(void)
+{
+    int32_t defHandle;
+
+    defHandle = kopen4load("duke3d.def", 1);
+    if (defHandle == -1)
+        return;
+
+    {
+        int32_t defSize = kfilelength(defHandle);
+        char *defText;
+        const char *scan;
+        const char *end;
+        int overrideCount = 0;
+
+        if (defSize <= 0)
+        {
+            kclose(defHandle);
+            return;
+        }
+
+        defText = (char *)malloc((size_t)defSize + 1);
+        if (defText == NULL)
+        {
+            kclose(defHandle);
+            return;
+        }
+
+        if (kread(defHandle, defText, defSize) != defSize)
+        {
+            free(defText);
+            kclose(defHandle);
+            return;
+        }
+
+        defText[defSize] = '\0';
+        kclose(defHandle);
+
+        scan = defText;
+        end = defText + defSize;
+
+        while (scan < end)
+        {
+            const char *kw = NULL;
+            const char *p;
+            const char *braceOpen;
+            const char *braceClose;
+            int soundId;
+            char soundFile[14];
+            int minpitch;
+            int maxpitch;
+            int priority;
+            int type;
+            int distance;
+
+            if (!def_find_keyword_ci(scan, end, "sound", &kw))
+                break;
+
+            p = kw + strlen("sound");
+            while ((p < end) && isspace((unsigned char)*p))
+                p++;
+
+            if ((p >= end) || (*p != '{'))
+            {
+                scan = kw + 1;
+                continue;
+            }
+
+            braceOpen = p + 1;
+            braceClose = braceOpen;
+            while ((braceClose < end) && (*braceClose != '}'))
+                braceClose++;
+
+            if (braceClose >= end)
+                break;
+
+            if (!def_parse_int_value(braceOpen, braceClose, "id", &soundId) ||
+                (soundId < 0) || (soundId >= NUM_SOUNDS))
+            {
+                scan = braceClose + 1;
+                continue;
+            }
+
+            if (def_parse_string_value(braceOpen, braceClose, "file", soundFile, sizeof(soundFile)))
+            {
+                strncpy(sounds[soundId], soundFile, sizeof(sounds[soundId]) - 1);
+                sounds[soundId][sizeof(sounds[soundId]) - 1] = '\0';
+            }
+
+            if (def_parse_int_value(braceOpen, braceClose, "minpitch", &minpitch))
+                soundps[soundId] = (short)minpitch;
+            if (def_parse_int_value(braceOpen, braceClose, "maxpitch", &maxpitch))
+                soundpe[soundId] = (short)maxpitch;
+            if (def_parse_int_value(braceOpen, braceClose, "priority", &priority))
+                soundpr[soundId] = (uint8_t)priority;
+            if (def_parse_int_value(braceOpen, braceClose, "type", &type))
+                soundm[soundId] = (uint8_t)type;
+            if (def_parse_int_value(braceOpen, braceClose, "distance", &distance))
+                soundvo[soundId] = (short)distance;
+
+            printf("duke3d.def: sound override applied id=%d file='%s' min=%d max=%d prio=%u type=%u dist=%d\n",
+                   soundId,
+                   sounds[soundId],
+                   (int)soundps[soundId],
+                   (int)soundpe[soundId],
+                   (unsigned)soundpr[soundId],
+                   (unsigned)soundm[soundId],
+                   (int)soundvo[soundId]);
+            overrideCount++;
+
+            scan = braceClose + 1;
+        }
+
+        if (overrideCount > 0)
+            printf("duke3d.def: applied %d sound override(s)\n", overrideCount);
+
+        free(defText);
+    }
+}
+
 void compilecons(void)
 {
 	char  userconfilename[512];
@@ -7767,6 +8006,7 @@ void compilecons(void)
 	sprintf(userconfilename, "%s", confilename);
 
    loadefs(userconfilename,mymembuf, 0);
+   apply_sound_overrides_from_def();
 
 }
 

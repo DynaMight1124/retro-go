@@ -159,6 +159,240 @@ int MV_ErrorCode = MV_Ok;
 #define MV_SetErrorCode( status ) \
    MV_ErrorCode   = ( status );
 
+static uint16_t MV_ReadLE16( const uint8_t *p )
+{
+   return (uint16_t)( p[0] | ( p[1] << 8 ) );
+}
+
+static uint32_t MV_ReadLE32( const uint8_t *p )
+{
+   return (uint32_t)( p[0] | ( p[1] << 8 ) | ( p[2] << 16 ) | ( p[3] << 24 ) );
+}
+
+static int MV_DecodeIMAADPCMNibble( int predictor, int *index, int nibble )
+{
+   static const int indexTable[ 16 ] =
+   {
+      -1, -1, -1, -1, 2, 4, 6, 8,
+      -1, -1, -1, -1, 2, 4, 6, 8,
+   };
+
+   static const int stepTable[ 89 ] =
+   {
+         7,     8,     9,    10,    11,    12,    13,    14,
+        16,    17,    19,    21,    23,    25,    28,    31,
+        34,    37,    41,    45,    50,    55,    60,    66,
+        73,    80,    88,    97,   107,   118,   130,   143,
+       157,   173,   190,   209,   230,   253,   279,   307,
+       337,   371,   408,   449,   494,   544,   598,   658,
+       724,   796,   876,   963,  1060,  1166,  1282,  1411,
+      1552,  1707,  1878,  2066,  2272,  2499,  2749,  3024,
+      3327,  3660,  4026,  4428,  4871,  5358,  5894,  6484,
+      7132,  7845,  8630,  9493, 10442, 11487, 12635, 13899,
+     15289, 16818, 18500, 20350, 22385, 24623, 27086, 29794,
+     32767,
+   };
+
+   int step = stepTable[ *index ];
+   int delta = step >> 3;
+
+   if ( nibble & 1 ) delta += step >> 2;
+   if ( nibble & 2 ) delta += step >> 1;
+   if ( nibble & 4 ) delta += step;
+
+   predictor += ( nibble & 8 ) ? -delta : delta;
+   predictor = max( predictor, -32768 );
+   predictor = min( predictor, 32767 );
+
+   *index += indexTable[ nibble & 15 ];
+   *index = max( *index, 0 );
+   *index = min( *index, 88 );
+
+   return predictor;
+}
+
+static int MV_DecodeWAVIMAADPCM
+   (
+   const uint8_t *dataPtr,
+   uint32_t dataSize,
+   int channels,
+   int blockAlign,
+   int samplesPerBlock,
+   int16_t **decodedOut,
+   uint32_t *decodedSamplesPerChannelOut
+   )
+
+   {
+   uint32_t blocks;
+   uint64_t maxSamples;
+   uint64_t maxBytes;
+   int16_t *decoded;
+   uint32_t offset;
+   uint32_t writeIndex;
+
+   if ( decodedOut == NULL || decodedSamplesPerChannelOut == NULL )
+      {
+      return FALSE;
+      }
+
+   *decodedOut = NULL;
+   *decodedSamplesPerChannelOut = 0;
+
+   if ( ( channels != 1 && channels != 2 ) || blockAlign <= 0 || samplesPerBlock <= 0 || dataSize == 0 )
+      {
+      return FALSE;
+      }
+
+   if ( ( dataSize % (uint32_t)blockAlign ) != 0 )
+      {
+      return FALSE;
+      }
+
+   blocks = dataSize / (uint32_t)blockAlign;
+   if ( blocks == 0 )
+      {
+      return FALSE;
+      }
+
+   maxSamples = (uint64_t)blocks * (uint64_t)samplesPerBlock * (uint64_t)channels;
+   maxBytes = maxSamples * sizeof( int16_t );
+
+   if ( maxBytes == 0 || maxBytes > 0xffffffffu )
+      {
+      return FALSE;
+      }
+
+   if ( USRHOOKS_GetMem( ( void ** )&decoded, (uint32_t)maxBytes ) != USRHOOKS_Ok || decoded == NULL )
+      {
+      return FALSE;
+      }
+
+   offset = 0;
+   writeIndex = 0;
+
+   while ( offset < dataSize )
+      {
+      const uint8_t *block = dataPtr + offset;
+      uint32_t blockSize = (uint32_t)blockAlign;
+      int headerSize = 4 * channels;
+      int predictor[ 2 ] = { 0, 0 };
+      int index[ 2 ] = { 0, 0 };
+      int derivedSamplesPerBlock;
+      int blockSamplesPerChannel;
+      int remaining;
+      const uint8_t *src;
+      const uint8_t *srcEnd;
+
+      if ( blockSize < (uint32_t)headerSize )
+         {
+         USRHOOKS_FreeMem( decoded );
+         return FALSE;
+         }
+
+      for ( int ch = 0; ch < channels; ++ch )
+         {
+         const uint8_t *hdr = block + ( ch * 4 );
+         predictor[ ch ] = (int)(int16_t)MV_ReadLE16( hdr );
+         index[ ch ] = (int)hdr[ 2 ];
+
+         if ( index[ ch ] > 88 )
+            {
+            USRHOOKS_FreeMem( decoded );
+            return FALSE;
+            }
+         }
+
+      derivedSamplesPerBlock = 1 + ( ( (int)blockSize - headerSize ) * 2 ) / channels;
+      if ( derivedSamplesPerBlock <= 0 )
+         {
+         USRHOOKS_FreeMem( decoded );
+         return FALSE;
+         }
+
+      blockSamplesPerChannel = min( samplesPerBlock, derivedSamplesPerBlock );
+      if ( blockSamplesPerChannel <= 0 )
+         {
+         USRHOOKS_FreeMem( decoded );
+         return FALSE;
+         }
+
+      for ( int ch = 0; ch < channels; ++ch )
+         {
+         decoded[ writeIndex++ ] = (int16_t)predictor[ ch ];
+         }
+
+      remaining = blockSamplesPerChannel - 1;
+      src = block + headerSize;
+      srcEnd = block + blockSize;
+
+      if ( channels == 1 )
+         {
+         while ( remaining > 0 )
+            {
+            uint8_t byte;
+
+            if ( src >= srcEnd )
+               {
+               USRHOOKS_FreeMem( decoded );
+               return FALSE;
+               }
+
+            byte = *src++;
+
+            predictor[ 0 ] = MV_DecodeIMAADPCMNibble( predictor[ 0 ], &index[ 0 ], byte & 0x0f );
+            decoded[ writeIndex++ ] = (int16_t)predictor[ 0 ];
+            --remaining;
+            if ( remaining <= 0 )
+               {
+               break;
+               }
+
+            predictor[ 0 ] = MV_DecodeIMAADPCMNibble( predictor[ 0 ], &index[ 0 ], byte >> 4 );
+            decoded[ writeIndex++ ] = (int16_t)predictor[ 0 ];
+            --remaining;
+            }
+         }
+      else
+         {
+         while ( remaining > 0 )
+            {
+            uint8_t chBytes[ 2 ][ 4 ];
+
+            if ( src + 8 > srcEnd )
+               {
+               USRHOOKS_FreeMem( decoded );
+               return FALSE;
+               }
+
+            memcpy( chBytes[ 0 ], src, 4 );
+            memcpy( chBytes[ 1 ], src + 4, 4 );
+            src += 8;
+
+            for ( int i = 0; i < 8 && remaining > 0; ++i )
+               {
+               for ( int ch = 0; ch < 2; ++ch )
+                  {
+                  uint8_t byte = chBytes[ ch ][ i >> 1 ];
+                  int nibble = ( i & 1 ) ? ( byte >> 4 ) : ( byte & 0x0f );
+                  predictor[ ch ] = MV_DecodeIMAADPCMNibble( predictor[ ch ], &index[ ch ], nibble );
+                  }
+
+               decoded[ writeIndex++ ] = (int16_t)predictor[ 0 ];
+               decoded[ writeIndex++ ] = (int16_t)predictor[ 1 ];
+               --remaining;
+               }
+            }
+         }
+
+      offset += blockSize;
+      }
+
+   *decodedOut = decoded;
+   *decodedSamplesPerChannelOut = writeIndex / (uint32_t)channels;
+
+   return TRUE;
+   }
+
 
 /*---------------------------------------------------------------------
    Function: MV_ErrorString
@@ -404,6 +638,8 @@ IRAM_ATTR void MV_StopVoice( VoiceNode *voice )
 {
    VoiceNode* pPrev;
    VoiceNode* pNext;
+   void* rawdataptr = NULL;
+   int ownsRawData = FALSE;
 
    unsigned  flags;
 
@@ -412,6 +648,12 @@ IRAM_ATTR void MV_StopVoice( VoiceNode *voice )
 
    pPrev = voice->prev;
    pNext = voice->next;
+
+   ownsRawData = voice->ownsRawData;
+   rawdataptr = voice->rawdataptr;
+   voice->ownsRawData = FALSE;
+   voice->rawdataptr = NULL;
+   voice->rawdatasiz = 0;
 
    // move the voice from the play list to the free list
    LL_Remove( voice, next, prev );
@@ -432,6 +674,11 @@ IRAM_ATTR void MV_StopVoice( VoiceNode *voice )
 
 
    RestoreInterrupts( flags );
+
+   if ( ownsRawData && rawdataptr != NULL )
+      {
+      USRHOOKS_FreeMem( rawdataptr );
+      }
 }
 
 
@@ -1202,6 +1449,9 @@ VoiceNode *MV_AllocVoice
    while( MV_VoicePlaying( MV_VoiceHandle ) );
 
    voice->handle = MV_VoiceHandle;
+   voice->rawdataptr = NULL;
+   voice->rawdatasiz = 0;
+   voice->ownsRawData = FALSE;
 
    return( voice );
    }
@@ -2327,13 +2577,33 @@ int MV_PlayLoopedWAV
    )
 
    {
-   riff_header   *riff;
-   format_header *format;
-   data_header   *data;
-   VoiceNode     *voice;
-   int length;
-   int absloopend;
-   int absloopstart;
+   const uint8_t *fmtData = NULL;
+   uint32_t fmtSize = 0;
+   const uint8_t *dataPtr = NULL;
+   uint32_t dataSize = 0;
+   uint32_t wavLength;
+   uint32_t offset;
+
+   uint16_t wFormatTag;
+   uint16_t nChannels;
+   uint32_t nSamplesPerSec;
+   uint16_t nBlockAlign;
+   uint16_t nBitsPerSample;
+
+   VoiceNode *voice;
+   int bits;
+   char *nextBlock;
+   unsigned long blockLength;
+   unsigned long sampleLength;
+   long loopstartBytes;
+   long loopendBytes;
+   long absloopstart;
+   long absloopend;
+
+   int16_t *decodedPCM = NULL;
+   uint32_t decodedSamplesPerChannel = 0;
+   uint32_t decodedBytes = 0;
+   int ownsRawData = FALSE;
 
    if ( !MV_Installed )
       {
@@ -2341,40 +2611,133 @@ int MV_PlayLoopedWAV
       return( MV_Error );
       }
 
-   riff = ( riff_header * )ptr;
-
-   if ( ( strncmp( riff->RIFF, "RIFF", 4 ) != 0 ) ||
-      ( strncmp( riff->WAVE, "WAVE", 4 ) != 0 ) ||
-      ( strncmp( riff->fmt, "fmt ", 4) != 0 ) )
+   if ( ptr == NULL )
       {
       MV_SetErrorCode( MV_InvalidWAVFile );
       return( MV_Error );
       }
 
-   format = ( format_header * )( riff + 1 );
-   data   = ( data_header * )( ( ( char * )format ) + riff->format_size );
-
-   // Check if it's PCM data.
-   if ( format->wFormatTag != 1 )
+   if ( memcmp( ptr, "RIFF", 4 ) != 0 || memcmp( ptr + 8, "WAVE", 4 ) != 0 )
       {
       MV_SetErrorCode( MV_InvalidWAVFile );
       return( MV_Error );
       }
 
-   if ( format->nChannels != 1 )
+   wavLength = MV_ReadLE32( ptr + 4 ) + 8;
+   if ( wavLength < 12 )
       {
       MV_SetErrorCode( MV_InvalidWAVFile );
       return( MV_Error );
       }
 
-   if ( ( format->nBitsPerSample != 8 ) &&
-      ( format->nBitsPerSample != 16 ) )
+   offset = 12;
+   while ( offset + 8 <= wavLength )
+      {
+      const uint8_t *chunk = ptr + offset;
+      uint32_t chunkSize = MV_ReadLE32( chunk + 4 );
+      uint32_t chunkDataOffset = offset + 8;
+      uint32_t chunkPaddedSize = chunkSize + ( chunkSize & 1 );
+
+      if ( chunkDataOffset > wavLength || chunkSize > wavLength - chunkDataOffset )
+         {
+         MV_SetErrorCode( MV_InvalidWAVFile );
+         return( MV_Error );
+         }
+
+      if ( memcmp( chunk, "fmt ", 4 ) == 0 )
+         {
+         fmtData = chunk + 8;
+         fmtSize = chunkSize;
+         }
+      else if ( memcmp( chunk, "data", 4 ) == 0 )
+         {
+         dataPtr = chunk + 8;
+         dataSize = chunkSize;
+         break;
+         }
+
+      if ( chunkDataOffset + chunkPaddedSize < chunkDataOffset )
+         {
+         MV_SetErrorCode( MV_InvalidWAVFile );
+         return( MV_Error );
+         }
+
+      offset = chunkDataOffset + chunkPaddedSize;
+      }
+
+   if ( fmtData == NULL || fmtSize < 16 || dataPtr == NULL || dataSize == 0 )
       {
       MV_SetErrorCode( MV_InvalidWAVFile );
       return( MV_Error );
       }
 
-   if ( strncmp( data->DATA, "data", 4 ) != 0 )
+   wFormatTag = MV_ReadLE16( fmtData + 0 );
+   nChannels = MV_ReadLE16( fmtData + 2 );
+   nSamplesPerSec = MV_ReadLE32( fmtData + 4 );
+   nBlockAlign = MV_ReadLE16( fmtData + 12 );
+   nBitsPerSample = MV_ReadLE16( fmtData + 14 );
+
+   // This mixer path only supports mono source files.
+   if ( nChannels != 1 )
+      {
+      MV_SetErrorCode( MV_InvalidWAVFile );
+      return( MV_Error );
+      }
+
+   if ( wFormatTag == 1 )
+      {
+      if ( ( nBitsPerSample != 8 && nBitsPerSample != 16 ) || nBlockAlign == 0 )
+         {
+         MV_SetErrorCode( MV_InvalidWAVFile );
+         return( MV_Error );
+         }
+
+      bits = nBitsPerSample;
+      nextBlock = (char *)dataPtr;
+
+      if ( bits == 16 )
+         {
+         dataSize &= ~1u;
+         sampleLength = dataSize / 2;
+         }
+      else
+         {
+         sampleLength = dataSize;
+         }
+      }
+   else if ( wFormatTag == 0x0011 )
+      {
+      int samplesPerBlock;
+
+      if ( fmtSize < 20 || nBlockAlign == 0 )
+         {
+         MV_SetErrorCode( MV_InvalidWAVFile );
+         return( MV_Error );
+         }
+
+      samplesPerBlock = MV_ReadLE16( fmtData + 18 );
+      if ( samplesPerBlock <= 0 )
+         {
+         MV_SetErrorCode( MV_InvalidWAVFile );
+         return( MV_Error );
+         }
+
+      if ( !MV_DecodeWAVIMAADPCM( dataPtr, dataSize, nChannels, nBlockAlign,
+         samplesPerBlock, &decodedPCM, &decodedSamplesPerChannel ) ||
+         decodedPCM == NULL || decodedSamplesPerChannel == 0 )
+         {
+         MV_SetErrorCode( MV_InvalidWAVFile );
+         return( MV_Error );
+         }
+
+      bits = 16;
+      decodedBytes = decodedSamplesPerChannel * sizeof( int16_t );
+      nextBlock = (char *)decodedPCM;
+      sampleLength = decodedSamplesPerChannel;
+      dataSize = decodedBytes;
+      ownsRawData = TRUE;
+      }
+   else
       {
       MV_SetErrorCode( MV_InvalidWAVFile );
       return( MV_Error );
@@ -2384,27 +2747,34 @@ int MV_PlayLoopedWAV
    voice = MV_AllocVoice( priority );
    if ( voice == NULL )
       {
+      if ( ownsRawData && decodedPCM != NULL )
+         {
+         USRHOOKS_FreeMem( decodedPCM );
+         }
+
       MV_SetErrorCode( MV_NoVoices );
       return( MV_Error );
       }
 
-   voice->wavetype    = WAV;
-   voice->bits        = format->nBitsPerSample;
-   voice->GetSound    = MV_GetNextWAVBlock;
-
-   length = data->size;
+   loopstartBytes = loopstart;
+   loopendBytes = loopend;
    absloopstart = loopstart;
-   absloopend   = loopend;
-   if ( voice->bits == 16 )
+   absloopend = loopend;
+
+   if ( bits == 16 )
       {
-      loopstart  *= 2;
-      data->size &= ~1;
-      loopend    *= 2;
-      length     /= 2;
+      loopstartBytes *= 2;
+      loopendBytes *= 2;
       }
 
-   loopend    = min( loopend, data->size );
-   absloopend = min( absloopend, length );
+   loopendBytes = min( loopendBytes, (long)dataSize );
+   absloopend = min( absloopend, (long)sampleLength );
+
+   blockLength = absloopend;
+
+   voice->wavetype    = WAV;
+   voice->bits        = bits;
+   voice->GetSound    = MV_GetNextWAVBlock;
 
    voice->Playing     = TRUE;
    voice->DemandFeed  = NULL;
@@ -2412,8 +2782,8 @@ int MV_PlayLoopedWAV
    voice->LoopCount   = 0;
    voice->position    = 0;
    voice->length      = 0;
-   voice->BlockLength = absloopend;
-   voice->NextBlock   = ( char * )( data + 1 );
+   voice->BlockLength = blockLength;
+   voice->NextBlock   = nextBlock;
    voice->next        = NULL;
    voice->prev        = NULL;
    voice->priority    = priority;
@@ -2424,18 +2794,22 @@ int MV_PlayLoopedWAV
    voice->GVal[2]     = 0;
    voice->GVal[3]     = 0;
    voice->callbackval = callbackval;
-   voice->LoopStart   = voice->NextBlock + loopstart;
-   voice->LoopEnd     = voice->NextBlock + loopend;
+   voice->rawdataptr  = ownsRawData ? (void *)decodedPCM : (void *)ptr;
+   voice->rawdatasiz  = ownsRawData ? decodedBytes : wavLength;
+   voice->ownsRawData = ownsRawData;
+
+   voice->LoopStart   = voice->NextBlock + loopstartBytes;
+   voice->LoopEnd     = voice->NextBlock + loopendBytes;
    voice->LoopSize    = absloopend - absloopstart;
 
-   if ( ( loopstart >= data->size ) || ( loopstart < 0 ) )
+   if ( ( loopstartBytes >= (long)dataSize ) || ( loopstartBytes < 0 ) )
       {
       voice->LoopStart = NULL;
       voice->LoopEnd   = NULL;
-      voice->BlockLength = length;
+      voice->BlockLength = sampleLength;
       }
 
-   MV_SetVoicePitch( voice, format->nSamplesPerSec, pitchoffset );
+   MV_SetVoicePitch( voice, nSamplesPerSec, pitchoffset );
    MV_SetVoiceVolume( voice, vol, left, right );
    MV_PlayVoice( voice );
 

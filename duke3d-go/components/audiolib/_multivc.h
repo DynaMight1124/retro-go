@@ -137,6 +137,10 @@ typedef struct VoiceNode
 
    unsigned long callbackval;
 
+   void         *rawdataptr;
+   unsigned long rawdatasiz;
+   int           ownsRawData;
+
    } VoiceNode;
 
 typedef struct
