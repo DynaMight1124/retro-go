@@ -1,0 +1,2 @@
+#!/bin/sh
+mksquashfs ./opk ecwolf.opk -all-root -noappend -no-exports -no-xattrs
