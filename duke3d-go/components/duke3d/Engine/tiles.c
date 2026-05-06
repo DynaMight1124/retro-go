@@ -195,6 +195,53 @@ static int parse_file_token_from_block(const char *blockStart, const char *block
     }
 }
 
+static int parse_int_token_from_block(const char *blockStart, const char *blockEnd, const char *token, long *outValue)
+{
+    const char *kw = NULL;
+    const char *p;
+    const char *parseStart;
+    long value;
+
+    if (!outValue)
+        return 0;
+
+    if (!find_keyword_ci(blockStart, blockEnd, token, &kw))
+        return 0;
+
+    p = kw + strlen(token);
+    while ((p < blockEnd) && isspace((unsigned char)*p))
+        p++;
+
+    parseStart = p;
+    value = strtol(p, (char **)&p, 10);
+    if (p == parseStart)
+        return 0;
+
+    *outValue = value;
+    return 1;
+}
+
+static void set_tile_offsets(short tileId, long xoffset, long yoffset)
+{
+    uint32_t flags;
+    int32_t xofs8 = (int32_t)xoffset;
+    int32_t yofs8 = (int32_t)yoffset;
+
+    if ((tileId < 0) || (tileId >= MAXTILES))
+        return;
+
+    if (xofs8 < -128) xofs8 = -128;
+    if (xofs8 > 127) xofs8 = 127;
+    if (yofs8 < -128) yofs8 = -128;
+    if (yofs8 > 127) yofs8 = 127;
+
+    flags = (uint32_t)tiles[tileId].animFlags;
+    flags &= 0xFF0000FFu;
+    flags |= ((uint32_t)((uint8_t)(int8_t)xofs8) << 8);
+    flags |= ((uint32_t)((uint8_t)(int8_t)yofs8) << 16);
+    tiles[tileId].animFlags = (int32_t)flags;
+}
+
 static void apply_animtilerange_to_tiles(long startTile, long endTile, long speed, long animation)
 {
     long i;
@@ -272,6 +319,10 @@ static void parse_tile_overrides_from_def(void)
             const char *braceOpen;
             const char *braceClose;
             char pngName[TILE_OVERRIDE_NAME_MAX];
+            long parsedXoff = 0;
+            long parsedYoff = 0;
+            int hasXoff = 0;
+            int hasYoff = 0;
 
             if (!find_keyword_ci(scan, end, "tilefromtexture", &kw))
                 break;
@@ -310,6 +361,25 @@ static void parse_tile_overrides_from_def(void)
 
             if (parse_file_token_from_block(braceOpen, braceClose, pngName, sizeof(pngName)))
                 set_tile_override((short)tileId, pngName);
+
+            hasXoff = parse_int_token_from_block(braceOpen, braceClose, "xoffset", &parsedXoff);
+            hasYoff = parse_int_token_from_block(braceOpen, braceClose, "yoffset", &parsedYoff);
+            if (hasXoff || hasYoff)
+            {
+                const int32_t currentXoff = (int32_t)(int8_t)((tiles[tileId].animFlags >> 8) & 255);
+                const int32_t currentYoff = (int32_t)(int8_t)((tiles[tileId].animFlags >> 16) & 255);
+                const long finalXoff = hasXoff ? parsedXoff : currentXoff;
+                const long finalYoff = hasYoff ? parsedYoff : currentYoff;
+                set_tile_offsets((short)tileId, finalXoff, finalYoff);
+
+                if (tileId == 2544)
+                {
+                    printf("tilefromtexture: tile 2544 parsed offsets x=%ld y=%ld (raw x token=%s y token=%s)\n",
+                           finalXoff, finalYoff,
+                           hasXoff ? "present" : "missing",
+                           hasYoff ? "present" : "missing");
+                }
+            }
 
             scan = braceClose + 1;
         }
