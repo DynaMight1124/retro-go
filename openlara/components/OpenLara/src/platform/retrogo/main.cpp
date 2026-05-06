@@ -3,6 +3,9 @@
 
 #include <retro-go.h>
 
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
+
 #include "game.h"
 
 Inventory *inventory = NULL;
@@ -45,7 +48,7 @@ namespace Game {
 }
 
 static void sound_task(void *arg) {
-    while (1) {
+    while (!Core::isQuit) {
         if (Game::sound_active) {
             Game::sound_running = true;
 
@@ -59,10 +62,13 @@ static void sound_task(void *arg) {
             rg_task_yield();
         }
     }
+    vTaskDelete(NULL);
 }
 
 // --- Display / GAPI (Software Rasterizer Stub) ---
 // TODO: Implement GAPI for software rasterizer or simple GL
+
+static volatile bool game_finished = false;
 
 // --- Entry Point ---
 static void openlara_task(void *arg) {
@@ -169,12 +175,17 @@ static void openlara_task(void *arg) {
         }
     }
 
+    Game::sound_active = false;
     Game::deinit();
-    rg_system_restart();
-}
 
-#include <freertos/FreeRTOS.h>
-#include <freertos/task.h>
+    // Ensure all background tasks and DMA transfers have finished before pulling the plug
+    while (rg_display_is_busy() || Game::sound_running) {
+        rg_task_delay(10);
+    }
+
+    game_finished = true;
+    vTaskDelete(NULL);
+}
 
 extern "C" void app_main() {
     const rg_config_t config = {
@@ -205,7 +216,14 @@ extern "C" void app_main() {
         0
     );
 
-    while(1) {
-        rg_task_delay(1000);
+    // Wait for the game task to signal completion. We monitor the flag instead of Core::isQuit
+    // to ensure the engine has finished its teardown before we call the system exit.
+    while (!game_finished) {
+        rg_task_delay(10);
     }
+
+    // On ESP32-P4, we MUST call the system exit from this internal RAM context
+    // because it uses the flash/OTA APIs which don't support being called from a PSRAM stack.
+    rg_task_delay(50); // Extra safety for FreeRTOS idle cleanup
+    rg_system_exit();
 }
