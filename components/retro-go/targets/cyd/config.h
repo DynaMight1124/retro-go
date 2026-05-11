@@ -24,19 +24,11 @@
 #define RG_SCREEN_BACKLIGHT         1
 #define RG_SCREEN_WIDTH             320
 #define RG_SCREEN_HEIGHT            240
-#define RG_SCREEN_ROTATE            0
+#define RG_SCREEN_ROTATION          0
+#define RG_SCREEN_RGB_BGR           1
 #define RG_SCREEN_VISIBLE_AREA      {0, 0, 0, 0}
 #define RG_SCREEN_SAFE_AREA         {0, 0, 0, 0}
-
-
-#define ST7789_MADCTL 0x36 // Memory Access Control
-#define ST7789_MADCTL_MV 0x20
-#define ST7789_MADCTL_RGB 0x00
-#define ST7789_MADCTL_BGR 0x08
-
-
 #define RG_SCREEN_INIT()                                                                                         \
-    ILI9341_CMD(ST7789_MADCTL, (ST7789_MADCTL_BGR));                                                             \
     ILI9341_CMD(0x21);                       /* Invert colors */                                                 \
     ILI9341_CMD(0xC0, 0x1B);                 /* Power control   //VRH[5:0] */                                    \
     ILI9341_CMD(0xC1, 0x12);                 /* Power control   //SAP[2:0];BT[3:0] */                            \

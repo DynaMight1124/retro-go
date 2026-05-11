@@ -32,6 +32,8 @@
 #include "targets/crokpocket/config.h"
 #elif defined(RG_TARGET_CYD)
 #include "targets/cyd/config.h"
+#elif defined(RG_TARGET_CYD_MINITV)
+#include "targets/cyd-minitv/config.h"
 #elif defined(RG_TARGET_VMU_S3)
 #include "targets/vmu-s3/config.h"
 #elif defined(RG_TARGET_REDROID_GO)
