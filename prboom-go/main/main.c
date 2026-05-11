@@ -587,14 +587,20 @@ void app_main()
     }
 
     myargv = doom_argv;
-    myargc = pwad ? 7 : 5;
-    doom_argv[0] = "doom";
-    doom_argv[1] = "-save";
-    doom_argv[2] = RG_BASE_PATH_SAVES "/doom";
-    doom_argv[3] = "-iwad";
-    doom_argv[4] = iwad;
-    doom_argv[5] = "-file";
-    doom_argv[6] = pwad;
+    myargc = 0;
+    doom_argv[myargc++] = "doom";
+    doom_argv[myargc++] = "-save";
+    doom_argv[myargc++] = RG_BASE_PATH_SAVES "/doom";
+    if (iwad && iwad[0])
+    {
+        doom_argv[myargc++] = "-iwad";
+        doom_argv[myargc++] = iwad;
+    }
+    if (pwad && pwad[0])
+    {
+        doom_argv[myargc++] = "-file";
+        doom_argv[myargc++] = pwad;
+    }
     doom_argv[myargc] = 0;
 
     Z_Init();

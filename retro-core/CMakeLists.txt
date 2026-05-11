@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.5)
-set(COMPONENTS "main retro-go nofrendo gnuboy pce-go gw-emulator handy smsplus")
-set(RG_ENABLE_NETWORKING 0)
+set(COMPONENTS "main retro-go nofrendo gnuboy pce-go gw-emulator handy smsplus launcher esp_wifi esp_http_server")
+set(RG_ENABLE_NETWORKING 1)
 include(../base.cmake)
 project(retro-core)

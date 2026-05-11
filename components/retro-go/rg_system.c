@@ -146,12 +146,26 @@ static bool update_boot_config(const char *partition, const char *name, const ch
     const esp_partition_t *current = esp_ota_get_boot_partition();
     if (partition && (!current || strncmp(current->label, partition, 16) != 0))
     {
-        esp_err_t err = esp_ota_set_boot_partition(esp_partition_find_first(
-                ESP_PARTITION_TYPE_APP, ESP_PARTITION_SUBTYPE_ANY, partition));
-        if (err != ESP_OK)
+        const esp_partition_t *target = esp_partition_find_first(
+                ESP_PARTITION_TYPE_APP, ESP_PARTITION_SUBTYPE_ANY, partition);
+
+        if (target)
         {
-            RG_LOGE("esp_ota_set_boot_partition returned 0x%02X!", err);
+            esp_err_t err = esp_ota_set_boot_partition(target);
+            if (err != ESP_OK)
+            {
+                RG_LOGE("esp_ota_set_boot_partition returned 0x%02X!", err);
+                return false;
+            }
+        }
+        else if (strcmp(partition, app.name) != 0)
+        {
+            RG_LOGE("Partition '%s' not found!", partition);
             return false;
+        }
+        else
+        {
+            RG_LOGI("Partition '%s' not found but matches current app, staying put.", partition);
         }
     }
 #endif
@@ -945,7 +959,12 @@ void rg_system_restart(void)
 void rg_system_exit(void)
 {
     RG_LOGW("Exiting application!");
-    rg_system_switch_app(RG_APP_LAUNCHER, NULL, NULL, 0, 0);
+    const char *launcher = RG_APP_LAUNCHER;
+    if (!rg_system_have_app(launcher))
+    {
+        launcher = NULL; // NULL means current partition
+    }
+    rg_system_switch_app(launcher, NULL, NULL, 0, 0);
 }
 
 void rg_system_switch_app(const char *partition, const char *name, const char *args, int save_slot, uint32_t flags)
@@ -958,17 +977,24 @@ void rg_system_switch_app(const char *partition, const char *name, const char *a
     RG_PANIC("Failed to switch app!");
 }
 
-bool rg_system_have_app(const char *app)
+bool rg_system_have_app(const char *name)
 {
+    if (!name)
+        return false;
+
+    if (strcmp(name, app.name) == 0)
+        return true;
+
 #if defined(ESP_PLATFORM)
-    return esp_partition_find_first(ESP_PARTITION_TYPE_APP, ESP_PARTITION_SUBTYPE_ANY, app) != NULL;
+    if (esp_partition_find_first(ESP_PARTITION_TYPE_APP, ESP_PARTITION_SUBTYPE_ANY, name) != NULL)
+        return true;
 #elif defined(RG_TARGET_SDL2)
-    char exe[strlen(app) + 5];
-    sprintf(exe, "%s.exe", app);
-    return rg_storage_stat(app).is_file || rg_storage_stat(exe).is_file;
-#else
-    return true;
+    char exe[strlen(name) + 5];
+    sprintf(exe, "%s.exe", name);
+    return rg_storage_stat(name).is_file || rg_storage_stat(exe).is_file;
 #endif
+
+    return false;
 }
 
 void rg_system_panic(const char *context, const char *message)

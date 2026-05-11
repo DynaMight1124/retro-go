@@ -7,7 +7,8 @@ void app_main(void)
         .sampleRate = AUDIO_SAMPLE_RATE,
         .frameRate = 60, // This was the old default, let's keep it
         .storageRequired = true,
-        .romRequired = true,
+        .romRequired = false, // Launcher doesn't need a ROM
+        .mallocAlwaysInternal = 1024,
     });
 
     RG_LOGI("configNs=%s", app->configNs);
