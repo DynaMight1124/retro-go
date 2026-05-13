@@ -8366,34 +8366,35 @@ static int load_duke3d_groupfile(void)
 {
 	// FIX_00032: Added multi base GRP manager. Use duke3d*.grp to handle multiple grp.
 
-	char  groupfilefullpath[512];
-	   groupfilefullpath[0] = '\0';
-	   const rg_app_t *app = rg_system_get_app();
+	char groupfilefullpath[512];
+	const rg_app_t *app = rg_system_get_app();
 
-	   if (app && app->romPath && app->romPath[0] != '\0' && rg_extension_match(app->romPath, "zip"))
-	   {
-	       void *grp_data = NULL;
-	       size_t grp_size = 0;
+	if (app && app->romPath && app->romPath[0] != '\0' && rg_extension_match(app->romPath, "zip"))
+	{
+		void *grp_data = NULL;
+		size_t grp_size = 0;
 
-	       if (!rg_storage_unzip_file(app->romPath, NULL, &grp_data, &grp_size, 0))
-	           Error(EXIT_SUCCESS, "Unable to unzip ROM archive: %s\n", app->romPath);
+		if (!rg_storage_unzip_file(app->romPath, NULL, &grp_data, &grp_size, 0))
+			Error(EXIT_SUCCESS, "Unable to unzip ROM archive: %s\n", app->romPath);
 
-	       if (initgroupfile_from_memory(app->romPath, grp_data, (int32_t)grp_size) == -1)
-	       {
-	           free(grp_data);
-	           Error(EXIT_SUCCESS, "Unable to initialize GRP from ZIP ROM: %s\n", app->romPath);
-	       }
+		if (initgroupfile_from_memory(app->romPath, grp_data, (int32_t)grp_size) == -1)
+		{
+			free(grp_data);
+			Error(EXIT_SUCCESS, "Unable to initialize GRP from ZIP ROM: %s\n", app->romPath);
+		}
 
-	       RG_LOGI("Using Duke3D GRP extracted to RAM from ZIP: %s", app->romPath);
-	       return true;
-	   }
+		RG_LOGI("Using Duke3D GRP extracted to RAM from ZIP: %s", app->romPath);
+		return true;
+	}
 
-	   findGRPToUse(groupfilefullpath);
+	groupfilefullpath[0] = '\0';
 
-	   if (groupfilefullpath[0] == '\0')
-	   {
-	       return false;
-	   }
+	findGRPToUse(groupfilefullpath);
+
+	if (groupfilefullpath[0] == '\0')
+	{
+		return false;
+	}
 
 	FixFilePath(groupfilefullpath);
 
