@@ -1624,6 +1624,7 @@ void loadefs(char  *filenam, char  *mptr, int readfromGRP)
 					"Out Of Synch errors. You can safely delete those files so xDuke will\n"
 					"always use the GRP internal CON files.\n"
 					"\nReload normal GRP internal *.CON files? (Y/N) : ");
+                        /*
 			do
 				kbdKey = getch() | ' ';
 			while(kbdKey != 'y' && kbdKey != 'n');
@@ -1634,6 +1635,7 @@ void loadefs(char  *filenam, char  *mptr, int readfromGRP)
 				conVersion = 13;
 				loadefs(filenam, mptr, 1); // force GRP con files
 			}
+                        */
 		}
 		else if(conVersion != 15 && getGRPcrc32(0)==CRC_BASE_GRP_ATOMIC_15 && !getGRPcrc32(1))
 		{
@@ -1642,6 +1644,7 @@ void loadefs(char  *filenam, char  *mptr, int readfromGRP)
 					"Out Of Synch errors. You can safely delete those files so xDuke will\n"
 					"always use the GRP internal CON files.\n"
 					"\nReload normal GRP internal *.CON files? (Y/N) : ");
+                        /*
 			do
 				kbdKey = getch() | ' ';
 			while(kbdKey != 'y' && kbdKey != 'n');
@@ -1651,6 +1654,7 @@ void loadefs(char  *filenam, char  *mptr, int readfromGRP)
 			{
 				loadefs(filenam, mptr, 1); // force GRP con files
 			}
+                        */
 		}else if(conVersion != 14 && getGRPcrc32(0)==CRC_BASE_GRP_PLUTONIUM_14 && !getGRPcrc32(1))
 		{
 			printf(	"\nYou are trying to use a v1.4 PLUTONIUM *.GRP with v1.3 or v1.5\n"
@@ -1658,6 +1662,7 @@ void loadefs(char  *filenam, char  *mptr, int readfromGRP)
 					"Out Of Synch errors. You can safely delete those files so xDuke will\n"
 					"always use the GRP internal CON files.\n"
 					"\nReload normal GRP internal *.CON files? (Y/N) : ");
+                        /*
 			do
 				kbdKey = getch() | ' ';
 			while(kbdKey != 'y' && kbdKey != 'n');
@@ -1667,6 +1672,7 @@ void loadefs(char  *filenam, char  *mptr, int readfromGRP)
 			{
 				loadefs(filenam, mptr, 1); // force GRP con files
 			}
+                        */
 		}
 	}
 }

@@ -5,13 +5,10 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
-// Duke3D stack usage peaked at ~36KB in testing. We use 48KB in Internal DRAM for ESP32.
-// S3/P4 use the original 144KB in PSRAM.
-#if CONFIG_IDF_TARGET_ESP32
+// Duke3D stack usage peaked at ~36KB in testing. Use 48KB in Internal DRAM.
+// Must use MEM_FAST (internal DRAM) so that SPI flash cache disable operations
+// work correctly when using LittleFS on internal storage (no SD card).
 #define DUKE_STACK_SIZE (48 * 1024)
-#else
-#define DUKE_STACK_SIZE (144 * 1024)
-#endif
 
 static TaskHandle_t duke_task_handle = NULL;
 // Flag to signal Core 0 that Core 1 has finished cleanup and is ready for reboot
@@ -29,7 +26,8 @@ static void ensure_dir(const char *path)
     
     // Skip the root / mount point
     char *start = tmp + 1;
-    if (strncmp(tmp, "/sd/", 4) == 0) start = tmp + 4;
+    if (strncmp(tmp, RG_STORAGE_ROOT "/", strlen(RG_STORAGE_ROOT "/")) == 0) 
+        start = tmp + strlen(RG_STORAGE_ROOT "/");
 
     for (p = start; *p; p++)
     {
@@ -109,13 +107,8 @@ void dukeTask(void *pvParameters)
 
     RG_LOGI("dukeTask: Starting main loop on Core %d with %dKB stack\n", 
            xPortGetCoreID(), DUKE_STACK_SIZE / 1024);
-#if CONFIG_IDF_TARGET_ESP32
-    char *argv[]={"duke3d", "/nm", NULL};
-    int argc = 2;
-#else
     char *argv[]={"duke3d", NULL};
     int argc = 1;
-#endif
     while (!rg_system_should_exit())
     {
         main(argc, argv);
@@ -160,19 +153,14 @@ void app_main(void)
     };
 
     rg_system_init(&config);
+    rg_system_set_log_level(RG_LOG_WARN);
 
     ensure_dir(RG_BASE_PATH_SAVES "/duke3d");
 
     RG_LOGI("app_main: Spawning Duke3D task...");
     
     static StaticTask_t duke_task_buffer;
-    void *stack_ptr = NULL;
-
-#if CONFIG_IDF_TARGET_ESP32
-    stack_ptr = rg_alloc(DUKE_STACK_SIZE, MEM_FAST); // Force Internal DRAM
-#else
-    stack_ptr = rg_alloc(DUKE_STACK_SIZE, MEM_SLOW); // S3/P4 can stay in PSRAM
-#endif
+    void *stack_ptr = rg_alloc(DUKE_STACK_SIZE, MEM_FAST);
 
     if (!stack_ptr) {
         RG_LOGE("Failed to allocate %dKB stack!", DUKE_STACK_SIZE / 1024);

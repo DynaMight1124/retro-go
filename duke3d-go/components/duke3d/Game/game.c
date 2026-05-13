@@ -7804,9 +7804,9 @@ void Startup(void)
 // CTW END - MODIFICATION
    inittimer(TICRATE);
 
-   puts("Loading art header.");
+   // puts("Loading art header.");
 
-  loadpics("tiles000.art", "\0");
+   loadpics("tiles000.art", "\0");
 
 
    readsavenames();
@@ -7817,7 +7817,7 @@ void Startup(void)
    initmultiplayers(0,0,0);
 
    if(numplayers > 1)
-    puts("Multiplayer initialized.");
+    RG_LOGD("Multiplayer initialized.");
 
    ps[myconnectindex].palette = (uint8_t  *) &palette[0];
    SetupGameButtons();
@@ -7825,24 +7825,25 @@ void Startup(void)
    if(networkmode == 255)
        networkmode = 1;
 
-#ifdef PLATFORM_DOS
-   puts("Checking music inits.");
+   #ifdef PLATFORM_DOS
+   RG_LOGD("Checking music inits.");
    MusicStartup();
-   puts("Checking sound inits.");
+   RG_LOGD("Checking sound inits.");
    SoundStartup();
-#else
+   #else
    /* SBF - wasn't sure if swapping them would harm anything. */
-   puts("Checking sound inits.");
+   RG_LOGD("Checking sound inits.");
    SoundStartup();
-   puts("Checking music inits.");
+   RG_LOGD("Checking music inits.");
    MusicStartup();
-#endif
+   #endif
 
    // AutoAim
-	if(nHostForceDisableAutoaim)
-		ud.auto_aim = 0;
+   if(nHostForceDisableAutoaim)
+   ud.auto_aim = 0;
 
-   puts("loadtmb()");
+   RG_LOGD("loadtmb()");
+
    loadtmb();
 }
 
@@ -8104,7 +8105,17 @@ int dukeGRP_Match(char* filename,int length)
 
 #include <dirent.h>
 void findGRPToUse(char * groupfilefullpath){
-    strcpy(groupfilefullpath,"/sd/roms/duke3d/duke3d.grp");
+    const rg_app_t *app = rg_system_get_app();
+
+    if (app && app->romPath && app->romPath[0] != '\0')
+    {
+        snprintf(groupfilefullpath, 512, "%s", app->romPath);
+        RG_LOGI("Using Duke3D GRP from boot config: %s", groupfilefullpath);
+        return;
+    }
+
+    snprintf(groupfilefullpath, 512, "%s", RG_BASE_PATH_ROMS "/duke3d/duke3d.grp");
+    RG_LOGW("No ROM in boot config, falling back to: %s", groupfilefullpath);
 }
 
 #endif
@@ -10672,7 +10683,7 @@ void takescreenshot(void)
     }
     else
     {
-        snprintf(szFilename, sizeof(szFilename), "/sd/retro-go/saves/duke3d/%s", text);
+        snprintf(szFilename, sizeof(szFilename), RG_BASE_PATH_SAVES "/duke3d/%s", text);
     }
 
 	if(SafeFileExists(szFilename) == 0) // returns 1 if exists, 0 if not

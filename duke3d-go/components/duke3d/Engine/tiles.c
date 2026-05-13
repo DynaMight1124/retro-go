@@ -240,7 +240,7 @@ int loadpics(char  *filename, char * gamedir)
 
         if ((fil = TCkopen4load(artfilename,0)) != -1)
         {
-            printf("loadpics: Loading '%s'...\n", artfilename);
+            RG_LOGD("loadpics: Loading '%s'...", artfilename);
             kread32(fil,&artversion);
             if (artversion != 1) return(-1);
 
@@ -277,7 +277,7 @@ int loadpics(char  *filename, char * gamedir)
     }
     while (k != numtilefiles);
 
-    printf("Art files loaded\n");
+    RG_LOGD("Art files loaded");
 
     clearbuf(gotpic,(MAXTILES+31)>>5,0L);
 

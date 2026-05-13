@@ -80,7 +80,7 @@ EXT_RAM_BSS_ATTR cactype cac[MAXCACHEOBJECTS];
 EXT_RAM_BSS_ATTR int32_t lockrecip[200];
 
 // TC game directory
-char  game_dir[512] = { "/sd/roms/duke3d\0" };
+char  game_dir[512] = { RG_BASE_PATH_ROMS "/duke3d" };
 
 void initcache(uint8_t* dacachestart, int32_t dacachesize)
 {

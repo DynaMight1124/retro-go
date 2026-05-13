@@ -74,8 +74,8 @@ int32_t BFullScreen = 0;
 
 int32_t ScreenMode=2;
 #ifdef CONFIG_IDF_TARGET_ESP32
-int32_t ScreenWidth = 240;
-int32_t ScreenHeight = 160;
+int32_t ScreenWidth = 320;
+int32_t ScreenHeight = 200;
 #else
 int32_t ScreenWidth = 320;
 int32_t ScreenHeight = 240;
@@ -200,8 +200,8 @@ void CONFIG_SetDefaults( void )
    FXDevice = SoundScape;
    MusicDevice = Adlib;
 #ifdef CONFIG_IDF_TARGET_ESP32
-   ScreenWidth = 240;
-   ScreenHeight = 160;
+   ScreenWidth = 320;
+   ScreenHeight = 200;
 #else
    ScreenWidth = 320;
    ScreenHeight = 240;

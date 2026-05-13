@@ -1001,7 +1001,7 @@ const char *get_config_path(const char *filename)
         strncpy(path, rg_path, sizeof(path));
         free(rg_path);
     } else {
-        snprintf(path, sizeof(path), RG_BASE_PATH_CONFIG "/%s", filename);
+        snprintf(path, sizeof(path), RG_BASE_PATH_CONFIG "/duke3d/%s", filename);
     }
     rg_storage_mkdir(rg_dirname(path));
     return path;
