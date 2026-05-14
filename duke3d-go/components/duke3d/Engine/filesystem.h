@@ -20,6 +20,8 @@
 extern int32_t groupefil_crc32[MAXGROUPFILES];
 
 int32_t  initgroupfile(const char  *filename);
+int32_t  initgroupfile_from_memory(const char *name, const void *data, int32_t size);
+int32_t  groupfile_primary_is_memory_backed(void);
 void     uninitgroupfile(void);
 uint16_t crc16(uint8_t  *data_p, uint16_t length);
 uint32_t crc32_update(uint8_t  *buf, uint32_t length, uint32_t crc_to_update);

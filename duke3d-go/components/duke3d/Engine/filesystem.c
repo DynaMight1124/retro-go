@@ -19,8 +19,6 @@
 
 #include "duke3d.h"
 #include <rg_system.h>
-#include <esp_timer.h>
-#include <esp_heap_caps.h>
 #include <inttypes.h>
 #include <ctype.h>
 
@@ -42,6 +40,8 @@ typedef struct grpArchive_s{
     int32_t  *fileOffsets         ;//Array containing the file offsets.
     int32_t  *filesizes           ;//Array containing the file offsets.
     int fileDescriptor            ;//The fd used for open,read operations.
+    const uint8_t *data           ;//Raw GRP data when archive is memory-backed.
+    uint8_t dataOwned             ;//If true, free(data) on uninit.
     uint32_t crc32                ;//Hash to recognize GRP: Duke Shareware, Duke plutonimum etc...
     
 } grpArchive_t;
@@ -57,80 +57,63 @@ typedef struct grpSet_s{
 static grpSet_t grpSet;
 
 
-int32_t initgroupfile(const char  *filename)
+static int32_t initgroupfile_common(grpArchive_t *archive, const char *name, int32_t totalLength)
 {
-	uint8_t         buf[16]                 ;
-	int32_t         i, j, k                 ;
-    grpArchive_t*   archive                 ;
-    
-    
-    
-	printf("Loading %s ...", filename); fflush(stdout);
-    
-	if (grpSet.num == MAXGROUPFILES){
-        printf("Error: Unable to open an extra GRP archive <= No more slot available.\n");
-        return(-1);
-    }
-    
-    archive = &grpSet.archives[grpSet.num];
-    
-    //Init the slot
-    memset(archive, 0, sizeof(grpArchive_t));
-    
-	//groupfil_memory[numgroupfiles] = NULL; // addresses of raw GRP files in memory
-	//groupefil_crc32[numgroupfiles] = 0;
-    SDL_LockDisplay();
-	archive->fileDescriptor = open(filename,O_BINARY|O_RDONLY,S_IREAD);
-    
-    if (archive->fileDescriptor < 0){
-        Error(EXIT_FAILURE, "Error: Unable to open file %s.\n",filename);
-    }
-    printf(" (fd=%d)\n", archive->fileDescriptor); fflush(stdout);
-    
-    
-    read(archive->fileDescriptor,buf,16);
+    int32_t i, j, k;
+    uint8_t header[16];
 
-    //FCS   : The ".grp" file format is just a collection of a lot of files stored into 1 big one.
-	//KS doc: I tried to make the format as simple as possible: The first 12 bytes contains my name,
-	//"KenSilverman". The next 4 bytes is the number of files that were compacted into the
-    //group file. Then for each file, there is a 16 byte structure, where the first 12
-    //bytes are the filename, and the last 4 bytes are the file's size. The rest of the
-    //group file is just the raw data packed one after the other in the same order as the list
-    //of files. - ken
-    
-    // Check the magic number (12 bytes header).
-    if ((buf[0] != 'K') || (buf[1] != 'e') || (buf[2] != 'n') ||
-        (buf[3] != 'S') || (buf[4] != 'i') || (buf[5] != 'l') ||
-        (buf[6] != 'v') || (buf[7] != 'e') || (buf[8] != 'r') ||
-        (buf[9] != 'm') || (buf[10] != 'a') || (buf[11] != 'n')){
-        printf("Error: File %s is not a GRP archive.\n",filename);
-        return(-1);
+    if (archive->data)
+    {
+        memcpy(header, archive->data, sizeof(header));
     }
-    
-    
-	
-    
+    else
+    {
+        SDL_LockDisplay();
+        lseek(archive->fileDescriptor, 0, SEEK_SET);
+        read(archive->fileDescriptor, header, sizeof(header));
+        SDL_UnlockDisplay();
+    }
+
+    // Check the magic number (12 bytes header).
+    if ((header[0] != 'K') || (header[1] != 'e') || (header[2] != 'n') ||
+        (header[3] != 'S') || (header[4] != 'i') || (header[5] != 'l') ||
+        (header[6] != 'v') || (header[7] != 'e') || (header[8] != 'r') ||
+        (header[9] != 'm') || (header[10] != 'a') || (header[11] != 'n'))
+    {
+        printf("Error: File %s is not a GRP archive.\n", name ? name : "<memory>");
+        return -1;
+    }
+
     // The next 4 bytes of the header feature the number of files in the GRP archive.
-    archive->numFiles = BUILDSWAP_INTEL32(*((int32_t *)&buf[12]));
-    
-    
+    archive->numFiles = BUILDSWAP_INTEL32(*((int32_t *)&header[12]));
+
     archive->gfilelist = malloc(archive->numFiles * sizeof(grpIndexEntry_t));
     archive->fileOffsets = malloc(archive->numFiles * sizeof(int32_t));
     archive->filesizes = malloc(archive->numFiles * sizeof(int32_t));
 
-    if (!archive->gfilelist || !archive->fileOffsets || !archive->filesizes) {
+    if (!archive->gfilelist || !archive->fileOffsets || !archive->filesizes)
+    {
         Error(EXIT_FAILURE, "Error: Memory allocation failed for GRP index.\n");
     }
-    
-    // Load the full index 16 bytes per file (12bytes for name + 4 bytes for the size).
-    read(archive->fileDescriptor,archive->gfilelist, archive->numFiles * 16);
+
+    if (archive->data)
+    {
+        memcpy(archive->gfilelist, archive->data + 16, archive->numFiles * 16);
+    }
+    else
+    {
+        SDL_LockDisplay();
+        lseek(archive->fileDescriptor, 16, SEEK_SET);
+        read(archive->fileDescriptor, archive->gfilelist, archive->numFiles * 16);
+        SDL_UnlockDisplay();
+    }
 
     //Initialize all file offset and pointers.
     j = 12 + 4 + archive->numFiles * sizeof(grpIndexEntry_t);
-    for(i=0;i<archive->numFiles;i++){
-        
+    for (i = 0; i < archive->numFiles; i++)
+    {
         k = BUILDSWAP_INTEL32(*((int32_t *)&archive->gfilelist[i][12])); // get size
-        
+
         // Now that the filesize has been read, we can replace it with '0' and hence have a
         // valid, null terminated character string that will be usable.
         archive->gfilelist[i][12] = '\0';
@@ -138,69 +121,106 @@ int32_t initgroupfile(const char  *filename)
         archive->fileOffsets[i] = j; // absolute offset list of all files.
         j += k;
     }
-    //archive->fileOffsets[archive->numFiles-1] = j;
-	
 
-	// Compute CRC32 of the whole grp and implicitely caches the GRP in memory through windows caching service.
-    // Rewind the fileDescriptor
-	lseek(archive->fileDescriptor, 0, SEEK_SET);
-
-	//i = 1000000;
-	//groupfil_memory[numgroupfiles] = malloc(i);
-    
-    //Load the full GRP in RAM.
-	//uint8_t         crcBuffer[ 1 << 20]     ;
-	// uint8_t *crcBuffer = malloc((1 << 20)*sizeof(uint8_t));
-//	while((j=read(archive->fileDescriptor, crcBuffer, /*sizeof(crcBuffer)*/(1 << 20)*sizeof(uint8_t) ))){
-/*		archive->crc32 = crc32_update(crcBuffer,j,archive->crc32);
-		SDL_UnlockDisplay();
-		SDL_LockDisplay();
-		printf(".");
-		fflush(stdout);
-	}
-*/	SDL_UnlockDisplay();
-	printf("\n");
-    // free(crcBuffer);
-
-// Instead of CRCs, use filesizes...
-	int32_t length = filelength(archive->fileDescriptor);
-	if(length == 44356548)
-	{
-		archive->crc32=CRC_BASE_GRP_ATOMIC_15;
-		printf("Version: Atomic 1.5\n");
-	} else if(length == 44348015)
-	{
-		archive->crc32=CRC_BASE_GRP_PLUTONIUM_14;
-		printf("Version: Plutonium 1.4\n");
-	} else if(length == 26524524)
-	{
-		archive->crc32=CRC_BASE_GRP_FULL_13;
-		printf("Version: Full 1.3d\n");
-	} else if(length == 11035779)
-	{
-		archive->crc32=CRC_BASE_GRP_SHAREWARE_13;
-		printf("Version: Shareware 1.3\n");
-	} else {
-		archive->crc32=CRC_BASE_GRP_ATOMIC_15;
-	}
-/*
-	archive->crc32=CRC_BASE_GRP_SHAREWARE_13 
-	archive->crc32=CRC_BASE_GRP_FULL_13 
-	archive->crc32=CRC_BASE_GRP_PLUTONIUM_14 
-	archive->crc32=CRC_BASE_GRP_ATOMIC_15 
-*/
+    if (totalLength == 44356548)
+    {
+        archive->crc32 = CRC_BASE_GRP_ATOMIC_15;
+        printf("Version: Atomic 1.5\n");
+    }
+    else if (totalLength == 44348015)
+    {
+        archive->crc32 = CRC_BASE_GRP_PLUTONIUM_14;
+        printf("Version: Plutonium 1.4\n");
+    }
+    else if (totalLength == 26524524)
+    {
+        archive->crc32 = CRC_BASE_GRP_FULL_13;
+        printf("Version: Full 1.3d\n");
+    }
+    else if (totalLength == 11035779)
+    {
+        archive->crc32 = CRC_BASE_GRP_SHAREWARE_13;
+        printf("Version: Shareware 1.3\n");
+    }
+    else
+    {
+        archive->crc32 = CRC_BASE_GRP_ATOMIC_15;
+    }
 
     // The game layer seems to absolutely need to access an array int[4] groupefil_crc32
     // so we need to store the crc32 in there too.
     groupefil_crc32[grpSet.num] = archive->crc32;
-    
-	//free(groupfil_memory[numgroupfiles]);
-	//groupfil_memory[numgroupfiles] = 0;
-    
-    grpSet.num++;
 
-	return(grpSet.num-1);
-    
+    grpSet.num++;
+    return (grpSet.num - 1);
+}
+
+int32_t initgroupfile(const char  *filename)
+{
+    grpArchive_t *archive;
+
+    printf("Loading %s ...", filename); fflush(stdout);
+
+    if (grpSet.num == MAXGROUPFILES)
+    {
+        printf("Error: Unable to open an extra GRP archive <= No more slot available.\n");
+        return -1;
+    }
+
+    archive = &grpSet.archives[grpSet.num];
+
+    //Init the slot
+    memset(archive, 0, sizeof(grpArchive_t));
+    archive->fileDescriptor = -1;
+
+    SDL_LockDisplay();
+    archive->fileDescriptor = open(filename, O_BINARY | O_RDONLY, S_IREAD);
+    SDL_UnlockDisplay();
+
+    if (archive->fileDescriptor < 0)
+    {
+        Error(EXIT_FAILURE, "Error: Unable to open file %s.\n", filename);
+    }
+    printf(" (fd=%d)\n", archive->fileDescriptor); fflush(stdout);
+
+    int32_t length = filelength(archive->fileDescriptor);
+    archive->data = NULL;
+    archive->dataOwned = 0;
+
+    printf("\n");
+    return initgroupfile_common(archive, filename, length);
+}
+
+int32_t initgroupfile_from_memory(const char *name, const void *data, int32_t size)
+{
+    grpArchive_t *archive;
+
+    if (!data || size < 16)
+    {
+        return -1;
+    }
+
+    if (grpSet.num == MAXGROUPFILES)
+    {
+        printf("Error: Unable to open an extra GRP archive <= No more slot available.\n");
+        return -1;
+    }
+
+    archive = &grpSet.archives[grpSet.num];
+    memset(archive, 0, sizeof(grpArchive_t));
+    archive->fileDescriptor = -1;
+    archive->data = (const uint8_t *)data;
+    archive->dataOwned = 1;
+
+    printf("Loading %s from RAM ...\n", name ? name : "<memory>");
+    return initgroupfile_common(archive, name, size);
+}
+
+int32_t groupfile_primary_is_memory_backed(void)
+{
+    if (grpSet.num <= 0)
+        return 0;
+    return grpSet.archives[0].data != NULL;
 }
 
 void uninitgroupfile(void)
@@ -208,11 +228,15 @@ void uninitgroupfile(void)
 	int i;
     
 	for( i=0 ; i < grpSet.num ;i++){
-        free(grpSet.archives[i].gfilelist);
-        free(grpSet.archives[i].fileOffsets);
-        free(grpSet.archives[i].filesizes);
-        memset(&grpSet.archives[i], 0, sizeof(grpArchive_t));
-    }
+	       if (grpSet.archives[i].fileDescriptor >= 0)
+	           close(grpSet.archives[i].fileDescriptor);
+	       if (grpSet.archives[i].dataOwned)
+	           free((void *)grpSet.archives[i].data);
+	       free(grpSet.archives[i].gfilelist);
+	       free(grpSet.archives[i].fileOffsets);
+	       free(grpSet.archives[i].filesizes);
+	       memset(&grpSet.archives[i], 0, sizeof(grpArchive_t));
+	   }
     
 }
 
@@ -416,6 +440,14 @@ int32_t kread(int32_t handle, void *buffer, int32_t leng){
         totalToRead = min(leng, archive->filesizes[openFile->fd] - openFile->cursor);
     }
     if (totalToRead <= 0) return 0;
+
+    if (openFile->type == GRP_FILE && archive->data)
+    {
+        const uint8_t *src = archive->data + archive->fileOffsets[openFile->fd] + openFile->cursor;
+        memcpy(buffer, src, totalToRead);
+        openFile->cursor += totalToRead;
+        return totalToRead;
+    }
 
     // Use buffer for small reads or if already buffered
     if (totalToRead < KREAD_BUFFER_SIZE || openFile->buffer != NULL) {

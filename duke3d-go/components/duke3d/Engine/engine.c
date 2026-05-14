@@ -84,6 +84,8 @@ int32_t lastageclock;
 EXT_RAM_BSS_ATTR int32_t tilefileoffs[MAXTILES];
 
 int32_t artsize = 0, cachesize = 0;
+EXT_RAM_BSS_ATTR static uint8_t palookup0_static[MAXPALOOKUPS << 8];
+EXT_RAM_BSS_ATTR static uint8_t transluc_static[65536];
 
 EXT_RAM_BSS_ATTR static short radarang[1280], radarang2[MAXXDIM+1];
 EXT_RAM_BSS_ATTR static uint16_t sqrtable[4096], shlookup[4096+256];
@@ -3575,12 +3577,12 @@ static void loadpalette(void)
     //CODE EXPLORATION
     printf("Num palettes lookup: %d.\n",numpalookups);
 
-    if ((palookup[0] = (uint8_t  *)kkmalloc(numpalookups<<8)) == NULL)
-        allocache(&palookup[0],numpalookups<<8,&permanentlock);
+    // Keep these core lookup tables in static external RAM so startup doesn't
+    // depend on cache initialization order or large contiguous heap blocks.
+    palookup[0] = palookup0_static;
 
-    //Transluctent pallete is 65KB.
-    if ((transluc = (uint8_t  *)kkmalloc(65536)) == NULL)
-        allocache(&transluc,65536,&permanentlock);
+    // Translucent palette is 64KB.
+    transluc = transluc_static;
 
     globalpalwritten = palookup[0];
     globalpal = 0;
@@ -3639,8 +3641,7 @@ void initengine(void)
     for(i=0; i<MAXPALOOKUPS; i++)
         palookup[i] = NULL;
 
-    tiles = rg_alloc(sizeof(tile_t) * MAXTILES, MEM_SLOW);
-    // printf("initengine: tiles=%p, sector=%p, wall=%p, sprite=%p\n", tiles, sector, wall, sprite);
+    // tiles storage is static in external RAM (see tiles.c) to avoid runtime SPIRAM heap spikes.
     for(i=0 ; i < MAXTILES ; i++)
         tiles[i].data = NULL;
 
@@ -3665,10 +3666,7 @@ void initengine(void)
 
 void uninitengine(void)
 {
-    if (transluc != NULL) {
-        kkfree(transluc);
-        transluc = NULL;
-    }
+    transluc = NULL;
     if (pic != NULL) {
         kkfree(pic);
         pic = NULL;
