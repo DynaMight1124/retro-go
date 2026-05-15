@@ -628,6 +628,9 @@ static int try_loadtile_from_override_png(short tilenume)
     if ((tilenume < 0) || (tilenume >= MAXTILES))
         return 0;
 
+    if (tiles[tilenume].dim.width <= 0 || tiles[tilenume].dim.height <= 0)
+        return 0;
+
     overrideFile = get_tile_override_file(tilenume);
     if (!overrideFile)
         return 0;
