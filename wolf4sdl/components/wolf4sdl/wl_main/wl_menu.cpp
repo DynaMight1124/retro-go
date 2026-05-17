@@ -3072,6 +3072,7 @@ IntroScreen (void)
 void
 ClearMScreen (void)
 {
+    VL_ClearScreen(0);
 #ifndef SPEAR
     VWB_Bar (0, 0, screenWidth/scaleFactor, screenHeight/scaleFactor, BORDCOLOR);
 #else

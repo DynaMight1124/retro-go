@@ -1469,7 +1469,9 @@ startplayloop:
 
                 ClearMemory ();
 
+                ingame = false;
                 LevelCompleted ();              // do the intermission
+                ingame = true;
                 if(viewsize == 21) DrawPlayScreen();
 
 #ifdef SPEARDEMO
@@ -1589,7 +1591,7 @@ startplayloop:
 #else
                 VL_FadeOut (0,255,0,17,17,300);
 #endif
-                ingame = true;
+                ingame = false;
                 ClearMemory ();
 
                 Victory ();
