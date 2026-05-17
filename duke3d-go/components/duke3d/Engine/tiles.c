@@ -748,7 +748,7 @@ static int try_loadtile_from_override_png(short tilenume)
         if (overrideDecodeLogBudget > 0)
         {
             overrideDecodeLogBudget--;
-            printf("loadtile: decoded override tile %d from '%s' (png=%ux%u -> tile=%" PRId32 "x%" PRId32 ", %" PRId32 " px)\n",
+            RG_LOGD("loadtile: decoded override tile %d from '%s' (png=%ux%u -> tile=%" PRId32 "x%" PRId32 ", %" PRId32 " px)",
                    (int)tilenume, overrideFile, width, height, targetWidth, targetHeight, pixelCount);
         }
     }
@@ -861,11 +861,11 @@ void loadtile(short tilenume)
         if (missingTileWarnBudget > 0)
         {
             missingTileWarnBudget--;
-            printf("loadtile: tile %d has invalid size %" PRId32 " (w=%d h=%d, artfile=%d).\n",
-                   (int)tilenume, tileFilesize,
-                   (int)tiles[tilenume].dim.width,
-                   (int)tiles[tilenume].dim.height,
-                   (int)tilefilenum[tilenume]);
+            // printf("loadtile: tile %d has invalid size %" PRId32 " (w=%d h=%d, artfile=%d).\n",
+            //       (int)tilenume, tileFilesize,
+            //       (int)tiles[tilenume].dim.width,
+            //       (int)tiles[tilenume].dim.height,
+            //       (int)tilefilenum[tilenume]);
         }
         return;
     }
@@ -1001,7 +1001,7 @@ int loadpics(char  *filename, char * gamedir)
 
         seenAnyArt = 1;
         missingStreak = 0;
-        printf("loadpics: Loading '%s'...\n", artfilename);
+        RG_LOGD("loadpics: Loading '%s'...", artfilename);
         kread32(fil,&artversion);
         if (artversion != 1) return(-1);
 

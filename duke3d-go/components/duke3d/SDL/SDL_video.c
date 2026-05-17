@@ -98,10 +98,6 @@ int SDL_InitSubSystem(Uint32 flags)
         }
         SDL_CreateRGBSurface(0, INTERNAL_RES_W, INTERNAL_RES_H, 8, 0,0,0,0);
     }
-    if(flags & SDL_INIT_AUDIO)
-    {
-
-    }
     return 0; // 0 = OK, -1 = Error
 }
 
@@ -131,6 +127,11 @@ SDL_Surface *SDL_CreateRGBSurface(Uint32 flags, int width, int height, int depth
     surface->clip_rect = rect;
     surface->refcount = 1;
     surface->pixels = rg_alloc(width*height*(depth/8), MEM_SLOW);
+    
+    extern uint8_t* frameplace;
+    extern uint8_t* frameoffset;
+    frameoffset = frameplace = (uint8_t*)surface->pixels;
+
     if(primary_surface == NULL)
     	primary_surface = surface;
     return surface;
@@ -171,7 +172,6 @@ Uint32 SDL_MapRGB(SDL_PixelFormat *fmt, Uint8 r, Uint8 g, Uint8 b)
 int SDL_SetColors(SDL_Surface *surface, SDL_Color *colors, int firstcolor, int ncolors)
 {
     if (surface == NULL) {
-        printf("SDL_SetColors: surface is NULL!\n");
         return 0;
     }
     if (!screen_surface.palette) {
@@ -242,20 +242,14 @@ static void limit_fps(int fps)
     last_tick = SDL_GetTicks();
 }
 
-int SDL_Flip(SDL_Surface *screen)
+IRAM_ATTR int SDL_Flip(SDL_Surface *screen)
 {
     if (!screen || !screen->pixels) {
-        printf("SDL_Flip: screen or pixels is NULL!\n");
         return -1;
     }
 
     fb_t *fb = &fb_pool[current_fb_idx];
     current_fb_idx = (current_fb_idx + 1) % MAX_SUBMITTED_SURFACES;
-
-    if (!fb->pixels || !fb->surface.palette) {
-        RG_LOGE("SDL_Flip: FB not allocated!");
-        return -1;
-    }
 
     fb->surface.width = screen->w;
     fb->surface.height = screen->h;
@@ -269,20 +263,14 @@ int SDL_Flip(SDL_Surface *screen)
         }
     }
 
-    // printf("SDL_Flip: memcpy pixels\n");
-    // Copy pixels to stable buffer
+    // Copy pixels to stable buffer (Prevents sprite flickering)
     memcpy(fb->pixels, screen->pixels, screen->w * screen->h);
 
-    // printf("SDL_Flip: memcpy palette\n");
     // Copy palette to stable buffer
     if (screen_surface.palette) {
         memcpy(fb->surface.palette, screen_surface.palette, 256 * 2);
     }
-    else {
-        // printf("SDL_Flip: screen_surface.palette is NULL\n");
-    }
 
-    // printf("SDL_Flip: rg_display_submit\n");
     rg_display_submit(&fb->surface, 0);
     rg_system_tick(0);
 
@@ -298,35 +286,10 @@ int SDL_VideoModeOK(int width, int height, int bpp, Uint32 flags)
 	return 0;
 }
 
-SemaphoreHandle_t display_mutex = NULL;
-
 void SDL_LockDisplay()
 {
-    // if (display_mutex == NULL)
-    // {
-    //     printf("Creating display mutex.\n");
-    //     display_mutex = xSemaphoreCreateMutex();
-    //     if (!display_mutex)
-    //         abort();
-    //     //xSemaphoreGive(display_mutex);
-    // }
-
-    // if (!xSemaphoreTake(display_mutex, 60000 / portTICK_RATE_MS))
-    // {
-    //     printf("Timeout waiting for display lock.\n");
-    //     abort();
-    // }
-    //printf("L");
-    //taskYIELD();
 }
 
 void SDL_UnlockDisplay()
 {
-    // if (!display_mutex)
-    //     abort();
-    // if (!xSemaphoreGive(display_mutex))
-    //     abort();
-
-    //printf("U ");
-    //taskYIELD();
 }

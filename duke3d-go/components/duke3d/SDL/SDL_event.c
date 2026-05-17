@@ -21,10 +21,11 @@ static uint32_t pulse_start_time = 0;
 static uint32_t last_shifted_state[16]; 
 static int current_shifted_idx = 0;
 
-// Snapshot of the gamepad state for the current polling session
 static uint32_t rg_state_snapshot = 0;
+static uint32_t masked_state = 0;
+static bool in_menu_cached = false;
 
-int SDL_PollEvent(SDL_Event * event)
+IRAM_ATTR int SDL_PollEvent(SDL_Event * event)
 {
     if (event) memset(event, 0, sizeof(SDL_Event));
     uint32_t now = SDL_GetTicks();
@@ -32,33 +33,44 @@ int SDL_PollEvent(SDL_Event * event)
     // Snapshot the state only at the start of a new polling session
     if (current_map_idx == 0 && current_shifted_idx == 0 && use_pulse_stage == 0) {
         rg_state_snapshot = rg_input_read_gamepad();
-    }
 
-    // Check context
-    extern struct player_struct ps[];
-    extern short myconnectindex;
-    bool in_menu = (ps[myconnectindex].gm & 1);
+        // Check context (Cached for the duration of this polling cycle)
+        extern struct player_struct ps[];
+        extern short myconnectindex;
+        in_menu_cached = (ps[myconnectindex].gm & 1);
 
-    // 1. Handle START hotkey tracking (Always runs)
-    if (!in_menu) {
-        if (rg_state_snapshot & RG_KEY_START) {
-            if (start_press_time == 0) {
-                start_press_time = now;
-            } else if (!shift_active && (now - start_press_time > 1000)) {
-                shift_active = true;
+        // 1. Handle START hotkey tracking
+        if (!in_menu_cached) {
+            if (rg_state_snapshot & RG_KEY_START) {
+                if (start_press_time == 0) {
+                    start_press_time = now;
+                } else if (!shift_active && (now - start_press_time > 1000)) {
+                    shift_active = true;
+                }
+            } else {
+                if (start_press_time != 0) {
+                    if (!shift_active && (now - start_press_time < 1000)) {
+                        use_pulse_stage = 1;
+                    }
+                    start_press_time = 0;
+                    shift_active = false;
+                }
             }
         } else {
-            if (start_press_time != 0) {
-                if (!shift_active && (now - start_press_time < 1000)) {
-                    use_pulse_stage = 1;
+            start_press_time = 0;
+            shift_active = false;
+        }
+
+        // Pre-calculate masked_state once per snapshot
+        masked_state = rg_state_snapshot;
+        if (!in_menu_cached) {
+            masked_state &= ~RG_KEY_START;
+            if (shift_active) {
+                for (int i = 0; i < (int)shifted_keymap_count; i++) {
+                    masked_state &= ~shifted_keymap[i].rg_key;
                 }
-                start_press_time = 0;
-                shift_active = false;
             }
         }
-    } else {
-        start_press_time = 0;
-        shift_active = false;
     }
 
     // 2. Handle "Use" (START) pulse state machine
@@ -88,7 +100,7 @@ int SDL_PollEvent(SDL_Event * event)
         while (current_shifted_idx < (int)shifted_keymap_count && current_shifted_idx < 16) {
             const key_mapping_t *sm = &shifted_keymap[current_shifted_idx];
             bool is_pressed = (rg_state_snapshot & sm->rg_key);
-            bool was_pressed = last_shifted_state[current_shifted_idx];
+            bool was_pressed = (bool)last_shifted_state[current_shifted_idx];
 
             if (is_pressed != was_pressed) {
                 last_shifted_state[current_shifted_idx] = is_pressed;
@@ -117,24 +129,14 @@ int SDL_PollEvent(SDL_Event * event)
     }
 
     // 4. Handle normal mappings
-    uint32_t masked_state = rg_state_snapshot;
-    if (!in_menu) {
-        masked_state &= ~RG_KEY_START;
-        if (shift_active) { // ONLY mask D-pad if shift is ACTUALLY active
-            for (int i = 0; i < (int)shifted_keymap_count; i++) {
-                masked_state &= ~shifted_keymap[i].rg_key;
-            }
-        }
-    }
-
     while (current_map_idx < (int)keymap_count && current_map_idx < 64) {
         const key_mapping_t *m = &keymap[current_map_idx];
         
-        if (m->mode == RG_MODE_GAME && in_menu) { current_map_idx++; continue; }
-        if (m->mode == RG_MODE_MENU && !in_menu) { current_map_idx++; continue; }
+        if (m->mode == RG_MODE_GAME && in_menu_cached) { current_map_idx++; continue; }
+        if (m->mode == RG_MODE_MENU && !in_menu_cached) { current_map_idx++; continue; }
 
         bool is_pressed = (masked_state & m->rg_key);
-        bool was_pressed = last_map_state[current_map_idx];
+        bool was_pressed = (bool)last_map_state[current_map_idx];
 
         if (is_pressed != was_pressed) {
             last_map_state[current_map_idx] = is_pressed;

@@ -4680,6 +4680,12 @@ void playanm(char  *fn,uint8_t  t)
 
     length = kfilelength(handle);
 
+    if (length + (int32_t)sizeof(anim_t) > cachesize) {
+        printf("playanm: Skipping %s, too large for cache (%d > %d)\n", fn, (int)(length + sizeof(anim_t)), (int)cachesize);
+        kclose(handle);
+        return;
+    }
+
     tiles[MAXTILES-3-t].lock = 219+t;
 
     if(anim == 0 || lastanimhack != (MAXTILES-3-t)) {

@@ -7975,7 +7975,7 @@ static void apply_sound_overrides_from_def(void)
             if (def_parse_int_value(braceOpen, braceClose, "distance", &distance))
                 soundvo[soundId] = (short)distance;
 
-            printf("duke3d.def: sound override applied id=%d file='%s' min=%d max=%d prio=%u type=%u dist=%d\n",
+            RG_LOGD("duke3d.def: sound override applied id=%d file='%s' min=%d max=%d prio=%u type=%u dist=%d",
                    soundId,
                    sounds[soundId],
                    (int)soundps[soundId],
