@@ -28,14 +28,16 @@
     ILI9341_CMD(0x36, 0x68);                 /* Memory Access Control  (MX|MV|BGR) */                            \
     ILI9341_CMD(0xC0, 0x1B);                 /* Power control   //VRH[5:0] */                                    \
     ILI9341_CMD(0xC1, 0x12);                 /* Power control   //SAP[2:0];BT[3:0] */                            \
-    ILI9341_CMD(0xC5, 0x32, 0x3C);           /* VCM control */                                                   \
-    ILI9341_CMD(0xC7, 0x91);                 /* VCM control2 */                                                  \
+    ILI9341_CMD(0xD0, 0xA4, 0xA1);           /* Power Control 1 (AVDD, AVCL, VDDS) */                            \
+    ILI9341_CMD(0xC2, 0x01);                 /* VDV and VRH Command Enable */                                    \
+    ILI9341_CMD(0xC3, 0x15);                 /* VRH Set (GVDD = 4.8V) */                                         \
+    ILI9341_CMD(0xC4, 0x20);                 /* VDV Set (0V) */                                                  \
+    ILI9341_CMD(0xB7, 0x35);                 /* Gate Control (VGH/VGL) */                                        \
+    ILI9341_CMD(0xBB, 0x32);                 /* VCOM Setting */                                                  \
     ILI9341_CMD(0xB2, 0x0C, 0x0C, 0x00, 0x33, 0x33);  /* Porch Setting (0x0C, 0x0C=Std or 0x0F, 0x0F=Slow */     \
     ILI9341_CMD(0xC6, 0x03);          /* ST7789 Frame Rate Control (0F=60, 07 to 00=75 to 119, 6Hz steps) */     \
-    ILI9341_CMD(0xB6, 0x0A, 0x82);           /* Gate Scan Direction (82=Std, A2=Inv, 22=Alt) */                  \
-    ILI9341_CMD(0xF6, 0x01, 0x00);           /* Interface Control (01=Std, 21=Interleave */                      \
-    ILI9341_CMD(0xE0, 0xD0, 0x00, 0x05, 0x0E, 0x15, 0x0D, 0x37, 0x43, 0x47, 0x09, 0x15, 0x12, 0x16, 0x19);       \
-    ILI9341_CMD(0xE1, 0xD0, 0x00, 0x05, 0x0D, 0x0C, 0x06, 0x2D, 0x44, 0x40, 0x0E, 0x1C, 0x18, 0x16, 0x19);       \
+    ILI9341_CMD(0xE0, 0xD0, 0x08, 0x0E, 0x09, 0x09, 0x05, 0x31, 0x33, 0x48, 0x17, 0x14, 0x15, 0x31, 0x34);       \
+    ILI9341_CMD(0xE1, 0xD0, 0x08, 0x0E, 0x09, 0x09, 0x15, 0x31, 0x33, 0x48, 0x17, 0x14, 0x15, 0x31, 0x34);       \
 
 // Input
 // Refer to rg_input.h to see all available RG_KEY_* and RG_GAMEPAD_*_MAP types
