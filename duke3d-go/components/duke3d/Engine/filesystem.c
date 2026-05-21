@@ -1025,16 +1025,7 @@ const char *get_config_path(const char *filename)
     char *dot = strrchr(name_no_ext, '.');
     if (dot && strcasecmp(dot, ".cfg") == 0) *dot = '\0';
 
-    char name_with_dir[600];
-    snprintf(name_with_dir, sizeof(name_with_dir), "duke3d/%s", name_no_ext);
-
-    char *rg_path = rg_emu_get_path(RG_PATH_GAME_CONFIG, name_with_dir);
-    if (rg_path) {
-        strncpy(path, rg_path, sizeof(path));
-        free(rg_path);
-    } else {
-        snprintf(path, sizeof(path), RG_BASE_PATH_CONFIG "/duke3d/%s", filename);
-    }
-    rg_storage_mkdir(rg_dirname(path));
+    snprintf(path, sizeof(path), RG_BASE_PATH_CONFIG "/%s.cfg", name_no_ext);
+    rg_storage_mkdir(RG_BASE_PATH_CONFIG);
     return path;
 }

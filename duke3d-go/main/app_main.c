@@ -157,6 +157,7 @@ void app_main(void)
     rg_display_set_scaling(RG_DISPLAY_SCALING_FULL);
 
     ensure_dir(RG_BASE_PATH_SAVES "/duke3d");
+    ensure_dir(RG_BASE_PATH_CONFIG);
 
     RG_LOGI("app_main: Spawning Duke3D task...");
     
