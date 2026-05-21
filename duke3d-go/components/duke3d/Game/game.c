@@ -6894,10 +6894,7 @@ void nonsharedkeys(void)
                     return;
                 }
                 cmenu(350);
-                screencapt = 1;
-                displayrooms(myconnectindex,65536);
-                savetemp("duke3d.tmp",tiles[MAXTILES-1].data,160*100);
-                screencapt = 0;
+                capture_savegame_thumbnail();
                 FX_StopAllSounds();
                 clearsoundlocks();
 
@@ -6966,10 +6963,7 @@ void nonsharedkeys(void)
                 FTA(118,&ps[myconnectindex],1);
                 return;
             }
-            screencapt = 1;
-            displayrooms(myconnectindex,65536);
-            savetemp("duke3d.tmp",tiles[MAXTILES-1].data,160*100);
-            screencapt = 0;
+            capture_savegame_thumbnail();
             if( lastsavedpos >= 0 )
             {
                 inputloc = strlen(&ud.savegame[lastsavedpos][0]);
@@ -9803,10 +9797,7 @@ uint8_t  domovethings(void)
         if( multiwhat )
         {
 			// FIX_00058: Save/load game crash in both single and multiplayer
-            screencapt = 1;
-            displayrooms(myconnectindex,65536);
-            savetemp("duke3d.tmp",tiles[MAXTILES-1].data,160*100);
-            screencapt = 0;
+            capture_savegame_thumbnail();
 
             saveplayer( multipos );
             multiflag = 0;
@@ -11217,5 +11208,4 @@ Programming:   ( the functions I need )
 // Bog
 // Test Blimp respawn
 // move 1 in player???
-
 

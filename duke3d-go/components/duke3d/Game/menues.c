@@ -38,6 +38,12 @@ Prepared for public release: 03/21/2003 - Charlie Wiederhold, 3D Realms
 
 static const char* TAG = "menues";
 
+#define SAVE_THUMB_WIDTH 160
+#define SAVE_THUMB_HEIGHT 100
+#define SAVE_THUMB_IO_STRIDE SAVE_THUMB_HEIGHT
+#define SAVE_THUMB_IO_COUNT SAVE_THUMB_WIDTH
+#define SAVE_THUMB_PIXELS (SAVE_THUMB_WIDTH * SAVE_THUMB_HEIGHT)
+
 extern SDL_Surface *surface;
 extern short inputloc;
 extern int recfilep;
@@ -163,11 +169,83 @@ void savetemp(char  *fn,uint8_t* daptr,int32_t dasiz)
 {
     int fp;
 
+    if (daptr == NULL || dasiz <= 0)
+    {
+        RG_LOGW("savetemp: skip writing '%s' (ptr=%p size=%" PRId32 ")\n",
+                fn ? fn : "(null)", daptr, dasiz);
+        return;
+    }
+
     fp = open(fn,O_WRONLY|O_CREAT|O_TRUNC|O_BINARY,S_IRUSR|S_IWUSR|S_IRGRP|S_IWGRP);
+
+    if (fp < 0)
+    {
+        RG_LOGW("savetemp: open failed for '%s'\n", fn ? fn : "(null)");
+        return;
+    }
 
     write(fp,(uint8_t  *)daptr,dasiz);
 
     close(fp);
+}
+
+static uint8_t ensure_save_thumb_tile(uint8_t clear_if_missing)
+{
+    uint8_t was_missing = 0;
+
+    tiles[MAXTILES-1].lock = 254;
+    if (tiles[MAXTILES-1].data == NULL)
+    {
+        was_missing = 1;
+        allocache(&tiles[MAXTILES-1].data, SAVE_THUMB_PIXELS, &tiles[MAXTILES-1].lock);
+        if (tiles[MAXTILES-1].data == NULL)
+        {
+            RG_LOGW("save-thumb: alloc failed (%d bytes)\n", SAVE_THUMB_PIXELS);
+            return 0;
+        }
+    }
+
+    tiles[MAXTILES-1].dim.width = SAVE_THUMB_WIDTH;
+    tiles[MAXTILES-1].dim.height = SAVE_THUMB_HEIGHT;
+    tiles[MAXTILES-1].animFlags = 0;
+
+    if (clear_if_missing && was_missing)
+        memset(tiles[MAXTILES-1].data, 255, SAVE_THUMB_PIXELS);
+
+    return 1;
+}
+
+uint8_t capture_savegame_thumbnail(void)
+{
+    int32_t x, y;
+
+    if (!ensure_save_thumb_tile(1))
+        return 0;
+
+    displayrooms(myconnectindex,65536);
+
+    if (!ensure_save_thumb_tile(0))
+        return 0;
+
+    if (frameplace != NULL)
+    {
+        uint8_t *dst = tiles[MAXTILES-1].data;
+        for (x = 0; x < SAVE_THUMB_WIDTH; x++)
+        {
+            const int32_t srcX = (x * (xdim - 1)) / (SAVE_THUMB_WIDTH - 1);
+            for (y = 0; y < SAVE_THUMB_HEIGHT; y++)
+            {
+                const int32_t srcY = (ydim - 1) - ((y * (ydim - 1)) / (SAVE_THUMB_HEIGHT - 1));
+                dst[x * SAVE_THUMB_HEIGHT + y] = *(frameplace + ylookup[srcY] + srcX);
+            }
+        }
+    }
+    else
+    {
+        memset(tiles[MAXTILES-1].data, 255, SAVE_THUMB_PIXELS);
+    }
+
+    return 1;
 }
 
 void getangplayers(short snum)
@@ -217,11 +295,29 @@ int loadpheader(uint8_t  spot,int32 *vn,int32 *ln,int32 *psk,int32 *nump)
          kdfread(ln,sizeof(int32),1,fil);
      kdfread(psk,sizeof(int32),1,fil);
 
-     if (tiles[MAXTILES-3].data == NULL)
-         allocache(&tiles[MAXTILES-3].data,160*100,&tiles[MAXTILES-3].lock);
-    tiles[MAXTILES-3].dim.width = 100;
-    tiles[MAXTILES-3].dim.height = 160;
-    kdfread(tiles[MAXTILES-3].data,160,100,fil);
+    if (tiles[MAXTILES-3].data == NULL)
+        allocache(&tiles[MAXTILES-3].data,160*100,&tiles[MAXTILES-3].lock);
+    tiles[MAXTILES-3].dim.width = SAVE_THUMB_WIDTH;
+    tiles[MAXTILES-3].dim.height = SAVE_THUMB_HEIGHT;
+    kdfread(tiles[MAXTILES-3].data,SAVE_THUMB_IO_STRIDE,SAVE_THUMB_IO_COUNT,fil);
+
+    if (tiles[MAXTILES-3].data != NULL)
+    {
+        tiles[MAXTILES-3].animFlags = 0;
+        if (tiles[MAXTILES-1].data == NULL)
+        {
+            tiles[MAXTILES-1].lock = 254;
+            allocache(&tiles[MAXTILES-1].data, SAVE_THUMB_PIXELS, &tiles[MAXTILES-1].lock);
+        }
+
+        if (tiles[MAXTILES-1].data != NULL)
+        {
+            copybufbyte(tiles[MAXTILES-3].data, tiles[MAXTILES-1].data, SAVE_THUMB_PIXELS);
+            tiles[MAXTILES-1].dim.width = SAVE_THUMB_WIDTH;
+            tiles[MAXTILES-1].dim.height = SAVE_THUMB_HEIGHT;
+        }
+    }
+
     kclose(fil);
     return(0);
 }
@@ -338,10 +434,27 @@ int loadplayer(int8_t spot)
      if (tiles[MAXTILES-3].data == NULL)
          allocache(&tiles[MAXTILES-3].data,160*100,&tiles[MAXTILES-3].lock);
     
-     tiles[MAXTILES-3].dim.width = 100;
-    tiles[MAXTILES-3].dim.height = 160;
+     tiles[MAXTILES-3].dim.width = SAVE_THUMB_WIDTH;
+    tiles[MAXTILES-3].dim.height = SAVE_THUMB_HEIGHT;
     
-     kdfread(tiles[MAXTILES-3].data,160,100,fil);
+     kdfread(tiles[MAXTILES-3].data,SAVE_THUMB_IO_STRIDE,SAVE_THUMB_IO_COUNT,fil);
+
+     if (tiles[MAXTILES-3].data != NULL)
+     {
+         tiles[MAXTILES-3].animFlags = 0;
+         if (tiles[MAXTILES-1].data == NULL)
+         {
+             tiles[MAXTILES-1].lock = 254;
+             allocache(&tiles[MAXTILES-1].data, SAVE_THUMB_PIXELS, &tiles[MAXTILES-1].lock);
+         }
+
+         if (tiles[MAXTILES-1].data != NULL)
+         {
+             copybufbyte(tiles[MAXTILES-3].data, tiles[MAXTILES-1].data, SAVE_THUMB_PIXELS);
+             tiles[MAXTILES-1].dim.width = SAVE_THUMB_WIDTH;
+             tiles[MAXTILES-1].dim.height = SAVE_THUMB_HEIGHT;
+         }
+     }
 
          kdfread(&numwalls,2,1,fil);
      kdfread(&wall[0],sizeof(walltype),MAXWALLS,fil);
@@ -573,6 +686,8 @@ int saveplayer(int8_t spot)
          FILE *fil;
      int32_t bv = BYTEVERSION;
 	 char  fullpathsavefilename[1024];
+     uint8_t *saveThumbData;
+     static uint8_t saveThumbFallback[SAVE_THUMB_PIXELS];
 
      if(spot < 0)
      {
@@ -621,6 +736,17 @@ int saveplayer(int8_t spot)
 
      ready2send = 0;
 
+     if (!capture_savegame_thumbnail())
+     {
+         RG_LOGW("saveplayer: capture failed, using fallback thumbnail\n");
+         if (!ensure_save_thumb_tile(1))
+             memset(saveThumbFallback, 255, SAVE_THUMB_PIXELS);
+     }
+
+     saveThumbData = tiles[MAXTILES-1].data;
+     if (saveThumbData == NULL)
+         saveThumbData = saveThumbFallback;
+
      dfwrite(&bv,4,1,fil);
      dfwrite(&ud.multimode,sizeof(ud.multimode),1,fil);
 
@@ -628,7 +754,7 @@ int saveplayer(int8_t spot)
          dfwrite(&ud.volume_number,sizeof(ud.volume_number),1,fil);
      dfwrite(&ud.level_number,sizeof(ud.level_number),1,fil);
          dfwrite(&ud.player_skill,sizeof(ud.player_skill),1,fil);
-     dfwrite(tiles[MAXTILES-1].data,160,100,fil);
+     dfwrite(saveThumbData,SAVE_THUMB_IO_STRIDE,SAVE_THUMB_IO_COUNT,fil);
 
          dfwrite(&numwalls,2,1,fil);
      dfwrite(&wall[0],sizeof(walltype),MAXWALLS,fil);
@@ -1720,7 +1846,7 @@ void menus(void)
             rotatesprite(160<<16,200<<15,65536L,0,MENUSCREEN,16,0,10+64,0,0,xdim-1,ydim-1);
             rotatesprite(160<<16,19<<16,65536L,0,MENUBAR,16,0,10,0,0,xdim-1,ydim-1);
             menutext(160,24,0,0,"LOAD GAME");
-            rotatesprite(101<<16,97<<16,65536,512,MAXTILES-3,-32,0,4+10+64,0,0,xdim-1,ydim-1);
+            rotatesprite(101<<16,97<<16,65536,0,MAXTILES-3,-32,0,4+10+64,0,0,xdim-1,ydim-1);
 
             dispnames();
 
@@ -1859,7 +1985,7 @@ void menus(void)
             rotatesprite(160<<16,19<<16,65536L,0,MENUBAR,16,0,10,0,0,xdim-1,ydim-1);
             menutext(160,24,0,0,"SAVE GAME");
 
-            rotatesprite(101<<16,97<<16,65536L,512,MAXTILES-3,-32,0,4+10+64,0,0,xdim-1,ydim-1);
+            rotatesprite(101<<16,97<<16,65536L,0,MAXTILES-3,-32,0,4+10+64,0,0,xdim-1,ydim-1);
             sprintf(text,"PLAYERS: %-2"PRId32"                      ", (int32_t)ud.multimode);
             gametext(160,158,text,0,2+8+16);
 
@@ -3284,10 +3410,7 @@ else
 
         case 350:
             cmenu(351);
-            screencapt = 1;
-            displayrooms(myconnectindex,65536);
-            savetemp("duke3d.tmp",tiles[MAXTILES-1].data,160*100);
-            screencapt = 0;
+            capture_savegame_thumbnail();
             break;
 
         case 360:
@@ -3365,7 +3488,7 @@ else
                     sound(EXITMENUSOUND);
                 }
 
-                rotatesprite(101<<16,97<<16,65536,512,MAXTILES-1,-32,0,2+4+8+64,0,0,xdim-1,ydim-1);
+                rotatesprite(101<<16,97<<16,65536,0,MAXTILES-1,-32,0,2+4+8+64,0,0,xdim-1,ydim-1);
                 dispnames();
                 rotatesprite((c+67+strlen(&ud.savegame[current_menu-360][0])*4)<<16,(50+12*probey)<<16,32768L-10240,0,SPINNINGNUKEICON+(((totalclock)>>3)%7),0,0,10,0,0,xdim-1,ydim-1);
                 break;
@@ -3379,13 +3502,13 @@ else
           {
               if( ud.savegame[probey][0] )
               {
-                  if( lastprobey != probey )
-                  {
-                     loadpheader(probey,&volnum,&levnum,&plrskl,&numplr);
-                     lastprobey = probey;
-                  }
+                   if( lastprobey != probey )
+                   {
+                      loadpheader(probey,&volnum,&levnum,&plrskl,&numplr);
+                      lastprobey = probey;
+                   }
 
-                  rotatesprite(101<<16,97<<16,65536L,512,MAXTILES-3,-32,0,4+10+64,0,0,xdim-1,ydim-1);
+                  rotatesprite(101<<16,97<<16,65536L,0,MAXTILES-3,-32,0,4+10+64,0,0,xdim-1,ydim-1);
                   sprintf(text,"PLAYERS: %-2"PRId32"                      ", (int32_t)numplr);
                   gametext(160,158,text,0,2+8+16);
                   sprintf(text,"EPISODE: %-2"PRId32" / LEVEL: %-2"PRId32" / SKILL: %-2"PRId32, (int32_t)(1+volnum), (int32_t)(1+levnum), (int32_t)plrskl);
@@ -3400,7 +3523,7 @@ else
                   if(lastprobey != probey)
                       loadpheader(probey,&volnum,&levnum,&plrskl,&numplr);
                   lastprobey = probey;
-                  rotatesprite(101<<16,97<<16,65536L,512,MAXTILES-3,-32,0,4+10+64,0,0,xdim-1,ydim-1);
+                  rotatesprite(101<<16,97<<16,65536L,0,MAXTILES-3,-32,0,4+10+64,0,0,xdim-1,ydim-1);
               }
               else menutext(69,70,0,0,"Save");
               sprintf(text,"PLAYERS: %-2"PRId32"                      ", (int32_t)ud.multimode);
@@ -4769,4 +4892,3 @@ ESP_LOGV(TAG, "ANIM_FreeAnim");
     ANIM_FreeAnim ();
     tiles[MAXTILES-3-t].lock = 1;
 }
-
