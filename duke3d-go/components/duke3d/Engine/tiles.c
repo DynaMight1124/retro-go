@@ -883,7 +883,27 @@ void loadtile(short tilenume)
         artfil = TCkopen4load(artfilename,0);
 
         if (artfil == -1){
-            Error(EXIT_FAILURE, "Error, unable to load artfile:'%s'.\n",artfilename);
+            RG_LOGW("loadtile: missing artfile '%s' for tile %d (w=%d h=%d); synthesizing transparent fallback",
+                    artfilename, (int)tilenume,
+                    (int)tiles[tilenume].dim.width,
+                    (int)tiles[tilenume].dim.height);
+
+            if (tiles[tilenume].data == NULL)
+            {
+                tiles[tilenume].lock = 199;
+                allocache(&tiles[tilenume].data, tileFilesize, (uint8_t  *) &tiles[tilenume].lock);
+            }
+
+            if (tiles[tilenume].data != NULL)
+            {
+                memset(tiles[tilenume].data, 255, (size_t)tileFilesize);
+            }
+            else
+            {
+                RG_LOGW("loadtile: tile %d fallback alloc failed (%" PRId32 " bytes), leaving tile empty",
+                        (int)tilenume, tileFilesize);
+            }
+            return;
         }
 
         faketimerhandler();

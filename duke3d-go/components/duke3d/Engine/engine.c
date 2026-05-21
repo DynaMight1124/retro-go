@@ -3940,6 +3940,15 @@ IRAM_ATTR static void  dorotatesprite (int32_t sx, int32_t sy, int32_t z, short 
 
     setgotpic(picnum);
     bufplc = tiles[picnum].data;
+    if (bufplc == NULL)
+    {
+        RG_LOGW("dorotatesprite: tile %d has no pixel data after TILE_MakeAvailable (w=%d h=%d stat=%u)",
+                (int)picnum,
+                (int)tiles[picnum].dim.width,
+                (int)tiles[picnum].dim.height,
+                (unsigned)dastat);
+        return;
+    }
 
     palookupoffs = palookup[dapalnum] + (getpalookup(0L,(int32_t)dashade)<<8);
 
@@ -9358,5 +9367,3 @@ void setfirstwall(short sectnum, short newfirstwall)
 }
 
 /* end of engine.c ... */
-
-

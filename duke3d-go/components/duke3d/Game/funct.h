@@ -229,6 +229,7 @@ extern void processinput(short snum);
 extern void cmenu(short cm);
 //#line "menues.c" 38
 extern void savetemp(char  *fn,uint8_t* daptr,int32_t dasiz);
+extern uint8_t capture_savegame_thumbnail(void);
 //#line "menues.c" 49
 extern void getangplayers(short snum);
 //#line "menues.c" 67
