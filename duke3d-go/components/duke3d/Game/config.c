@@ -889,4 +889,3 @@ void CONFIG_WriteSetup( void )
        scripthandle = -1;
    }
 }
-
