@@ -703,7 +703,7 @@ void applications_init(void)
     application("MSX", "msx", "rom mx1 mx2 dsk", "fmsx", 0);
 
     // Special app to bootstrap native esp32 binaries from the SD card
-    // application("Bootstrap", "apps", "bin elf", "bootstrap", 0);
+    application("Apps", "apps", "bin elf", "bootstrap", 0);
 
     if (rg_system_get_stats().freeMemory > 0x100000)
         crc_cache_init();
