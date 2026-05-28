@@ -405,13 +405,23 @@ int loadplayer(int8_t spot)
          drawbackground();
          menutext(160,100,0,0,"LOADING...");
          nextpage();
-    }
+     }
 
      waitforeverybody();
 
          FX_StopAllSounds();
      clearsoundlocks();
          MUSIC_StopSong();
+
+     if(numplayers <= 1)
+     {
+         pub = NUMPAGES;
+         pus = NUMPAGES;
+         vscrn();
+         drawbackground();
+         menutext(160,100,0,0,"LOADING SAVED GAME...");
+         nextpage();
+     }
 
      if(numplayers > 1)
          kdfread(&buf,19,1,fil);
