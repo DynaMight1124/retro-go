@@ -9066,6 +9066,7 @@ uint8_t* bakframeplace[4];
 int32_t bakxsiz[4], bakysiz[4];
 int32_t bakwindowx1[4], bakwindowy1[4];
 int32_t bakwindowx2[4], bakwindowy2[4];
+int32_t bakbytesperline[4];
 
 void setviewback(void)
 {
@@ -9080,6 +9081,7 @@ void setviewback(void)
     copybufbyte(&bakdmost[windowx1],&startdmost[windowx1],(windowx2-windowx1+1)*sizeof(startdmost[0]));
     vidoption = bakvidoption[setviewcnt];
     frameplace = bakframeplace[setviewcnt];
+    bytesperline = bakbytesperline[setviewcnt];
     if (setviewcnt == 0)
         k = bakxsiz[0];
     else

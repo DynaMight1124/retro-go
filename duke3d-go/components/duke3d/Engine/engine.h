@@ -148,6 +148,7 @@ int clipinsidebox(int32_t x, int32_t y, int16_t wallnum, int32_t walldist);
     extern int32_t bakxsiz[4], bakysiz[4];
     extern int32_t bakwindowx1[4], bakwindowy1[4];
     extern int32_t bakwindowx2[4], bakwindowy2[4];
+    extern int32_t bakbytesperline[4];
     extern uint8_t  picsiz[MAXTILES], tilefilenum[MAXTILES];
     extern int16_t bakumost[MAXXDIM+1], bakdmost[MAXXDIM+1];
     extern int32_t numtilefiles, artfil , artfilnum, artfilplc;
