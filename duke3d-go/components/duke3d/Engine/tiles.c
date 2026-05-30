@@ -764,8 +764,8 @@ void setviewtotile(short tilenume, int32_t tileWidth, int32_t tileHeight)
     /* DRAWROOMS TO TILE BACKUP&SET CODE */
     tiles[tilenume].dim.width = tileWidth;
     tiles[tilenume].dim.height = tileHeight;
-    bakxsiz[setviewcnt] = tileWidth;
-    bakysiz[setviewcnt] = tileHeight;
+    bakxsiz[setviewcnt] = max(xdimen, tileWidth);
+    bakysiz[setviewcnt] = max(ydimen, tileHeight);
     bakvidoption[setviewcnt] = vidoption;
     vidoption = 2;
     bakframeplace[setviewcnt] = frameplace;
@@ -781,8 +781,9 @@ void setviewtotile(short tilenume, int32_t tileWidth, int32_t tileHeight)
     j = 0;
     for(i=0; i<=tileWidth; i++) {
         ylookup[i] = j;
-        j += tileWidth;
+        j += tileHeight;
     }
+    bakbytesperline[setviewcnt] = bytesperline;
     setBytesPerLine(tileHeight);
     setviewcnt++;
 }
