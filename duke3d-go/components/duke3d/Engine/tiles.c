@@ -13,6 +13,7 @@
 
 #include <rg_system.h>
 #include "esp_attr.h"
+#include "esp_heap_caps.h"
 #include <lodepng.h>
 #include <ctype.h>
 #include <stdlib.h>
@@ -857,19 +858,7 @@ void loadtile(short tilenume)
     tileFilesize = tiles[tilenume].dim.width * tiles[tilenume].dim.height;
 
     if (tileFilesize <= 0)
-    {
-        static int missingTileWarnBudget = 64;
-        if (missingTileWarnBudget > 0)
-        {
-            missingTileWarnBudget--;
-            // printf("loadtile: tile %d has invalid size %" PRId32 " (w=%d h=%d, artfile=%d).\n",
-            //       (int)tilenume, tileFilesize,
-            //       (int)tiles[tilenume].dim.width,
-            //       (int)tiles[tilenume].dim.height,
-            //       (int)tilefilenum[tilenume]);
-        }
         return;
-    }
 
     i = tilefilenum[tilenume];
     if (i != artfilnum){
@@ -884,7 +873,7 @@ void loadtile(short tilenume)
         artfil = TCkopen4load(artfilename,0);
 
         if (artfil == -1){
-            RG_LOGW("loadtile: missing artfile '%s' for tile %d (w=%d h=%d); synthesizing transparent fallback",
+            RG_LOGW("loadtile: missing artfile '%s' (or PNG override) for tile %d (w=%d h=%d); synthesizing transparent fallback",
                     artfilename, (int)tilenume,
                     (int)tiles[tilenume].dim.width,
                     (int)tiles[tilenume].dim.height);
@@ -1067,9 +1056,33 @@ int loadpics(char  *filename, char * gamedir)
 
     clearbuf(gotpic,(MAXTILES+31)>>5,0L);
 
-    // When the primary GRP is memory-backed (ZIP extracted to RAM), use a
-    // moderate cache floor to improve runtime reuse while staying memory-safe.
-    const int32_t min_cache_size = groupfile_primary_is_memory_backed() ? (512 * 1024) : (1024 * 1024);
+    // Size the tile cache depending on the amount of available RAM
+    const size_t ext_free = heap_caps_get_free_size(MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    const size_t ext_largest = heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    // Reserve space for things other than tile cache;
+    // Not reserving enough will result in some textures failing to load, so they will be black, but still quite playable.
+    // Reserving too much space will result in little space left over for texture cache, making the game laggy.
+    const int32_t reserve_bytes = 640 * 1024; // 500KB has missing textures, 750KB is fine, 640KB seems to be the sweet spot
+    const int32_t dynamic_size = (int32_t)ext_largest - reserve_bytes;
+    int32_t min_cache_size = dynamic_size;
+
+    if (dynamic_size < 64 * 1024) {
+        RG_LOGW("loadpics: cache target ultra low, setting to minimum of 64KB");
+        min_cache_size = 64 * 1024;
+    } else if (dynamic_size < 512 * 1024) {
+        RG_LOGW("loadpics: cache target is low and might result in the game being slow due to frequent tile cache misses");
+    } else if (dynamic_size > 1536 * 1024) {
+        RG_LOGW("loadpics: cache target very high, setting to maximum of 1.5MB");
+        min_cache_size = 1536 * 1024;
+    }
+
+    RG_LOGW("loadpics: dynamic cache computed=%" PRId32 "KB, adjusted target=%" PRId32 "KB (ext free=%uKB largest=%uKB reserve=%" PRId32 "KB)",
+            (int32_t)(dynamic_size / 1024),
+            (int32_t)(min_cache_size / 1024),
+            (unsigned)(ext_free / 1024),
+            (unsigned)(ext_largest / 1024),
+            (int32_t)(reserve_bytes / 1024));
+
     cachesize = max(artsize, min_cache_size);
     cachesize = (cachesize + 15) & ~15; // Align size to 16 bytes
 
