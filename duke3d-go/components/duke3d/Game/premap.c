@@ -1586,16 +1586,6 @@ if (!VOLUMEONE)
     cacheit();
     docacheit();
 
-    // Fade out loading screen and restore viewport for the game
-    if(ud.recstat != 2)
-    {
-        int32_t j;
-        for(j=0;j<63;j+=7) palto(0,0,0,j);
-        KB_FlushKeyboardQueue();
-    }
-    vscrn();
-    ud.screen_size = l;
-
     if(ud.recstat != 2)
     {
         music_select = (ud.volume_number*11) + ud.level_number;
@@ -1674,8 +1664,16 @@ if (!VOLUMEONE)
      flushpackets();
      waitforeverybody();
 
-     palto(0,0,0,0);
+     // Fade out loading screen and restore viewport for the game
+     if(ud.recstat != 2)
+     {
+         int32_t j;
+         for(j=0;j<63;j+=7) palto(0,0,0,j);
+         KB_FlushKeyboardQueue();
+     }
      vscrn();
+     ud.screen_size = l;
+
      clearview(0L);
      drawbackground();
 

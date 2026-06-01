@@ -889,6 +889,8 @@ void loadtile(short tilenume)
                     (int)tiles[tilenume].dim.width,
                     (int)tiles[tilenume].dim.height);
 
+            artfilnum = -1;  // Prevent subsequent tiles from using stale -1 handle
+
             if (tiles[tilenume].data == NULL)
             {
                 tiles[tilenume].lock = 199;
