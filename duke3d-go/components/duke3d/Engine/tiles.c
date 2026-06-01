@@ -31,6 +31,7 @@ int32_t artversion;
 uint8_t  *pic = NULL;
 
 EXT_RAM_BSS_ATTR uint8_t  gotpic[(MAXTILES+7)>>3];
+EXT_RAM_BSS_ATTR static uint8_t missingPngTile[(MAXTILES+7)>>3];
 
 #define TILE_OVERRIDE_NAME_MAX 128
 #define MAX_ART_FILES_SCAN 1000
@@ -625,9 +626,19 @@ static int try_loadtile_from_override_png(short tilenume)
     int32_t targetHeight;
 
     const char *overrideFile;
+    const uint8_t missing_mask = (uint8_t)(1u << ((unsigned)tilenume & 7u));
+    const uint32_t missing_idx = (uint32_t)tilenume >> 3;
 
     if ((tilenume < 0) || (tilenume >= MAXTILES))
         return 0;
+
+    if (missingPngTile[missing_idx] & missing_mask)
+    {
+        /* Retry roughly once per second at 120 ticks/s. */
+        if ((((uint32_t)totalclock ^ (uint32_t)(uint16_t)tilenume) & 127u) != 0)
+            return 0;
+        missingPngTile[missing_idx] &= (uint8_t)~missing_mask;
+    }
 
     if (tiles[tilenume].dim.width <= 0 || tiles[tilenume].dim.height <= 0)
         return 0;
@@ -646,6 +657,7 @@ static int try_loadtile_from_override_png(short tilenume)
     fileSize = kfilelength(fileHandle);
     if (fileSize <= 0)
     {
+        missingPngTile[missing_idx] |= missing_mask;
         kclose(fileHandle);
         return 0;
     }
@@ -653,12 +665,14 @@ static int try_loadtile_from_override_png(short tilenume)
     pngBytes = (uint8_t *)malloc((size_t)fileSize);
     if (pngBytes == NULL)
     {
+        missingPngTile[missing_idx] |= missing_mask;
         kclose(fileHandle);
         return 0;
     }
 
     if (kread(fileHandle, pngBytes, fileSize) != fileSize)
     {
+        missingPngTile[missing_idx] |= missing_mask;
         free(pngBytes);
         kclose(fileHandle);
         return 0;
@@ -668,11 +682,15 @@ static int try_loadtile_from_override_png(short tilenume)
     err = lodepng_decode32(&rgba, &width, &height, pngBytes, (size_t)fileSize);
     free(pngBytes);
     if (err != 0 || rgba == NULL)
+    {
+        missingPngTile[missing_idx] |= missing_mask;
         return 0;
+    }
 
     if ((width == 0) || (height == 0) || (width > 32767) || (height > 32767) ||
         ((uint64_t)width * (uint64_t)height > 0x7fffffffULL))
     {
+        missingPngTile[missing_idx] |= missing_mask;
         free(rgba);
         return 0;
     }
@@ -683,6 +701,7 @@ static int try_loadtile_from_override_png(short tilenume)
     if ((targetWidth <= 0) || (targetHeight <= 0) ||
         ((int64_t)targetWidth * (int64_t)targetHeight > 0x7fffffffLL))
     {
+        missingPngTile[missing_idx] |= missing_mask;
         free(rgba);
         return 0;
     }
@@ -723,6 +742,7 @@ static int try_loadtile_from_override_png(short tilenume)
         if (tiles[tilenume].data == NULL)
         {
             free(rgba);
+            missingPngTile[missing_idx] |= missing_mask;
             return 0;
         }
     }
@@ -755,6 +775,7 @@ static int try_loadtile_from_override_png(short tilenume)
     }
 
     free(rgba);
+    missingPngTile[missing_idx] &= (uint8_t)~missing_mask;
     return 1;
 }
 
@@ -1055,6 +1076,7 @@ int loadpics(char  *filename, char * gamedir)
     prime_tile_override_metadata_from_png_headers();
 
     clearbuf(gotpic,(MAXTILES+31)>>5,0L);
+    clearbuf(missingPngTile,(MAXTILES+31)>>5,0L);
 
     // Size the tile cache depending on the amount of available RAM
     const size_t ext_free = heap_caps_get_free_size(MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
