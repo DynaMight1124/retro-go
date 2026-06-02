@@ -293,7 +293,6 @@ uint8_t  loadsound(uint16_t num)
     Sound[num].lock = 200;
     Sound[num].ptr = NULL;
 
-    // printf("loadsound: %d (%s), sizing %d, calling allocache\n", num, sounds[num], (int)l);
     allocache(&Sound[num].ptr,l,(uint8_t  *)&Sound[num].lock);
     if (Sound[num].ptr == NULL) {
         printf("loadsound: %d (%s), allocache FAILED! length=%"PRId32"\n", num, sounds[num], l);
@@ -682,4 +681,3 @@ void clearsoundlocks(void)
  
             lumplockbyte[i] = 199;
 }
-

@@ -13,6 +13,7 @@
 
 #include <rg_system.h>
 #include "esp_attr.h"
+#include "esp_heap_caps.h"
 #include <lodepng.h>
 #include <ctype.h>
 #include <stdlib.h>
@@ -30,6 +31,7 @@ int32_t artversion;
 uint8_t  *pic = NULL;
 
 EXT_RAM_BSS_ATTR uint8_t  gotpic[(MAXTILES+7)>>3];
+EXT_RAM_BSS_ATTR static uint8_t missingPngTile[(MAXTILES+7)>>3];
 
 #define TILE_OVERRIDE_NAME_MAX 128
 #define MAX_ART_FILES_SCAN 1000
@@ -624,9 +626,19 @@ static int try_loadtile_from_override_png(short tilenume)
     int32_t targetHeight;
 
     const char *overrideFile;
+    const uint8_t missing_mask = (uint8_t)(1u << ((unsigned)tilenume & 7u));
+    const uint32_t missing_idx = (uint32_t)tilenume >> 3;
 
     if ((tilenume < 0) || (tilenume >= MAXTILES))
         return 0;
+
+    if (missingPngTile[missing_idx] & missing_mask)
+    {
+        /* Retry roughly once per second at 120 ticks/s. */
+        if ((((uint32_t)totalclock ^ (uint32_t)(uint16_t)tilenume) & 127u) != 0)
+            return 0;
+        missingPngTile[missing_idx] &= (uint8_t)~missing_mask;
+    }
 
     if (tiles[tilenume].dim.width <= 0 || tiles[tilenume].dim.height <= 0)
         return 0;
@@ -645,6 +657,7 @@ static int try_loadtile_from_override_png(short tilenume)
     fileSize = kfilelength(fileHandle);
     if (fileSize <= 0)
     {
+        missingPngTile[missing_idx] |= missing_mask;
         kclose(fileHandle);
         return 0;
     }
@@ -652,12 +665,14 @@ static int try_loadtile_from_override_png(short tilenume)
     pngBytes = (uint8_t *)malloc((size_t)fileSize);
     if (pngBytes == NULL)
     {
+        missingPngTile[missing_idx] |= missing_mask;
         kclose(fileHandle);
         return 0;
     }
 
     if (kread(fileHandle, pngBytes, fileSize) != fileSize)
     {
+        missingPngTile[missing_idx] |= missing_mask;
         free(pngBytes);
         kclose(fileHandle);
         return 0;
@@ -667,11 +682,15 @@ static int try_loadtile_from_override_png(short tilenume)
     err = lodepng_decode32(&rgba, &width, &height, pngBytes, (size_t)fileSize);
     free(pngBytes);
     if (err != 0 || rgba == NULL)
+    {
+        missingPngTile[missing_idx] |= missing_mask;
         return 0;
+    }
 
     if ((width == 0) || (height == 0) || (width > 32767) || (height > 32767) ||
         ((uint64_t)width * (uint64_t)height > 0x7fffffffULL))
     {
+        missingPngTile[missing_idx] |= missing_mask;
         free(rgba);
         return 0;
     }
@@ -682,6 +701,7 @@ static int try_loadtile_from_override_png(short tilenume)
     if ((targetWidth <= 0) || (targetHeight <= 0) ||
         ((int64_t)targetWidth * (int64_t)targetHeight > 0x7fffffffLL))
     {
+        missingPngTile[missing_idx] |= missing_mask;
         free(rgba);
         return 0;
     }
@@ -722,6 +742,7 @@ static int try_loadtile_from_override_png(short tilenume)
         if (tiles[tilenume].data == NULL)
         {
             free(rgba);
+            missingPngTile[missing_idx] |= missing_mask;
             return 0;
         }
     }
@@ -754,6 +775,7 @@ static int try_loadtile_from_override_png(short tilenume)
     }
 
     free(rgba);
+    missingPngTile[missing_idx] &= (uint8_t)~missing_mask;
     return 1;
 }
 
@@ -857,19 +879,7 @@ void loadtile(short tilenume)
     tileFilesize = tiles[tilenume].dim.width * tiles[tilenume].dim.height;
 
     if (tileFilesize <= 0)
-    {
-        static int missingTileWarnBudget = 64;
-        if (missingTileWarnBudget > 0)
-        {
-            missingTileWarnBudget--;
-            // printf("loadtile: tile %d has invalid size %" PRId32 " (w=%d h=%d, artfile=%d).\n",
-            //       (int)tilenume, tileFilesize,
-            //       (int)tiles[tilenume].dim.width,
-            //       (int)tiles[tilenume].dim.height,
-            //       (int)tilefilenum[tilenume]);
-        }
         return;
-    }
 
     i = tilefilenum[tilenume];
     if (i != artfilnum){
@@ -884,10 +894,12 @@ void loadtile(short tilenume)
         artfil = TCkopen4load(artfilename,0);
 
         if (artfil == -1){
-            RG_LOGW("loadtile: missing artfile '%s' for tile %d (w=%d h=%d); synthesizing transparent fallback",
+            RG_LOGW("loadtile: missing artfile '%s' (or PNG override) for tile %d (w=%d h=%d); synthesizing transparent fallback",
                     artfilename, (int)tilenume,
                     (int)tiles[tilenume].dim.width,
                     (int)tiles[tilenume].dim.height);
+
+            artfilnum = -1;  // Prevent subsequent tiles from using stale -1 handle
 
             if (tiles[tilenume].data == NULL)
             {
@@ -1064,10 +1076,35 @@ int loadpics(char  *filename, char * gamedir)
     prime_tile_override_metadata_from_png_headers();
 
     clearbuf(gotpic,(MAXTILES+31)>>5,0L);
+    clearbuf(missingPngTile,(MAXTILES+31)>>5,0L);
 
-    // When the primary GRP is memory-backed (ZIP extracted to RAM), use a
-    // moderate cache floor to improve runtime reuse while staying memory-safe.
-    const int32_t min_cache_size = groupfile_primary_is_memory_backed() ? (512 * 1024) : (1024 * 1024);
+    // Size the tile cache depending on the amount of available RAM
+    const size_t ext_free = heap_caps_get_free_size(MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    const size_t ext_largest = heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    // Reserve space for things other than tile cache;
+    // Not reserving enough will result in some textures failing to load, so they will be black, but still quite playable.
+    // Reserving too much space will result in little space left over for texture cache, making the game laggy.
+    const int32_t reserve_bytes = 640 * 1024; // 500KB has missing textures, 750KB is fine, 640KB seems to be the sweet spot
+    const int32_t dynamic_size = (int32_t)ext_largest - reserve_bytes;
+    int32_t min_cache_size = dynamic_size;
+
+    if (dynamic_size < 64 * 1024) {
+        RG_LOGW("loadpics: cache target ultra low, setting to minimum of 64KB");
+        min_cache_size = 64 * 1024;
+    } else if (dynamic_size < 512 * 1024) {
+        RG_LOGW("loadpics: cache target is low and might result in the game being slow due to frequent tile cache misses");
+    } else if (dynamic_size > 1536 * 1024) {
+        RG_LOGW("loadpics: cache target very high, setting to maximum of 1.5MB");
+        min_cache_size = 1536 * 1024;
+    }
+
+    RG_LOGW("loadpics: dynamic cache computed=%" PRId32 "KB, adjusted target=%" PRId32 "KB (ext free=%uKB largest=%uKB reserve=%" PRId32 "KB)",
+            (int32_t)(dynamic_size / 1024),
+            (int32_t)(min_cache_size / 1024),
+            (unsigned)(ext_free / 1024),
+            (unsigned)(ext_largest / 1024),
+            (int32_t)(reserve_bytes / 1024));
+
     cachesize = max(artsize, min_cache_size);
     cachesize = (cachesize + 15) & ~15; // Align size to 16 bytes
 

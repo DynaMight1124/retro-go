@@ -37,7 +37,6 @@ Prepared for public release: 03/21/2003 - Charlie Wiederhold, 3D Realms
 extern uint8_t  everyothertime;
 short which_palookup = 9;
 
-
 static void tloadtile(short tilenume)
 {
     gotpic[tilenume>>3] |= (1<<(tilenume&7));
@@ -276,7 +275,10 @@ void precachenecessarysounds(void)
         {
             j++;
             if( (j&7) == 0 )
+            {
                 getpackets();
+                _idle();
+            }
             getsound(i);
         }
 }
@@ -336,7 +338,11 @@ void docacheit(void)
     {
         loadtile((short)i);
         j++;
-        if((j&7) == 0) getpackets();
+        if((j&7) == 0)
+        {
+            getpackets();
+            _idle();
+        }
     }
 
     clearbufbyte(gotpic,sizeof(gotpic),0L);
@@ -1409,9 +1415,7 @@ void dofrontscreens(void)
         nextpage();
 
         for(j=63;j>0;j-=7) palto(0,0,0,j);
-
         KB_FlushKeyboardQueue();
-        ud.screen_size = i;
     }
     else
     {
@@ -1492,11 +1496,10 @@ void enterlevel(uint8_t  g)
     FX_SetReverb(0);
 
     // RG_LOGI("enterlevel: drawing background...");
-    i = ud.screen_size;
+    // Keep loading screen visible through the expensive work below
+    i = l = ud.screen_size;
     ud.screen_size = 0;
     dofrontscreens();
-    vscrn();
-    ud.screen_size = i;
 
 if (!VOLUMEONE)
 {
@@ -1550,6 +1553,8 @@ if (!VOLUMEONE)
     }
 }
 
+    l = i;
+
     // RG_LOGI("enterlevel: clearing gotpic...");
     clearbufbyte(gotpic,sizeof(gotpic),0L);
 
@@ -1580,6 +1585,12 @@ if (!VOLUMEONE)
 
     cacheit();
     docacheit();
+
+    // Restore screen_size before vscrn() so the viewport is sized correctly for the
+    // HUD from the very first frame; without this the demo/main-menu launch sees a
+    // full-screen viewport (screen_size==0) because vscrn() is called later while
+    // screen_size is still 0 (it was zeroed at the start of enterlevel for loading).
+    ud.screen_size = l;
 
     if(ud.recstat != 2)
     {
@@ -1659,8 +1670,15 @@ if (!VOLUMEONE)
      flushpackets();
      waitforeverybody();
 
-     palto(0,0,0,0);
-     vscrn();
+     // Fade out loading screen and apply the final viewport for the game
+     if(ud.recstat != 2)
+     {
+         int32_t j;
+         for(j=0;j<63;j+=7) palto(0,0,0,j);
+         KB_FlushKeyboardQueue();
+     }
+     vscrn(); // screen_size already restored to l above; viewport is correctly sized here
+
      clearview(0L);
      drawbackground();
 
