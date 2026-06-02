@@ -1586,6 +1586,12 @@ if (!VOLUMEONE)
     cacheit();
     docacheit();
 
+    // Restore screen_size before vscrn() so the viewport is sized correctly for the
+    // HUD from the very first frame; without this the demo/main-menu launch sees a
+    // full-screen viewport (screen_size==0) because vscrn() is called later while
+    // screen_size is still 0 (it was zeroed at the start of enterlevel for loading).
+    ud.screen_size = l;
+
     if(ud.recstat != 2)
     {
         music_select = (ud.volume_number*11) + ud.level_number;
@@ -1664,15 +1670,14 @@ if (!VOLUMEONE)
      flushpackets();
      waitforeverybody();
 
-     // Fade out loading screen and restore viewport for the game
+     // Fade out loading screen and apply the final viewport for the game
      if(ud.recstat != 2)
      {
          int32_t j;
          for(j=0;j<63;j+=7) palto(0,0,0,j);
          KB_FlushKeyboardQueue();
      }
-     vscrn();
-     ud.screen_size = l;
+     vscrn(); // screen_size already restored to l above; viewport is correctly sized here
 
      clearview(0L);
      drawbackground();
