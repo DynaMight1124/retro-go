@@ -194,26 +194,24 @@ int SDL_SetColors(SDL_Surface *surface, SDL_Color *colors, int firstcolor, int n
     return 1;
 }
 
-// Convert a Duke3D-style 6-bit palette (packed as B,G,R,unused per entry) directly
-// to RGB565, bypassing the 6->8->5/6 roundtrip used by the SDL_SetColors path.
+// Convert a Duke3D-style 6-bit palette (packed as B,G,R,unused per entry) to RGB565.
 //
-// The structural issue with the old path (VBE_setPalette -> SDL_SetColors):
-//   6-bit source -> 8-bit via (v<<2)|(v>>4) -> SDL_Color -> r8>>3, g8>>2, b8>>3
-// Net effect: R/B are halved (v6>>1, floor), but G is an identity (lossless).
-// This asymmetry causes neutral dark grays (equal R,G,B source values) to appear
-// greenish: for any odd 6-bit value, R5=B5=floor(v/2)=0 while G6=v=1, giving a
-// pure-green pixel instead of near-black.
+// Duke3D stores palette components as 6-bit values (0-63), matching the original
+// VGA DAC precision. Many wall/floor colors have a tiny blue component (e.g. b6=1)
+// that anchors warm browns away from yellow-green. Losing that component — which
+// both the old path and the first fix did — is the root cause of the green cast in
+// dark/shaded areas.
 //
-// Fix: work directly from the 6-bit source, and quantize green to the same
-// effective 5-bit precision as red/blue by zeroing the green LSB.
-// This ensures neutral grays stay neutral:
-//   r5 = v6 >> 1           (same 5-bit floor as before)
-//   g6 = (v6 >> 1) << 1    (5-bit precision, placed in 6-bit field with LSB=0)
-//   b5 = v6 >> 1           (same 5-bit floor as before)
-// For a neutral input (r=g=b=val): r5/31 == (g6>>1)/31 == b5/31 -> neutral gray.
-// Green's extra RGB565 bit is intentionally left zero; full-brightness colors
-// (val=63) still reach maximum: r5=31, g6=62, b5=31 (1/63 shy of pure white,
-// perceptually indistinguishable).
+// The correct pipeline:
+//   1. Fill-expand 6-bit to 8-bit: v8 = (v6 << 2) | (v6 >> 4)
+//      Maps 0->0 and 63->255 (full scale), preserving relative brightness.
+//   2. Round 8-bit to 5-bit (R,B): r5 = (v8 + 4) >> 3, capped at 31
+//      Ceiling-biased rounding ensures b6=1 -> b8=4 -> b5=1 (not 0).
+//   3. Round 8-bit to 6-bit (G):   g6 = (v8 + 2) >> 2, capped at 63
+//      Same principle; green keeps its full RGB565 precision.
+//
+// The cap (& 0x1F / & 0x3F) is only ever triggered for v6=63 (v8=255),
+// where truncation without cap would give 32/64. Branchless via bitmask.
 int SDL_SetPalette565(const uint8_t *pal6)
 {
     if (!screen_surface.palette) {
@@ -223,9 +221,12 @@ int SDL_SetPalette565(const uint8_t *pal6)
 
     for (int i = 0; i < 256; i++) {
         // palettebuffer layout per entry: [B, G, R, unused] (each 6-bit, 0-63)
-        uint16_t r5 = pal6[i*4+2] >> 1;          // 6-bit -> 5-bit
-        uint16_t g6 = (pal6[i*4+1] >> 1) << 1;   // 6-bit -> 5-bit precision, in 6-bit field
-        uint16_t b5 = pal6[i*4+0] >> 1;          // 6-bit -> 5-bit
+        uint16_t r8 = (pal6[i*4+2] << 2) | (pal6[i*4+2] >> 4);  // 6-bit -> 8-bit fill-expand
+        uint16_t g8 = (pal6[i*4+1] << 2) | (pal6[i*4+1] >> 4);
+        uint16_t b8 = (pal6[i*4+0] << 2) | (pal6[i*4+0] >> 4);
+        uint16_t r5 = ((r8 + 4) >> 3) & 0x1F;  // 8-bit -> 5-bit, ceiling rounding
+        uint16_t g6 = ((g8 + 2) >> 2) & 0x3F;  // 8-bit -> 6-bit, ceiling rounding
+        uint16_t b5 = ((b8 + 4) >> 3) & 0x1F;  // 8-bit -> 5-bit, ceiling rounding
         uint16_t v = (r5 << 11) | (g6 << 5) | b5;
 #if RG_SCREEN_PIXEL_FORMAT == 0 /* 565_BE */
         v = (v >> 8) | (v << 8);

@@ -1350,8 +1350,9 @@ int VBE_setPalette(uint8_t  *palettebuffer)
 {
     if (palettebuffer == NULL) return 0;
 
-    // Duke3D palette values are 6-bit (0-63). Convert directly to RGB565 to
-    // avoid the 6->8->5/6 bit roundtrip that makes dark colors appear greenish.
+    // Duke3D palette values are 6-bit (0-63). Convert to RGB565 via fill-expand
+    // to 8-bit + ceiling rounding, preserving tiny blue components (b6=1 -> b5=1)
+    // that would otherwise round to zero and make warm wall colors look green.
     // See SDL_SetPalette565() for details.
     int ret = SDL_SetPalette565(palettebuffer);
 
