@@ -1348,24 +1348,19 @@ void WriteLastPaletteToFile(){
 
 int VBE_setPalette(uint8_t  *palettebuffer)
 {
-    static SDL_Color fmt_swap[256];
-    int i;
-
-    // printf("VBE_setPalette: entry\n");
-
     if (palettebuffer == NULL) return 0;
 
-    for (i = 0; i < 256; i++) {
+    // Duke3D palette values are 6-bit (0-63). Convert directly to RGB565 to
+    // avoid the 6->8->5/6 bit roundtrip that makes dark colors appear greenish.
+    // See SDL_SetPalette565() for details.
+    int ret = SDL_SetPalette565(palettebuffer);
+
+    for (int i = 0; i < 256; i++) {
         lastPalette[i*3+0] = palettebuffer[i*4+2]; // Red
         lastPalette[i*3+1] = palettebuffer[i*4+1]; // Green
         lastPalette[i*3+2] = palettebuffer[i*4+0]; // Blue
-
-        fmt_swap[i].r = (palettebuffer[i*4+2] << 2) | (palettebuffer[i*4+2] >> 4);
-        fmt_swap[i].g = (palettebuffer[i*4+1] << 2) | (palettebuffer[i*4+1] >> 4);
-        fmt_swap[i].b = (palettebuffer[i*4+0] << 2) | (palettebuffer[i*4+0] >> 4);
     }
 
-    int ret = SDL_SetColors(surface, fmt_swap, 0, 256);
     _updateScreenRect(0, 0, 0, 0);
     return ret;
 }
