@@ -1,7 +1,9 @@
 #include "SDL_audio.h"
 #include "freertos/semphr.h"
+#include "rg_system.h"
 #include "rg_audio.h"
 #include "oplplayer.h"
+#include <string.h>
 
 SDL_AudioSpec as;
 bool paused = true;
@@ -67,6 +69,61 @@ void SDL_AudioInit()
 {
 }
 
+void set_overclock_safe(int level)
+{
+#ifndef CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ
+#define CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ 240
+#endif
+    int default_cpu_speed = CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ;
+
+    // Temporarily raise app.sampleRate baseline to 25000 Hz. This ensures
+    // that Retro-Go's internal overclock sample-rate scaling calculations
+    // (app.sampleRate * default_cpu_speed / real_mhz) never request a rate below 20000 Hz.
+    rg_system_reinit(25000, NULL, NULL);
+
+    // Set the overclock level. Retro-Go will configure a safe internal rate.
+    rg_system_set_overclock(level);
+
+    // Retrieve actual CPU clock speed for this level.
+    int cpu_speed = rg_system_get_cpu_speed();
+    if (cpu_speed <= 0) {
+        cpu_speed = default_cpu_speed;
+    }
+
+    // Determine target sample rate.
+    int target_rate = (HW_RATE * default_cpu_speed) / cpu_speed;
+#if CONFIG_IDF_TARGET_ESP32P4
+    target_rate = HW_RATE;
+#elif CONFIG_IDF_TARGET_ESP32
+    if (strcmp(rg_audio_get_sink()->name, "Ext DAC") == 0) {
+        target_rate = HW_RATE;
+    } else if (target_rate < 20000) {
+        // Clamp sample rate to a minimum of 20000 Hz on ESP32 Speaker to prevent 
+        // built-in DAC divider register limit overflows (> 255) in ESP-IDF.
+        target_rate = 20000;
+    }
+#endif
+
+    // Sync app.sampleRate baseline in Retro-Go to match target_rate.
+    int baseline_rate = (target_rate * cpu_speed) / default_cpu_speed;
+    rg_system_reinit(baseline_rate, NULL, NULL);
+
+    // Apply sample rate configuration to audio hardware.
+    rg_audio_set_sample_rate(target_rate);
+
+    // Calculate and apply tempo scaling multiplier to compensate for any residual hardware clock skew.
+    double expected_rate = ((double)HW_RATE * (double)default_cpu_speed) / cpu_speed;
+#if CONFIG_IDF_TARGET_ESP32P4
+    expected_rate = (double)HW_RATE;
+#elif CONFIG_IDF_TARGET_ESP32
+    if (strcmp(rg_audio_get_sink()->name, "Ext DAC") == 0) {
+        expected_rate = (double)HW_RATE;
+    }
+#endif
+    double multiplier = expected_rate / (double)target_rate;
+    I_OPL_SetTempoMultiplier(multiplier);
+}
+
 int SDL_OpenAudio(SDL_AudioSpec *desired, SDL_AudioSpec *obtained)
 {
 	SDL_AudioInit();
@@ -80,8 +137,8 @@ int SDL_OpenAudio(SDL_AudioSpec *desired, SDL_AudioSpec *obtained)
     obtained->userdata = desired->userdata;
 	memcpy(&as, obtained, sizeof(SDL_AudioSpec));
 
-    rg_audio_set_sample_rate(HW_RATE);
     opl_synth_player.init(ENGINE_RATE); // Synth renders at 11kHz
+    set_overclock_safe(rg_system_get_overclock());
 
 	xTaskCreatePinnedToCore(&updateTask, "audioTask", 8192, NULL, 15, &audio_task_handle, 0);
 	printf("audio task started at %d Hz output (Rendering at %d Hz)\n", HW_RATE, ENGINE_RATE);

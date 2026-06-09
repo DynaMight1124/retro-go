@@ -68,6 +68,6 @@ typedef struct
 
 
 extern const music_player_t opl_synth_player;
-
+void I_OPL_SetTempoMultiplier(double multiplier);
 
 #endif

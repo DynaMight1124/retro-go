@@ -144,7 +144,7 @@ static int32_t initgroupfile_common(grpArchive_t *archive, const char *name, int
     }
     else
     {
-        archive->crc32 = CRC_BASE_GRP_ATOMIC_15;
+        archive->crc32 = CRC_BASE_GRP_SHAREWARE_13; // If CRC32 isnt recognised, it will default to Shareware v1.3
     }
 
     // The game layer seems to absolutely need to access an array int[4] groupefil_crc32

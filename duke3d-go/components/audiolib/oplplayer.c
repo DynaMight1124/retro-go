@@ -387,12 +387,23 @@ static void KeyOnEvent(opl_track_data_t *track, midi_event_t *event)
     if ((instrument->flags & GENMIDI_FLAG_2VOICE) != 0) VoiceKeyOn(channel, instrument, 1, key, volume);
 }
 
+static double opl_tempo_multiplier = 1.0;
+
 static void UpdateRenderTempo(void)
 {
     if (us_per_beat > 0)
-        render_tempo = (1000000ULL * division) / us_per_beat;
+    {
+        double base_tempo = (double)(1000000ULL * division) / us_per_beat;
+        render_tempo = (int32_t)(base_tempo * opl_tempo_multiplier);
+    }
     else
         render_tempo = 0;
+}
+
+void I_OPL_SetTempoMultiplier(double multiplier)
+{
+    opl_tempo_multiplier = multiplier;
+    UpdateRenderTempo();
 }
 
 static void ProcessEvent(opl_track_data_t *track, midi_event_t *event)

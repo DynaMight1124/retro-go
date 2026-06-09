@@ -43,5 +43,6 @@ int SDL_BuildAudioCVT(SDL_AudioCVT *cvt, Uint16 src_format, Uint8 src_channels, 
 int SDL_ConvertAudio(SDL_AudioCVT *cvt);
 void SDL_LockAudio(void);
 void SDL_UnlockAudio(void);
+void set_overclock_safe(int level);
 
 #endif

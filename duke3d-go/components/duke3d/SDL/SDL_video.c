@@ -257,11 +257,6 @@ IRAM_ATTR int SDL_Flip(SDL_Surface *screen)
     fb->surface.format = RG_PIXEL_PAL565_BE;
     fb->surface.data = fb->pixels;
 
-    if (screen->w == INTERNAL_RES_W && screen->h == INTERNAL_RES_H) {
-        if (rg_display_get_scaling() != RG_DISPLAY_SCALING_FULL) {
-            rg_display_set_scaling(RG_DISPLAY_SCALING_FULL);
-        }
-    }
 
     // Copy pixels to stable buffer (Prevents sprite flickering)
     memcpy(fb->pixels, screen->pixels, screen->w * screen->h);

@@ -2622,13 +2622,8 @@ else
 					}
 					break;
 
-                case 5: // record on/off
-                    if( (ps[myconnectindex].gm&MODE_GAME) )
-                    {
-                        closedemowrite();
-                        break;
-                    }
-                    ud.m_recstat = !ud.m_recstat;
+                case 5: // Retro-Go Submenu
+                    cmenu(707);
                     break;
 
 				//case -7:
@@ -2647,6 +2642,9 @@ else
 
             menutext(c,43+16+16+16+16,SHX(-8),PHX(-8),"SETUP VIDEO");
 
+            menutext(c,43+16+16+16+16+16,SHX(-10),PHX(-10),"RETRO-GO OPTIONS");
+
+            /* Original Record logic (kept for future reference)
             if( (ps[myconnectindex].gm&MODE_GAME) && ud.m_recstat != 1 )
             {
                 menutext(c,43+16+16+16+16+16,SHX(-10),1,"RECORD");
@@ -2660,6 +2658,7 @@ else
                     menutext(c+160+40,43+16+16+16+16+16,SHX(-10),PHX(-10),"ON");
                 else menutext(c+160+40,43+16+16+16+16+16,SHX(-10),PHX(-10),"OFF");
             }
+            */
 
             break;
 
@@ -3417,6 +3416,228 @@ else
 			menutext(c+160+40,43+16*5,0,0,(ud.tickrate&1)?"ON":"OFF");
 
 			break;
+
+        case 707: // Retro-Go Submenu
+        {
+            c = (320>>1)-120;
+            rotatesprite(320<<15,19<<16,65536L,0,MENUBAR,16,0,10,0,0,xdim-1,ydim-1);
+            menutext(320>>1,24,0,0,"RETRO-GO OPTIONS");
+
+            onbar = (probey == 0 || probey == 1);
+
+            x = probe(c+6,43,16,5);
+
+            static short retrogo_backlight_cached = -1;
+            static short retrogo_volume_cached = -1;
+            static short retrogo_audiosink_cached = -1;
+            static short retrogo_scaling_cached = -1;
+            static short retrogo_overclock_cached = -1;
+
+            size_t sinks_count = 0;
+            const rg_audio_sink_t *sinks = rg_audio_get_sinks(&sinks_count);
+
+            switch(x)
+            {
+                case -1:
+                    cmenu(200);
+                    probey = 5;
+                    retrogo_backlight_cached = -1; // clear cache on exit
+                    retrogo_volume_cached = -1;
+                    retrogo_audiosink_cached = -1;
+                    retrogo_scaling_cached = -1;
+                    retrogo_overclock_cached = -1;
+                    rg_settings_commit();
+                    break;
+
+                case 2: // Toggle Audio Driver
+                    if (sinks_count > 1)
+                    {
+                        SDL_PauseAudio(1);
+                        vTaskDelay(pdMS_TO_TICKS(50));
+                        retrogo_audiosink_cached = (retrogo_audiosink_cached + 1) % sinks_count;
+                        rg_audio_set_sink(sinks[retrogo_audiosink_cached].driver->name, sinks[retrogo_audiosink_cached].device);
+                        set_overclock_safe(retrogo_overclock_cached);
+                        SDL_PauseAudio(0);
+                    }
+                    sound(PISTOL_BODYHIT);
+                    break;
+
+                case -4: // cursor idle on Audio Driver
+                    if (KB_KeyPressed(sc_kpad_4) || KB_KeyPressed(sc_LeftArrow))
+                    {
+                        if (sinks_count > 1)
+                        {
+                            SDL_PauseAudio(1);
+                            vTaskDelay(pdMS_TO_TICKS(50));
+                            retrogo_audiosink_cached = (retrogo_audiosink_cached + sinks_count - 1) % sinks_count;
+                            rg_audio_set_sink(sinks[retrogo_audiosink_cached].driver->name, sinks[retrogo_audiosink_cached].device);
+                            set_overclock_safe(retrogo_overclock_cached);
+                            SDL_PauseAudio(0);
+                        }
+                        KB_ClearKeyDown(sc_kpad_4);
+                        KB_ClearKeyDown(sc_LeftArrow);
+                        sound(PISTOL_BODYHIT);
+                    }
+                    else if (KB_KeyPressed(sc_kpad_6) || KB_KeyPressed(sc_RightArrow))
+                    {
+                        if (sinks_count > 1)
+                        {
+                            SDL_PauseAudio(1);
+                            vTaskDelay(pdMS_TO_TICKS(50));
+                            retrogo_audiosink_cached = (retrogo_audiosink_cached + 1) % sinks_count;
+                            rg_audio_set_sink(sinks[retrogo_audiosink_cached].driver->name, sinks[retrogo_audiosink_cached].device);
+                            set_overclock_safe(retrogo_overclock_cached);
+                            SDL_PauseAudio(0);
+                        }
+                        KB_ClearKeyDown(sc_kpad_6);
+                        KB_ClearKeyDown(sc_RightArrow);
+                        sound(PISTOL_BODYHIT);
+                    }
+                    break;
+
+                case 3: // Toggle Scaling
+                    retrogo_scaling_cached = (retrogo_scaling_cached + 1) % 4; // Cycle OFF, FIT, FULL, ZOOM
+                    rg_display_set_scaling((display_scaling_t)retrogo_scaling_cached);
+                    sound(PISTOL_BODYHIT);
+                    break;
+
+                case -5: // cursor idle on Scaling
+                    if (KB_KeyPressed(sc_kpad_4) || KB_KeyPressed(sc_LeftArrow))
+                    {
+                        retrogo_scaling_cached = (retrogo_scaling_cached + 3) % 4;
+                        rg_display_set_scaling((display_scaling_t)retrogo_scaling_cached);
+                        KB_ClearKeyDown(sc_kpad_4);
+                        KB_ClearKeyDown(sc_LeftArrow);
+                        sound(PISTOL_BODYHIT);
+                    }
+                    else if (KB_KeyPressed(sc_kpad_6) || KB_KeyPressed(sc_RightArrow))
+                    {
+                        retrogo_scaling_cached = (retrogo_scaling_cached + 1) % 4;
+                        rg_display_set_scaling((display_scaling_t)retrogo_scaling_cached);
+                        KB_ClearKeyDown(sc_kpad_6);
+                        KB_ClearKeyDown(sc_RightArrow);
+                        sound(PISTOL_BODYHIT);
+                    }
+                    break;
+
+                case 4: // Toggle Overclock
+                    retrogo_overclock_cached = (retrogo_overclock_cached + 1) % 4; // Cycle OFF, LOW, MEDIUM, HIGH
+                    set_overclock_safe(retrogo_overclock_cached);
+                    sound(PISTOL_BODYHIT);
+                    break;
+
+                case -6: // cursor idle on Overclock
+                    if (KB_KeyPressed(sc_kpad_4) || KB_KeyPressed(sc_LeftArrow))
+                    {
+                        retrogo_overclock_cached = (retrogo_overclock_cached + 3) % 4;
+                        set_overclock_safe(retrogo_overclock_cached);
+                        KB_ClearKeyDown(sc_kpad_4);
+                        KB_ClearKeyDown(sc_LeftArrow);
+                        sound(PISTOL_BODYHIT);
+                    }
+                    else if (KB_KeyPressed(sc_kpad_6) || KB_KeyPressed(sc_RightArrow))
+                    {
+                        retrogo_overclock_cached = (retrogo_overclock_cached + 1) % 4;
+                        set_overclock_safe(retrogo_overclock_cached);
+                        KB_ClearKeyDown(sc_kpad_6);
+                        KB_ClearKeyDown(sc_RightArrow);
+                        sound(PISTOL_BODYHIT);
+                    }
+                    break;
+            }
+
+            menutext(c,43,SHX(-2),PHX(-2),"BACKLIGHT");
+
+            if (retrogo_backlight_cached == -1)
+            {
+                retrogo_backlight_cached = (rg_display_get_backlight() * 63) / 100;
+            }
+
+            short prev_backlight = retrogo_backlight_cached;
+            bar(c+167+40,43,&retrogo_backlight_cached,4,x==0,SHX(-2),PHX(-2));
+
+            if (retrogo_backlight_cached != prev_backlight)
+            {
+                rg_display_set_backlight((retrogo_backlight_cached * 100) / 63);
+            }
+
+            menutext(c,43+16,SHX(-3),PHX(-3),"VOLUME");
+
+            if (retrogo_volume_cached == -1)
+            {
+                retrogo_volume_cached = (rg_audio_get_volume() * 63) / 100;
+            }
+
+            short prev_volume = retrogo_volume_cached;
+            bar(c+167+40,43+16,&retrogo_volume_cached,4,x==1,SHX(-3),PHX(-3));
+
+            if (retrogo_volume_cached != prev_volume)
+            {
+                rg_audio_set_volume((retrogo_volume_cached * 100) / 63);
+            }
+
+            menutext(c,43+16+16,SHX(-4),PHX(-4),"AUDIO DRIVER");
+
+            if (retrogo_audiosink_cached == -1)
+            {
+                const rg_audio_sink_t *current_sink = rg_audio_get_sink();
+                retrogo_audiosink_cached = 0;
+                for (size_t i = 0; i < sinks_count; i++)
+                {
+                    if (sinks[i].device == current_sink->device && strcmp(sinks[i].driver->name, current_sink->driver->name) == 0)
+                    {
+                        retrogo_audiosink_cached = i;
+                        break;
+                    }
+                }
+            }
+
+            const char *sink_text = "UNKNOWN";
+            if (retrogo_audiosink_cached >= 0 && retrogo_audiosink_cached < sinks_count)
+            {
+                sink_text = sinks[retrogo_audiosink_cached].name;
+            }
+            menutext(c+160+40,43+16+16,0,0,(char *)sink_text);
+
+            menutext(c,43+16+16+16,SHX(-5),PHX(-5),"SCALING");
+
+            if (retrogo_scaling_cached == -1)
+            {
+                retrogo_scaling_cached = rg_display_get_scaling();
+            }
+
+            const char *scaling_text = "UNKNOWN";
+            switch(retrogo_scaling_cached)
+            {
+                case RG_DISPLAY_SCALING_OFF:  scaling_text = "OFF"; break;
+                case RG_DISPLAY_SCALING_FIT:  scaling_text = "FIT"; break;
+                case RG_DISPLAY_SCALING_FULL: scaling_text = "FULL"; break;
+                case RG_DISPLAY_SCALING_ZOOM: scaling_text = "ZOOM"; break;
+            }
+            menutext(c+160+40,43+16+16+16,0,0,(char *)scaling_text);
+
+            menutext(c,43+16+16+16+16,SHX(-6),PHX(-6),"OVERCLOCK");
+
+            if (retrogo_overclock_cached == -1)
+            {
+                retrogo_overclock_cached = rg_system_get_overclock();
+                if (retrogo_overclock_cached < 0 || retrogo_overclock_cached > 3)
+                {
+                    retrogo_overclock_cached = 0;
+                }
+            }
+
+            const char *overclock_text = "UNKNOWN";
+            switch(retrogo_overclock_cached)
+            {
+                case 0: overclock_text = "OFF"; break;
+                case 1: overclock_text = "LOW"; break;
+                case 2: overclock_text = "MEDIUM"; break;
+                case 3: overclock_text = "HIGH"; break;
+            }
+            menutext(c+160+40,43+16+16+16+16,0,0,(char *)overclock_text);
+            break;
+        }
 
         case 350:
             cmenu(351);
