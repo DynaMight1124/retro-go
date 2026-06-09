@@ -4,9 +4,6 @@
 #include "build.h"
 #include "freertos/semphr.h"
 #include "esp_timer.h"
-#include <math.h>
-
-extern int32_t curbrightness;
 
 static rg_surface_t screen_surface;
 
@@ -197,30 +194,17 @@ int SDL_SetColors(SDL_Surface *surface, SDL_Color *colors, int firstcolor, int n
     return 1;
 }
 
-// Convert a Duke3D-style 6-bit palette (packed as B,G,R,unused per entry) to RGB565,
-// with gamma correction that matches the original VGA CRT experience.
+// Convert a Duke3D-style 6-bit palette (packed as B,G,R,unused per entry) to RGB565.
 //
-// The original DOS game was designed for CRT monitors whose hardware applied ~gamma 2.2,
-// making dark linear palette values appear much brighter perceptually. On a modern LCD
-// with no hardware gamma, dark values look far too dark, causing the tiny blue components
-// in warm wall colors (e.g. b6=1) to be crushed — making those colors look yellow-green
-// instead of warm brown.
+// Brightness/gamma is handled upstream in setbrightness() via the britable[] table
+// (loaded from tables.dat), which applies the same power-curve correction as eDuke32.
+// This function's job is purely precision-correct channel conversion:
 //
-// Pipeline per channel:
 //   1. Fill-expand 6-bit to 8-bit: v8 = (v6 << 2) | (v6 >> 4)  (0->0, 63->255)
-//   2. Apply gamma lift via a precomputed 256-entry LUT:
-//        gamma_lut[v] = round(255 * pow(v/255.0, a))  where a = 8.0/(curbrightness+8)
-//      At curbrightness=0 (brightness slider min): a=1.0, identity — no correction.
-//      At curbrightness=4 (default, ud.brightness=16): a=0.667, moderate CRT-like lift.
-//      At curbrightness=14 (max): a=0.364, strong lift for very bright display setups.
-//      This exactly mirrors eDuke32's britable power curve, giving the same shadow
-//      detail and color balance as the PC reference version at equivalent settings.
-//   3. Ceiling-round to 5-bit (R,B): ((v + 4) >> 3) & 0x1F
-//      Ceiling-round to 6-bit (G):   ((v + 2) >> 2) & 0x3F
-//      The & mask (branchless cap) only fires for v=255, preventing overflow to 32/64.
-//
-// The LUT is rebuilt only when curbrightness changes (i.e. when the user moves the
-// brightness slider), so there is zero per-frame overhead.
+//   2. Ceiling-round to 5-bit (R,B): ((v8 + 4) >> 3) & 0x1F
+//      Ceiling-round to 6-bit (G):   ((v8 + 2) >> 2) & 0x3F
+//      The & mask (branchless cap) only fires at v8=255, preventing overflow to 32/64.
+//      Ceiling rounding preserves tiny values (e.g. b6=1 -> b5=1, not b5=0).
 int SDL_SetPalette565(const uint8_t *pal6)
 {
     if (!screen_surface.palette) {
@@ -228,27 +212,11 @@ int SDL_SetPalette565(const uint8_t *pal6)
     }
     if (!screen_surface.palette) return 0;
 
-    // Rebuild gamma LUT only when brightness changes.
-    static uint8_t gamma_lut[256];
-    static int32_t last_brightness = -1;
-
-    if (curbrightness != last_brightness) {
-        last_brightness = curbrightness;
-        // a = 8/(curbrightness+8): ranges from 1.0 (no lift) down to ~0.36 (strong lift),
-        // matching eDuke32's britable formula exactly.
-        float a = 8.0f / (float)(curbrightness + 8);
-        float b = 255.0f / powf(255.0f, a);
-        gamma_lut[0] = 0;
-        for (int v = 1; v < 256; v++) {
-            gamma_lut[v] = (uint8_t)(powf((float)v, a) * b + 0.5f);
-        }
-    }
-
     for (int i = 0; i < 256; i++) {
         // palettebuffer layout per entry: [B, G, R, unused] (each 6-bit, 0-63)
-        uint16_t r8 = gamma_lut[(pal6[i*4+2] << 2) | (pal6[i*4+2] >> 4)];
-        uint16_t g8 = gamma_lut[(pal6[i*4+1] << 2) | (pal6[i*4+1] >> 4)];
-        uint16_t b8 = gamma_lut[(pal6[i*4+0] << 2) | (pal6[i*4+0] >> 4)];
+        uint16_t r8 = (pal6[i*4+2] << 2) | (pal6[i*4+2] >> 4);
+        uint16_t g8 = (pal6[i*4+1] << 2) | (pal6[i*4+1] >> 4);
+        uint16_t b8 = (pal6[i*4+0] << 2) | (pal6[i*4+0] >> 4);
         uint16_t r5 = ((r8 + 4) >> 3) & 0x1F;
         uint16_t g6 = ((g8 + 2) >> 2) & 0x3F;
         uint16_t b5 = ((b8 + 4) >> 3) & 0x1F;
