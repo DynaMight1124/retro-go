@@ -112,6 +112,7 @@ SDL_Keymod SDL_GetModState(void);
 SDL_Surface *SDL_GetVideoSurface(void);
 Uint32 SDL_MapRGB(SDL_PixelFormat *fmt, Uint8 r, Uint8 g, Uint8 b);
 int SDL_SetColors(SDL_Surface *surface, SDL_Color *colors, int firstcolor, int ncolors);
+int SDL_SetPalette565(const uint8_t *pal6);
 SDL_Surface *SDL_SetVideoMode(int width, int height, int bpp, Uint32 flags);
 void SDL_FreeSurface(SDL_Surface *surface);
 void SDL_QuitSubSystem(Uint32 flags);

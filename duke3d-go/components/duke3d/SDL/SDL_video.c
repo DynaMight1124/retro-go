@@ -194,6 +194,46 @@ int SDL_SetColors(SDL_Surface *surface, SDL_Color *colors, int firstcolor, int n
     return 1;
 }
 
+// Convert a Duke3D-style 6-bit palette (packed as B,G,R,unused per entry) to RGB565.
+//
+// Brightness/gamma is handled upstream in setbrightness() via the britable[] table
+// (loaded from tables.dat), which applies the same power-curve correction as eDuke32.
+// This function's job is purely precision-correct channel conversion:
+//
+//   1. Fill-expand 6-bit to 8-bit: v8 = (v6 << 2) | (v6 >> 4)  (0->0, 63->255)
+//   2. Ceiling-round to 5-bit (R,B) with clamp: min(31, (v8 + 4) >> 3)
+//      Ceiling-round to 6-bit (G) with clamp:   min(63, (v8 + 2) >> 2)
+//      Ceiling rounding preserves tiny values (e.g. b6=1 -> b5=1, not b5=0).
+//      Clamping prevents overflow at v8=255: (255+4)>>3=32 -> clamped to 31.
+//      NOTE: Using min() instead of & mask because 32 & 0x1F = 0, not 31!
+int SDL_SetPalette565(const uint8_t *pal6)
+{
+    if (!screen_surface.palette) {
+        screen_surface.palette = rg_alloc(256 * 2, MEM_SLOW);
+    }
+    if (!screen_surface.palette) return 0;
+
+    for (int i = 0; i < 256; i++) {
+        // palettebuffer layout per entry: [B, G, R, unused] (each 6-bit, 0-63)
+        uint16_t r8 = (pal6[i*4+2] << 2) | (pal6[i*4+2] >> 4);
+        uint16_t g8 = (pal6[i*4+1] << 2) | (pal6[i*4+1] >> 4);
+        uint16_t b8 = (pal6[i*4+0] << 2) | (pal6[i*4+0] >> 4);
+        // Ceiling-round with proper clamping (not masking which wraps 32->0)
+        uint16_t r5_raw = (r8 + 4) >> 3;
+        uint16_t g6_raw = (g8 + 2) >> 2;
+        uint16_t b5_raw = (b8 + 4) >> 3;
+        uint16_t r5 = r5_raw < 31 ? r5_raw : 31;
+        uint16_t g6 = g6_raw < 63 ? g6_raw : 63;
+        uint16_t b5 = b5_raw < 31 ? b5_raw : 31;
+        uint16_t v = (r5 << 11) | (g6 << 5) | b5;
+#if RG_SCREEN_PIXEL_FORMAT == 0 /* 565_BE */
+        v = (v >> 8) | (v << 8);
+#endif
+        screen_surface.palette[i] = v;
+    }
+    return 1;
+}
+
 SDL_Surface *SDL_SetVideoMode(int width, int height, int bpp, Uint32 flags)
 {
     if (primary_surface) {
