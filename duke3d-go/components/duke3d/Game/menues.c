@@ -48,6 +48,7 @@ extern SDL_Surface *surface;
 extern short inputloc;
 extern int recfilep;
 extern uint8_t  vgacompatible;
+extern uint8_t  actor_tog;   // monster AI toggle: 0=on 1=invisible 2=frozen
 short probey=0,lastprobey=0,last_menu,globalskillsound=-1;
 short sh,onbar,buttonstat,deletespot;
 short last_zero,last_fifty,last_threehundred = 0;
@@ -1842,6 +1843,86 @@ void menus(void)
 
             break;
 
+        // ---------------------------------------------------------------
+        // case 10100 — CHEATS menu
+        // Cheats are always visible but greyed out unless a game is active.
+        // Cheats requiring typed parameters (warp, skill) are not listed here.
+        // ---------------------------------------------------------------
+        case 10100:
+        {
+            // cheat_id == -1 means "warp to vol/level" rather than a cheatquotes[] index.
+            static const struct {
+                int        cheat_id;  // cheatquotes[] index, or -1 for warp
+                int8_t     vol;       // 0-based volume (warp entries only)
+                int8_t     level;     // 0-based level  (warp entries only)
+                const char *label;
+            } cheat_entries[] = {
+                {  0, 0, 0, "GOD MODE"        },  // cornholio
+                { 20, 0, 0, "NO-CLIP"         },  // clip
+                {  1, 0, 0, "ALL STUFF"       },  // stuff
+             // { 17, 0, 0, "SHOW FULL MAP"   },  // showmap — temporarily hidden
+                { 13, 0, 0, "MONSTERS"        },  // monsters
+                { -1, 0, 1, "WARP TO E1L2"   },  // DNSCOTTY102
+                { -1, 0, 2, "WARP TO E1L3"   },  // DNSCOTTY103
+                { -1, 0, 3, "WARP TO E1L4"   },  // DNSCOTTY104
+                { -1, 0, 4, "WARP TO E1L5"   },  // DNSCOTTY105
+                { -1, 0, 5, "WARP TO E1L6"   },  // DNSCOTTY106
+            };
+            #define NUM_CHEAT_ENTRIES ((int)(sizeof(cheat_entries)/sizeof(cheat_entries[0])))
+
+            int ingame = (ps[myconnectindex].gm & MODE_GAME) != 0;
+
+            c = (320>>1)-120;
+            rotatesprite(320<<15,19<<16,65536L,0,MENUBAR,16,0,10,0,0,xdim-1,ydim-1);
+            menutext(320>>1,24,0,0,"CHEATS");
+
+            x = probe(c+6,43,16,NUM_CHEAT_ENTRIES);
+
+            if(x == -1)
+            {
+                cmenu(702);
+                probey = 7;  // keep cursor on CHEATS in GAME OPTIONS
+                break;
+            }
+
+            // Activate selected cheat (only when a game is in progress)
+            if(x >= 0 && ingame)
+            {
+                if(cheat_entries[x].cheat_id == -1)
+                {
+                    // Warp: set volume/level and restart
+                    ud.m_volume_number = ud.volume_number = cheat_entries[x].vol;
+                    ud.m_level_number  = ud.level_number  = cheat_entries[x].level;
+                    ps[myconnectindex].gm |= MODE_RESTART;
+                }
+                else
+                    activate_cheat(cheat_entries[x].cheat_id);
+            }
+
+            // Draw all labels; grey them out when not in-game
+            for(int ci = 0; ci < NUM_CHEAT_ENTRIES; ci++)
+            {
+                int grey = ingame ? 0 : 1;
+                menutext(c, 43+16*ci, 0, grey, (char*)cheat_entries[ci].label);
+            }
+
+            // Show current state for the toggle cheats
+            if(ud.god)        menutext(c+200, 43+16*0, 0, 0, "ON");
+            else              menutext(c+200, 43+16*0, 0, 0, "OFF");
+            // row 1: noclip
+            if(ud.clipping)   menutext(c+200, 43+16*1, 0, 0, "ON");
+            else              menutext(c+200, 43+16*1, 0, 0, "OFF");
+         // row 3: show map — hidden, keep state display commented out too
+         // if(ud.showallmap) menutext(c+200, 43+16*3, 0, 0, "ON");
+         // else              menutext(c+200, 43+16*3, 0, 0, "OFF");
+            // row 3: monsters — 0=ON 1=OFF (invisible)
+            if(actor_tog) menutext(c+200, 43+16*3, 0, 0, "OFF");
+            else          menutext(c+200, 43+16*3, 0, 0, "ON");
+
+            #undef NUM_CHEAT_ENTRIES
+            break;
+        }
+
         case 1000:
         case 1001:
         case 1002:
@@ -2915,13 +2996,13 @@ else
 
             onbar = 0;
 
-			x = probe(c+6,43,16,7);
+		x = probe(c+6,43,16,8);
 
             switch(x)
             {
 
                 case -1:
-					cmenu(200); 
+				cmenu(200); 
                     break;
 
                 case 0:
@@ -2930,31 +3011,34 @@ else
                 case 1:
                     ud.screen_tilting = 1-ud.screen_tilting;
                     break;
-				case 2:
-					ud.showcinematics = !ud.showcinematics;
-					break;
-				case 3:
-					ud.hideweapon = !ud.hideweapon;
-					vscrn(); // FIX_00056: Refresh issue w/FPS, small Weapon and custom FTA, when screen resized down
-					break;
-				case 4:
-					ud.weaponautoswitch = !ud.weaponautoswitch;
-					break;
-				case 5:
-					// FIX_00045: Autoaim mode can now be toggled on/off from menu
-					if( nHostForceDisableAutoaim == 0)
-					{
-						ud.auto_aim++;
-						ud.auto_aim = ((ud.auto_aim-1)%2)+1; // 2 = normal = full; 1 = bullet only
-					}					
-					break;
+			case 2:
+				ud.showcinematics = !ud.showcinematics;
+				break;
+			case 3:
+				ud.hideweapon = !ud.hideweapon;
+				vscrn(); // FIX_00056: Refresh issue w/FPS, small Weapon and custom FTA, when screen resized down
+				break;
+			case 4:
+				ud.weaponautoswitch = !ud.weaponautoswitch;
+				break;
+			case 5:
+				// FIX_00045: Autoaim mode can now be toggled on/off from menu
+				if( nHostForceDisableAutoaim == 0)
+				{
+					ud.auto_aim++;
+					ud.auto_aim = ((ud.auto_aim-1)%2)+1; // 2 = normal = full; 1 = bullet only
+				}					
+				break;
                 case 6: // parental
 #ifndef AUSTRALIA
                     cmenu(10000); 
 #endif
                     break;
+                case 7: // cheats
+                    cmenu(10100);
+                    break;
 
-			}
+		}
 
 
 			menutext(c,43+16*0,SHX(-3),PHX(-3),"SHADOWS");
@@ -2996,9 +3080,9 @@ else
 #else
             menutext(c,43+16*6,SHX(-9),1,"PARENTAL LOCK");
 #endif
+            menutext(c,43+16*7,SHX(-10),PHX(-10),"CHEATS");
 
-
-			break;
+		break;
 
         case 703:
 

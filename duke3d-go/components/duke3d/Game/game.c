@@ -6193,9 +6193,190 @@ const uint8_t  cheatquotes[NUMCHEATCODES][14] = {
 
 
 uint8_t  cheatbuf[10],cheatbuflen;
+
+// Activate a cheat directly by its index into cheatquotes[].
+// Used both by the keyboard-input path (cheats()) and the menu cheat picker.
+// Cheats that require typed parameters (warp/skill, indices 2 and 10) are
+// intentionally excluded from the menu path and are not handled here.
+void activate_cheat(int k)
+{
+    short i, j, weapon;
+
+    switch(k)
+    {
+        case 0:  // cornholio
+        case 18: // kroz — same effect: toggle god mode
+            ud.god = 1-ud.god;
+            if(ud.god)
+            {
+                pus = 1;
+                pub = 1;
+                sprite[ps[myconnectindex].i].cstat = 257;
+                hittype[ps[myconnectindex].i].temp_data[0] = 0;
+                hittype[ps[myconnectindex].i].temp_data[1] = 0;
+                hittype[ps[myconnectindex].i].temp_data[2] = 0;
+                hittype[ps[myconnectindex].i].temp_data[3] = 0;
+                hittype[ps[myconnectindex].i].temp_data[4] = 0;
+                hittype[ps[myconnectindex].i].temp_data[5] = 0;
+                sprite[ps[myconnectindex].i].hitag = 0;
+                sprite[ps[myconnectindex].i].lotag = 0;
+                sprite[ps[myconnectindex].i].pal = ps[myconnectindex].palookup;
+                FTA(17,&ps[myconnectindex],1);
+            }
+            else
+            {
+                ud.god = 0;
+                sprite[ps[myconnectindex].i].extra = max_player_health;
+                hittype[ps[myconnectindex].i].extra = -1;
+                ps[myconnectindex].last_extra = max_player_health;
+                FTA(18,&ps[myconnectindex],1);
+            }
+            sprite[ps[myconnectindex].i].extra = max_player_health;
+            hittype[ps[myconnectindex].i].extra = 0;
+            break;
+
+        case 1: // stuff — all weapons, ammo, inventory and keys
+            j = VOLUMEONE ? 6 : 0;
+            for(weapon = PISTOL_WEAPON; weapon < MAX_WEAPONS-j; weapon++)
+                ps[myconnectindex].gotweapon[weapon] = 1;
+            for(weapon = PISTOL_WEAPON; weapon < MAX_WEAPONS-j; weapon++)
+                addammo(weapon, &ps[myconnectindex], max_ammo_amount[weapon]);
+            ps[myconnectindex].ammo_amount[GROW_WEAPON] = 50;
+            ps[myconnectindex].steroids_amount  = 400;
+            ps[myconnectindex].heat_amount      = 1200;
+            ps[myconnectindex].boot_amount      = 200;
+            ps[myconnectindex].shield_amount    = 100;
+            ps[myconnectindex].scuba_amount     = 6400;
+            ps[myconnectindex].holoduke_amount  = 2400;
+            ps[myconnectindex].jetpack_amount   = 1600;
+            ps[myconnectindex].firstaid_amount  = max_player_health;
+            ps[myconnectindex].got_access       = 7;
+            ps[myconnectindex].inven_icon       = 1;
+            FTA(5,&ps[myconnectindex],1);
+            break;
+
+        case 3: // coords — toggle coordinate display
+            ud.coords = 1-ud.coords;
+            break;
+
+        case 4: // view — toggle over-shoulder camera
+            if(ps[myconnectindex].over_shoulder_on)
+                ps[myconnectindex].over_shoulder_on = 0;
+            else
+            {
+                ps[myconnectindex].over_shoulder_on = 1;
+                cameradist = 0;
+                cameraclock = totalclock;
+            }
+            break;
+
+        case 6: // unlock — open all locked sectors
+            for(i=numsectors-1; i>=0; i--)
+            {
+                j = sector[i].lotag;
+                if(j == -1 || j == 32767) continue;
+                if((j & 0x7fff) > 2)
+                {
+                    if(j&(0xffff-16384))
+                        sector[i].lotag &= (0xffff-16384);
+                    operatesectors(i,ps[myconnectindex].i);
+                }
+            }
+            operateforcefields(ps[myconnectindex].i,-1);
+            FTA(100,&ps[myconnectindex],1);
+            break;
+
+        case 7: // cashman
+            ud.cashman = 1-ud.cashman;
+            break;
+
+        case 8: // items — all inventory and keys
+            ps[myconnectindex].steroids_amount  = 400;
+            ps[myconnectindex].heat_amount      = 1200;
+            ps[myconnectindex].boot_amount      = 200;
+            ps[myconnectindex].shield_amount    = 100;
+            ps[myconnectindex].scuba_amount     = 6400;
+            ps[myconnectindex].holoduke_amount  = 2400;
+            ps[myconnectindex].jetpack_amount   = 1600;
+            ps[myconnectindex].firstaid_amount  = max_player_health;
+            ps[myconnectindex].got_access       = 7;
+            FTA(5,&ps[myconnectindex],1);
+            break;
+
+        case 9: // rate — toggle FPS display
+            ud.tickrate ^= 1;
+            vscrn();
+            break;
+
+        case 12: // hyper — steroids + nightvision
+            ps[myconnectindex].steroids_amount = 399;
+            ps[myconnectindex].heat_amount     = 1200;
+            FTA(37,&ps[myconnectindex],1);
+            break;
+
+        case 13: // monsters — toggle: 0=on 1=invisible/off
+            actor_tog = actor_tog ? 0 : 1;
+            break;
+
+        case 17: // showmap — toggle full map reveal
+            ud.showallmap = 1-ud.showallmap;
+            if(ud.showallmap)
+            {
+                for(i=0; i<(MAXSECTORS>>3); i++) show2dsector[i] = 255;
+                for(i=0; i<(MAXWALLS>>3);   i++) show2dwall[i]   = 255;
+                FTA(111,&ps[myconnectindex],1);
+            }
+            else
+            {
+                for(i=0; i<(MAXSECTORS>>3); i++) show2dsector[i] = 0;
+                for(i=0; i<(MAXWALLS>>3);   i++) show2dwall[i]   = 0;
+                FTA(1,&ps[myconnectindex],1);
+            }
+            break;
+
+        case 20: // clip — toggle noclip
+            ud.clipping = 1-ud.clipping;
+            FTA(112+ud.clipping,&ps[myconnectindex],1);
+            break;
+
+        case 21: // weapons — all weapons and ammo
+            j = VOLUMEONE ? 6 : 0;
+            for(weapon = PISTOL_WEAPON; weapon < MAX_WEAPONS-j; weapon++)
+            {
+                addammo(weapon, &ps[myconnectindex], max_ammo_amount[weapon]);
+                ps[myconnectindex].gotweapon[weapon] = 1;
+            }
+            FTA(119,&ps[myconnectindex],1);
+            break;
+
+        case 22: // inventory — all inventory items
+            ps[myconnectindex].steroids_amount  = 400;
+            ps[myconnectindex].heat_amount      = 1200;
+            ps[myconnectindex].boot_amount      = 200;
+            ps[myconnectindex].shield_amount    = 100;
+            ps[myconnectindex].scuba_amount     = 6400;
+            ps[myconnectindex].holoduke_amount  = 2400;
+            ps[myconnectindex].jetpack_amount   = 1600;
+            ps[myconnectindex].firstaid_amount  = max_player_health;
+            FTA(120,&ps[myconnectindex],1);
+            break;
+
+        case 23: // keys — all key cards
+            ps[myconnectindex].got_access = 7;
+            FTA(121,&ps[myconnectindex],1);
+            break;
+
+        case 24: // debug
+            debug_on = 1-debug_on;
+            break;
+    }
+
+    ps[myconnectindex].cheat_phase = 0;
+}
+
 void cheats(void)
 {
-    short ch, i, j, k, weapon;
+    short ch, i, j, k;
 
     if( (ps[myconnectindex].gm&MODE_TYPE) || (ps[myconnectindex].gm&MODE_MENU))
         return;
@@ -6241,369 +6422,60 @@ void cheats(void)
 
           FOUNDCHEAT:
           {
-                switch(k)
+                // Warp/skill cheats need the typed digits from cheatbuf, so
+                // they stay inline here rather than going through activate_cheat().
+                if(k == 2 || k == 10) // scotty### / skill#
                 {
-                    case 0: // cornholio
-                    case 18: // kroz
+                    if(k == 2)
+                    {
+                        short volnume = cheatbuf[6] - '0';
+                        short levnume = (cheatbuf[7] - '0')*10 + (cheatbuf[8]-'0');
+                        volnume--;
+                        levnume--;
+                        if(VOLUMEONE && volnume > 0)
+                        { ps[myconnectindex].cheat_phase = 0; KB_FlushKeyboardQueue(); return; }
+                        if(((volnume > 4)&&PLUTOPAK) || ((volnume > 3)&&!PLUTOPAK))
+                        { ps[myconnectindex].cheat_phase = 0; KB_FlushKeyboardQueue(); return; }
+                        if(volnume == 0 && levnume > 5)
+                        { ps[myconnectindex].cheat_phase = 0; KB_FlushKeyboardQueue(); return; }
+                        if(volnume != 0 && levnume >= 11)
+                        { ps[myconnectindex].cheat_phase = 0; KB_FlushKeyboardQueue(); return; }
+                        ud.m_volume_number = ud.volume_number = volnume;
+                        ud.m_level_number  = ud.level_number  = levnume;
+                    }
+                    else
+                        ud.m_player_skill = ud.player_skill = cheatbuf[5] - '1';
 
-                        ud.god = 1-ud.god;
+                    if(numplayers > 1 && myconnectindex == connecthead)
+                    {
+                        tempbuf[0]  = 5;
+                        tempbuf[1]  = ud.m_level_number;
+                        tempbuf[2]  = ud.m_volume_number;
+                        tempbuf[3]  = ud.m_player_skill;
+                        tempbuf[4]  = ud.m_monsters_off;
+                        tempbuf[5]  = ud.m_respawn_monsters;
+                        tempbuf[6]  = ud.m_respawn_items;
+                        tempbuf[7]  = ud.m_respawn_inventory;
+                        tempbuf[8]  = ud.m_coop;
+                        tempbuf[9]  = ud.m_marker;
+                        tempbuf[10] = ud.m_ffire;
+                        for(i=connecthead;i>=0;i=connectpoint2[i])
+                            sendpacket(i,(uint8_t*)tempbuf,11);
+                    }
+                    else ps[myconnectindex].gm |= MODE_RESTART;
 
-                        if(ud.god)
-                        { // set on
-                            pus = 1;
-                            pub = 1;
-                            sprite[ps[myconnectindex].i].cstat = 257;
-
-                            hittype[ps[myconnectindex].i].temp_data[0] = 0;
-                            hittype[ps[myconnectindex].i].temp_data[1] = 0;
-                            hittype[ps[myconnectindex].i].temp_data[2] = 0;
-                            hittype[ps[myconnectindex].i].temp_data[3] = 0;
-                            hittype[ps[myconnectindex].i].temp_data[4] = 0;
-                            hittype[ps[myconnectindex].i].temp_data[5] = 0;
-
-                            sprite[ps[myconnectindex].i].hitag = 0;
-                            sprite[ps[myconnectindex].i].lotag = 0;
-                            sprite[ps[myconnectindex].i].pal =
-                                ps[myconnectindex].palookup;
-
-                            FTA(17,&ps[myconnectindex],1);
-                        }
-                        else // set off
-                        {
-                            ud.god = 0;
-                            sprite[ps[myconnectindex].i].extra = max_player_health;
-                            hittype[ps[myconnectindex].i].extra = -1;
-                            ps[myconnectindex].last_extra = max_player_health;
-                            FTA(18,&ps[myconnectindex],1);
-                        }
-
-                        sprite[ps[myconnectindex].i].extra = max_player_health;
-                        hittype[ps[myconnectindex].i].extra = 0;
-                        ps[myconnectindex].cheat_phase = 0;
-                        KB_FlushKeyboardQueue();
-
-                        return;
-
-                    case 1: // stuff
-
-						if(VOLUMEONE)
-                        	j = 6;
-						else
-                        	j = 0;
-
-                        for ( weapon = PISTOL_WEAPON;weapon < MAX_WEAPONS-j;weapon++ )
-                           ps[myconnectindex].gotweapon[weapon]  = 1;
-
-                        for ( weapon = PISTOL_WEAPON;
-                              weapon < (MAX_WEAPONS-j);
-                              weapon++ )
-                            addammo( weapon, &ps[myconnectindex], max_ammo_amount[weapon] );
-
-                        ps[myconnectindex].ammo_amount[GROW_WEAPON] = 50;
-
-                        ps[myconnectindex].steroids_amount =         400;
-                        ps[myconnectindex].heat_amount     =        1200;
-                        ps[myconnectindex].boot_amount          =    200;
-                        ps[myconnectindex].shield_amount =           100;
-                        ps[myconnectindex].scuba_amount =            6400;
-                        ps[myconnectindex].holoduke_amount =         2400;
-                        ps[myconnectindex].jetpack_amount =          1600;
-                        ps[myconnectindex].firstaid_amount =         max_player_health;
-
-                        ps[myconnectindex].got_access =              7;
-                        FTA(5,&ps[myconnectindex],1);
-                        ps[myconnectindex].cheat_phase = 0;
-
-                        ps[myconnectindex].cheat_phase = 0;
-                        KB_FlushKeyboardQueue();
-                        ps[myconnectindex].inven_icon = 1;
-                        return;
-
-                    case 2:  // dnscotty###
-                    case 10: // skill#
-
-                        if(k == 2)
-                        {
-                            short volnume,levnume;
-                            volnume = cheatbuf[6] - '0';
-                            levnume = (cheatbuf[7] - '0')*10+(cheatbuf[8]-'0');
-
-                            volnume--;
-                            levnume--;
-							if (VOLUMEONE)
-							{
-								if( volnume > 0 )
-	                            {
-	                                ps[myconnectindex].cheat_phase = 0;
-	                                KB_FlushKeyboardQueue();
-	                                return;
-	                            }
-							}
-
-                            if((volnume > 4)&&PLUTOPAK)
-                            {
-                                ps[myconnectindex].cheat_phase = 0;
-                                KB_FlushKeyboardQueue();
-                                return;
-                            }
-                            else
-
-							if((volnume > 3)&&!PLUTOPAK)
-                            {
-                                ps[myconnectindex].cheat_phase = 0;
-                                KB_FlushKeyboardQueue();
-                                return;
-                            }
-                            else
-
-                            if(volnume == 0)
-                            {
-                                if(levnume > 5)
-                                {
-                                    ps[myconnectindex].cheat_phase = 0;
-                                    KB_FlushKeyboardQueue();
-                                    return;
-                                }
-                            }
-                            else
-                            {
-                                if(levnume >= 11)
-                                {
-                                    ps[myconnectindex].cheat_phase = 0;
-                                    KB_FlushKeyboardQueue();
-                                    return;
-                                }
-                            }
-
-                            ud.m_volume_number = ud.volume_number = volnume;
-                            ud.m_level_number = ud.level_number = levnume;
-
-                        }
-                        else ud.m_player_skill = ud.player_skill =
-                            cheatbuf[5] - '1';
-
-                        if(numplayers > 1 && myconnectindex == connecthead)
-                        {
-                            tempbuf[0] = 5;
-                            tempbuf[1] = ud.m_level_number;
-                            tempbuf[2] = ud.m_volume_number;
-                            tempbuf[3] = ud.m_player_skill;
-                            tempbuf[4] = ud.m_monsters_off;
-                            tempbuf[5] = ud.m_respawn_monsters;
-                            tempbuf[6] = ud.m_respawn_items;
-                            tempbuf[7] = ud.m_respawn_inventory;
-                            tempbuf[8] = ud.m_coop;
-                            tempbuf[9] = ud.m_marker;
-                            tempbuf[10] = ud.m_ffire;
-
-                            for(i=connecthead;i>=0;i=connectpoint2[i])
-                                sendpacket(i,(uint8_t*)tempbuf,11);
-                        }
-                        else ps[myconnectindex].gm |= MODE_RESTART;
-
-                        ps[myconnectindex].cheat_phase = 0;
-                        KB_FlushKeyboardQueue();
-                        return;
-
-                    case 3: // coords
-                        ps[myconnectindex].cheat_phase = 0;
-                        ud.coords = 1-ud.coords;
-                        KB_FlushKeyboardQueue();
-                        return;
-
-                    case 4: // view
-                        if( ps[myconnectindex].over_shoulder_on )
-                            ps[myconnectindex].over_shoulder_on = 0;
-                        else
-                        {
-                            ps[myconnectindex].over_shoulder_on = 1;
-                            cameradist = 0;
-                            cameraclock = totalclock;
-                        }
-                        // FTA(22,&ps[myconnectindex],1);
-                        ps[myconnectindex].cheat_phase = 0;
-                        KB_FlushKeyboardQueue();
-                        return;
-
-                    case 5: // time
-                        // FTA(21,&ps[myconnectindex]);
-                        ps[myconnectindex].cheat_phase = 0;
-                        KB_FlushKeyboardQueue();
-                        return;
-
-					case 6: // unlock
-                        for(i=numsectors-1;i>=0;i--) //Unlock
-                        {
-                            j = sector[i].lotag;
-                            if(j == -1 || j == 32767) continue;
-                            if( (j & 0x7fff) > 2 )
-                            {
-                                if( j&(0xffff-16384) )
-                                    sector[i].lotag &= (0xffff-16384);
-                                operatesectors(i,ps[myconnectindex].i);
-                            }
-                        }
-                        operateforcefields(ps[myconnectindex].i,-1);
-
-                        FTA(100,&ps[myconnectindex],1);
-                        ps[myconnectindex].cheat_phase = 0;
-                        KB_FlushKeyboardQueue();
-                        return;
-
-                    case 7: // cashman
-                        ud.cashman = 1-ud.cashman;
-                        KB_ClearKeyDown(sc_N);
-                        ps[myconnectindex].cheat_phase = 0;
-                        return;
-
-                    case 8: // items
-                        ps[myconnectindex].steroids_amount =         400;
-                        ps[myconnectindex].heat_amount     =        1200;
-                        ps[myconnectindex].boot_amount          =    200;
-                        ps[myconnectindex].shield_amount =           100;
-                        ps[myconnectindex].scuba_amount =            6400;
-                        ps[myconnectindex].holoduke_amount =         2400;
-                        ps[myconnectindex].jetpack_amount =          1600;
-
-                        ps[myconnectindex].firstaid_amount =         max_player_health;
-                        ps[myconnectindex].got_access =              7;
-                        FTA(5,&ps[myconnectindex],1);
-                        ps[myconnectindex].cheat_phase = 0;
-                        KB_FlushKeyboardQueue();
-                        return;
-
-                    case 9: // rate
-                        ud.tickrate ^= 1;
-						vscrn(); // FIX_00056: Refresh issue w/FPS, small Weapon and custom FTA, when screen resized down
-                        ps[myconnectindex].cheat_phase = 0;
-                        KB_FlushKeyboardQueue();
-                        return;
-
-                    case 11: // beta
-                        FTA(105,&ps[myconnectindex],1);
-                        KB_ClearKeyDown(sc_H);
-                        ps[myconnectindex].cheat_phase = 0;
-                        KB_FlushKeyboardQueue();
-                        return;
-
-                    case 12: // hyper
-                        ps[myconnectindex].steroids_amount = 399;
-                        ps[myconnectindex].heat_amount = 1200;
-                        ps[myconnectindex].cheat_phase = 0;
-                        FTA(37,&ps[myconnectindex],1);
-                        KB_FlushKeyboardQueue();
-                        return;
-
-                    case 13: // monsters
-                        if(actor_tog == 3) actor_tog = 0;
-                        actor_tog++;
-                        ps[screenpeek].cheat_phase = 0;
-                        KB_FlushKeyboardQueue();
-                        return;
-
-                    case 14: // <RESERVED>
-                    case 25: // ??
-                        ud.eog = 1;
-                        ps[myconnectindex].gm |= MODE_EOL;
-                        KB_FlushKeyboardQueue();
-                        return;
-
-                    case 15: // <RESERVED>
-                        ps[myconnectindex].gm = MODE_EOL;
-                        ps[myconnectindex].cheat_phase = 0;
-                        KB_FlushKeyboardQueue();
-                        return;
-
-                    case 16: // todd
-                        FTA(99,&ps[myconnectindex],1);
-                        ps[myconnectindex].cheat_phase = 0;
-                        KB_FlushKeyboardQueue();
-                        return;
-
-                   case 17: // showmap
-                        ud.showallmap = 1-ud.showallmap;
-                        if(ud.showallmap)
-                        {
-                            for(i=0;i<(MAXSECTORS>>3);i++)
-                                show2dsector[i] = 255;
-                            for(i=0;i<(MAXWALLS>>3);i++)
-                                show2dwall[i] = 255;
-                            FTA(111,&ps[myconnectindex],1);
-                        }
-                        else
-                        {
-                            for(i=0;i<(MAXSECTORS>>3);i++)
-                                show2dsector[i] = 0;
-                            for(i=0;i<(MAXWALLS>>3);i++)
-                                show2dwall[i] = 0;
-                            FTA(1,&ps[myconnectindex],1);
-                        }
-                        ps[myconnectindex].cheat_phase = 0;
-                        KB_FlushKeyboardQueue();
-                        return;
-
-                    case 19: // allen
-                        FTA(79,&ps[myconnectindex],1);
-                        ps[myconnectindex].cheat_phase = 0;
-                        KB_ClearKeyDown(sc_N);
-                        return;
-
-					case 20: // clip
-                        ud.clipping = 1-ud.clipping;
-                        KB_FlushKeyboardQueue();
-                        ps[myconnectindex].cheat_phase = 0;
-                        FTA(112+ud.clipping,&ps[myconnectindex],1);
-                        return;
-
-					case 21: // weapons
-						if(VOLUMEONE)
-                        	j = 6;
-						else
-                        	j = 0;
-
-                        for ( weapon = PISTOL_WEAPON;weapon < MAX_WEAPONS-j;weapon++ )
-                        {
-                            addammo( weapon, &ps[myconnectindex], max_ammo_amount[weapon] );
-                            ps[myconnectindex].gotweapon[weapon]  = 1;
-                        }
-
-                        KB_FlushKeyboardQueue();
-                        ps[myconnectindex].cheat_phase = 0;
-                        FTA(119,&ps[myconnectindex],1);
-                        return;
-
-                    case 22: // inventory
-                        KB_FlushKeyboardQueue();
-                        ps[myconnectindex].cheat_phase = 0;
-                        ps[myconnectindex].steroids_amount =         400;
-                        ps[myconnectindex].heat_amount     =        1200;
-                        ps[myconnectindex].boot_amount          =    200;
-                        ps[myconnectindex].shield_amount =           100;
-                        ps[myconnectindex].scuba_amount =            6400;
-                        ps[myconnectindex].holoduke_amount =         2400;
-                        ps[myconnectindex].jetpack_amount =          1600;
-                        ps[myconnectindex].firstaid_amount =         max_player_health;
-                        FTA(120,&ps[myconnectindex],1);
-                        ps[myconnectindex].cheat_phase = 0;
-                        return;
-
-                    case 23: // keys
-                        ps[myconnectindex].got_access =              7;
-                        KB_FlushKeyboardQueue();
-                        ps[myconnectindex].cheat_phase = 0;
-                        FTA(121,&ps[myconnectindex],1);
-                        return;
-
-                    case 24: // debug
-                        debug_on = 1-debug_on;
-                        KB_FlushKeyboardQueue();
-                        ps[myconnectindex].cheat_phase = 0;
-                        break;
+                    ps[myconnectindex].cheat_phase = 0;
+                    KB_FlushKeyboardQueue();
+                    return;
                 }
-             }
+
+                // All other cheats go through the shared helper.
+                activate_cheat(k);
+                KB_FlushKeyboardQueue();
+                return;
           }
        }
-
+    }
     else
     {
         if( KB_KeyPressed(sc_D) )
