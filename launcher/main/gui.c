@@ -159,6 +159,56 @@ tab_t *gui_get_current_tab(void)
     return tab;
 }
 
+static int get_prev_enabled_tab_index(int current_index)
+{
+    if (gui.tabs_count <= 1) return current_index;
+    int idx = current_index;
+    for (int i = 0; i < gui.tabs_count; ++i)
+    {
+        idx = (idx - 1 + gui.tabs_count) % gui.tabs_count;
+        if (gui.tabs[idx]->enabled)
+            return idx;
+    }
+    return current_index;
+}
+
+static int get_next_enabled_tab_index(int current_index)
+{
+    if (gui.tabs_count <= 1) return current_index;
+    int idx = current_index;
+    for (int i = 0; i < gui.tabs_count; ++i)
+    {
+        idx = (idx + 1) % gui.tabs_count;
+        if (gui.tabs[idx]->enabled)
+            return idx;
+    }
+    return current_index;
+}
+
+static void gui_theme_cleanup_unused_backgrounds(void)
+{
+    int curr_idx = gui.selected_tab;
+    int prev_idx = get_prev_enabled_tab_index(curr_idx);
+    int next_idx = get_next_enabled_tab_index(curr_idx);
+
+    bool is_dynamic = rg_gui_get_theme_bool("layout", "dynamic_theme", false);
+
+    for (size_t i = 0; i < gui.tabs_count; ++i)
+    {
+        if (i == curr_idx)
+            continue;
+
+        if (is_dynamic && (i == prev_idx || i == next_idx))
+            continue;
+
+        if (gui.tabs[i]->background)
+        {
+            rg_surface_free(gui.tabs[i]->background);
+            gui.tabs[i]->background = NULL;
+        }
+    }
+}
+
 tab_t *gui_set_current_tab(int index)
 {
     tab_t *prev_tab = gui_get_tab(gui.selected_tab);
@@ -175,11 +225,7 @@ tab_t *gui_set_current_tab(int index)
 
     if (prev_tab && prev_tab != curr_tab)
     {
-        // FIXME: We should recompress the images rather than fully free them, because if a custom theme is
-        //        used then it means that we're constantly reloading from SD Card which is very slow...
-        rg_surface_free(prev_tab->background), prev_tab->background = NULL;
-        // rg_surface_free(prev_tab->banner), prev_tab->banner = NULL;
-        // rg_surface_free(prev_tab->logo), prev_tab->logo = NULL;
+        gui_theme_cleanup_unused_backgrounds();
     }
 
     return curr_tab;
@@ -411,54 +457,263 @@ void gui_draw_preview(tab_t *tab)
     }
 }
 
+static inline uint16_t blend_rgb565(uint16_t bg, uint16_t fg, uint8_t alpha, int shade)
+{
+    if (shade > 1)
+    {
+        uint32_t r = ((fg >> 11) & 0x1F) / shade;
+        uint32_t g = ((fg >> 5) & 0x3F) / shade;
+        uint32_t b = (fg & 0x1F) / shade;
+        fg = (r << 11) | (g << 5) | b;
+    }
+
+    if (alpha >= 32) return fg;
+    if (alpha == 0) return bg;
+
+    // red/blue components are separated enough to be multiplied and added in parallel
+    uint32_t fg_rb = fg & 0xF81F;
+    uint32_t bg_rb = bg & 0xF81F;
+    uint32_t rb = ((fg_rb * alpha) + (bg_rb * (32 - alpha))) >> 5;
+
+    // green component blended separately
+    uint32_t fg_g = fg & 0x07E0;
+    uint32_t bg_g = bg & 0x07E0;
+    uint32_t g = ((fg_g * alpha) + (bg_g * (32 - alpha))) >> 5;
+
+    return (rb & 0xF81F) | (g & 0x07E0);
+}
+
+static void gui_draw_image_clipped(int x_pos, int y_pos, int width, int height, const rg_image_t *img, int opacity, int shade)
+{
+    if (!img)
+        return;
+
+    rg_image_t *resized_img = NULL;
+    const rg_image_t *src_img = img;
+
+    if (width && height && (width != img->width || height != img->height))
+    {
+        resized_img = rg_surface_resize(img, width, height);
+        if (!resized_img)
+            return;
+        src_img = resized_img;
+    }
+
+    int dx = 0;
+    int dy = 0;
+    int draw_w = src_img->width;
+    int draw_h = src_img->height;
+
+    if (x_pos < 0)
+    {
+        dx = -x_pos;
+        x_pos = 0;
+        draw_w -= dx;
+    }
+    if (y_pos < 0)
+    {
+        dy = -y_pos;
+        y_pos = 0;
+        draw_h -= dy;
+    }
+
+    // Clip to screen boundaries
+    if (x_pos >= gui.width || y_pos >= gui.height)
+    {
+        if (resized_img)
+            rg_surface_free(resized_img);
+        return;
+    }
+
+    draw_w = RG_MIN(draw_w, gui.width - x_pos);
+    draw_h = RG_MIN(draw_h, gui.height - y_pos);
+
+    if (draw_w > 0 && draw_h > 0)
+    {
+        const uint16_t *buffer = (const uint16_t *)src_img->data + dy * src_img->width + dx;
+        int stride = src_img->width;
+
+        // Map opacity (0-100) to alpha (0-32)
+        int alpha = (opacity * 32) / 100;
+        if (alpha < 0) alpha = 0;
+        if (alpha > 32) alpha = 32;
+
+        if (gui.surface && gui.surface->data)
+        {
+            uint16_t *screen = gui.surface->data;
+            int screen_w = gui.surface->width;
+
+            for (int y = 0; y < draw_h; ++y)
+            {
+                uint16_t *dst = screen + (y_pos + y) * screen_w + x_pos;
+                const uint16_t *src = buffer + y * stride;
+
+                for (int x = 0; x < draw_w; ++x)
+                {
+                    if (src[x] != C_TRANSPARENT)
+                    {
+                        dst[x] = blend_rgb565(dst[x], src[x], alpha, shade);
+                    }
+                }
+            }
+        }
+        else
+        {
+            // Fallback (no opacity, just standard copy) if no screen buffer
+            rg_gui_copy_buffer(x_pos, y_pos, draw_w, draw_h, stride * 2, buffer, true);
+        }
+    }
+
+    if (resized_img)
+    {
+        rg_surface_free(resized_img);
+    }
+}
+
 void gui_draw_background(tab_t *tab, int shade)
 {
-    // We can't losslessly change shade, must reload!
-    if (tab->background && tab->background_shade > 0 && tab->background_shade != shade)
-    {
-        rg_surface_free(tab->background);
-        tab->background = NULL;
-    }
+    bool is_dynamic = rg_gui_get_theme_bool("layout", "dynamic_theme", false);
 
-    if (!tab->background)
+    if (is_dynamic)
     {
-        tab->background = gui_get_image("background", tab->name); // Try background_<tabname>.png
-        if (!tab->background)
-            tab->background = gui_get_image("background", NULL); // Fallback to a background.png
-        tab->background_shade = 0;
-        if (tab->background && (tab->background->width != gui.width || tab->background->height != gui.height))
+        // 1. Draw solid background color (shaded if shade > 1)
+        rg_color_t bg_color = rg_gui_get_theme_color("layout", "background_color", C_BLACK);
+        if (shade > 1)
         {
-            rg_image_t *temp = rg_surface_resize(tab->background, gui.width, gui.height);
-            if (temp)
-            {
-                rg_surface_free(tab->background);
-                tab->background = temp;
-            }
+            uint32_t r = ((bg_color >> 11) & 0x1F) / shade;
+            uint32_t g = ((bg_color >> 5) & 0x3F) / shade;
+            uint32_t b = (bg_color & 0x1F) / shade;
+            bg_color = (r << 11) | (g << 5) | b;
         }
-    }
+        rg_gui_draw_rect(0, 0, gui.width, gui.height, 0, 0, bg_color);
 
-    if (tab->background && tab->background_shade != shade && shade > 0)
-    {
-        rg_image_t *img = tab->background;
-        for (int y = 0; y < img->height; ++y)
+        // 2. Identify the tabs in the active triplet
+        int curr_idx = gui.selected_tab;
+        int prev_idx = get_prev_enabled_tab_index(curr_idx);
+        int next_idx = get_next_enabled_tab_index(curr_idx);
+
+        tab_t *curr_tab = gui.tabs[curr_idx];
+        tab_t *prev_tab = gui.tabs[prev_idx];
+        tab_t *next_tab = gui.tabs[next_idx];
+
+        // Ensure any shaded background is discarded and reloaded
+        if (curr_tab->background && curr_tab->background_shade > 0)
         {
-            uint16_t *line = img->data + y * img->stride;
-            for (int x = 0; x < img->width; ++x)
-            {
-                int pixel = line[x];
-                int r = ((pixel >> 11) & 0x1F) / shade;
-                int g = ((pixel >> 5) & 0x3F) / shade;
-                int b = ((pixel) & 0x1F) / shade;
-                line[x] = ((r & 0x1F) << 11) | ((g & 0x3F) << 5) | ((b & 0x1F) << 0);
-            }
+            rg_surface_free(curr_tab->background);
+            curr_tab->background = NULL;
         }
-        tab->background_shade = shade;
-    }
+        if (prev_tab->background && prev_tab->background_shade > 0)
+        {
+            rg_surface_free(prev_tab->background);
+            prev_tab->background = NULL;
+        }
+        if (next_tab->background && next_tab->background_shade > 0)
+        {
+            rg_surface_free(next_tab->background);
+            next_tab->background = NULL;
+        }
 
-    if (tab->background)
-        rg_gui_draw_image(0, 0, gui.width, gui.height, false, tab->background);
+        // 3. Load backgrounds at original sizes
+        if (!curr_tab->background)
+        {
+            curr_tab->background = gui_get_image("background", curr_tab->name);
+            if (!curr_tab->background)
+                curr_tab->background = gui_get_image("background", NULL);
+            curr_tab->background_shade = 0;
+        }
+        if (prev_idx != curr_idx && !prev_tab->background)
+        {
+            prev_tab->background = gui_get_image("background", prev_tab->name);
+            if (!prev_tab->background)
+                prev_tab->background = gui_get_image("background", NULL);
+            prev_tab->background_shade = 0;
+        }
+        if (next_idx != curr_idx && next_idx != prev_idx && !next_tab->background)
+        {
+            next_tab->background = gui_get_image("background", next_tab->name);
+            if (!next_tab->background)
+                next_tab->background = gui_get_image("background", NULL);
+            next_tab->background_shade = 0;
+        }
+
+        // 4. Retrieve layout settings from theme.json (using absolute screen coords)
+        int current_width = rg_gui_get_theme_number("layout", "current_width", 200);
+        int current_height = rg_gui_get_theme_number("layout", "current_height", 150);
+        int current_x = rg_gui_get_theme_number("layout", "current_x", (gui.width - current_width) / 2);
+        int current_y = rg_gui_get_theme_number("layout", "current_y", (gui.height - current_height) / 2);
+        int current_opacity = rg_gui_get_theme_number("layout", "current_opacity", 100);
+
+        int prev_width = rg_gui_get_theme_number("layout", "prev_width", 120);
+        int prev_height = rg_gui_get_theme_number("layout", "prev_height", 90);
+        int prev_x = rg_gui_get_theme_number("layout", "prev_x", -10);
+        int prev_y = rg_gui_get_theme_number("layout", "prev_y", (gui.height - prev_height) / 2);
+        int prev_opacity = rg_gui_get_theme_number("layout", "prev_opacity", 30);
+
+        int next_width = rg_gui_get_theme_number("layout", "next_width", 120);
+        int next_height = rg_gui_get_theme_number("layout", "next_height", 90);
+        int next_x = rg_gui_get_theme_number("layout", "next_x", gui.width - next_width + 10);
+        int next_y = rg_gui_get_theme_number("layout", "next_y", (gui.height - next_height) / 2);
+        int next_opacity = rg_gui_get_theme_number("layout", "next_opacity", 30);
+
+        // 5. Draw
+        if (prev_idx != curr_idx && prev_tab->background)
+            gui_draw_image_clipped(prev_x, prev_y, prev_width, prev_height, prev_tab->background, prev_opacity, shade);
+
+        if (next_idx != curr_idx && next_idx != prev_idx && next_tab->background)
+            gui_draw_image_clipped(next_x, next_y, next_width, next_height, next_tab->background, next_opacity, shade);
+
+        if (curr_tab->background)
+            gui_draw_image_clipped(current_x, current_y, current_width, current_height, curr_tab->background, current_opacity, shade);
+    }
     else
-        rg_gui_draw_rect(0, 0, gui.width, gui.height, 0, 0, gui.theme->background);
+    {
+        // We can't losslessly change shade, must reload!
+        if (tab->background && tab->background_shade > 0 && tab->background_shade != shade)
+        {
+            rg_surface_free(tab->background);
+            tab->background = NULL;
+        }
+
+        if (!tab->background)
+        {
+            tab->background = gui_get_image("background", tab->name); // Try background_<tabname>.png
+            if (!tab->background)
+                tab->background = gui_get_image("background", NULL); // Fallback to a background.png
+            tab->background_shade = 0;
+            if (tab->background && (tab->background->width != gui.width || tab->background->height != gui.height))
+            {
+                rg_image_t *temp = rg_surface_resize(tab->background, gui.width, gui.height);
+                if (temp)
+                {
+                    rg_surface_free(tab->background);
+                    tab->background = temp;
+                }
+            }
+        }
+
+        if (tab->background && tab->background_shade != shade && shade > 0)
+        {
+            rg_image_t *img = tab->background;
+            for (int y = 0; y < img->height; ++y)
+            {
+                uint16_t *line = img->data + y * img->stride;
+                for (int x = 0; x < img->width; ++x)
+                {
+                    int pixel = line[x];
+                    int r = ((pixel >> 11) & 0x1F) / shade;
+                    int g = ((pixel >> 5) & 0x3F) / shade;
+                    int b = ((pixel) & 0x1F) / shade;
+                    line[x] = ((r & 0x1F) << 11) | ((g & 0x3F) << 5) | ((b & 0x1F) << 0);
+                }
+            }
+            tab->background_shade = shade;
+        }
+
+        if (tab->background)
+            rg_gui_draw_image(0, 0, gui.width, gui.height, false, tab->background);
+        else
+            rg_gui_draw_rect(0, 0, gui.width, gui.height, 0, 0, gui.theme->background);
+    }
 }
 
 void gui_draw_header(tab_t *tab, int offset)

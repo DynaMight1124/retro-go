@@ -99,6 +99,35 @@ Colors are RGB565 and can be represented as integers or hex strings. The special
 </details>
 
 
+### Layout
+
+The `layout` section contains parameters for configuring the dynamic launcher background carousel (e.g. showing previous, current, and next systems' backgrounds simultaneously).
+
+All coordinates are absolute relative to the top-left of the screen (0,0 is the top-left corner). Negative values can be used to position backgrounds partially off-screen.
+
+The below shows the current options and an example of a 3 picture background using 3 images that are 150x240. Different size images can be used and moved by adjusted by changing the values.
+
+| Parameter | Type | Default Example | Description |
+|--|--|--|--|
+| `dynamic_theme` | Boolean | `false` | Enables/disables the dynamic background carousel. |
+| `background_color` | Color | `0x0000` | The solid color drawn behind the carousel background images. |
+| `current_x` | Integer | `85` | Top-left X coordinate of the current system's background. |
+| `current_y` | Integer | `0` | Top-left Y coordinate of the current system's background. |
+| `current_width` | Integer | `150` | Width of the current system's background. |
+| `current_height` | Integer | `250` | Height of the current system's background. |
+| `current_opacity` | Integer | `100` | Opacity percentage (0 to 100) of the current system's background. |
+| `prev_x` | Integer | `-35` | Top-left X coordinate of the previous system's background. |
+| `prev_y` | Integer | `0` | Top-left Y coordinate of the previous system's background. |
+| `prev_width` | Integer | `150` | Width of the previous system's background. |
+| `prev_height` | Integer | `240` | Height of the previous system's background. |
+| `prev_opacity` | Integer | `30` | Opacity percentage (0 to 100) of the previous system's background. |
+| `next_x` | Integer | `205` | Top-left X coordinate of the next system's background. |
+| `next_y` | Integer | `0` | Top-left Y coordinate of the next system's background. |
+| `next_width` | Integer | `150` | Width of the next system's background. |
+| `next_height` | Integer | `240` | Height of the next system's background. |
+| `next_opacity` | Integer | `30` | Opacity percentage (0 to 100) of the next system's background. |
+
+
 ### Images
 
 It is highly recommended to keep the image files sizes as small as possible to ensure good loading speed. This can be achieved by using the lowest bit depth possible when saving your PNG file. Tools like [pngquant](https://pngquant.org/) can also help!

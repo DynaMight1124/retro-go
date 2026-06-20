@@ -214,6 +214,55 @@ rg_color_t rg_gui_get_theme_color(const char *section, const char *key, rg_color
     return intval;
 }
 
+int rg_gui_get_theme_number(const char *section, const char *key, int default_value)
+{
+    if (!gui.theme_obj)
+        return default_value;
+    cJSON *root = section ? cJSON_GetObjectItem(gui.theme_obj, section) : gui.theme_obj;
+    if (!root)
+        return default_value;
+    cJSON *obj = cJSON_GetObjectItem(root, key);
+    if (!obj)
+        return default_value;
+    if (cJSON_IsNumber(obj))
+        return obj->valueint;
+    if (cJSON_IsString(obj))
+    {
+        char *strval = cJSON_GetStringValue(obj);
+        if (strval)
+            return (int)strtol(strval, NULL, 0);
+    }
+    return default_value;
+}
+
+bool rg_gui_get_theme_bool(const char *section, const char *key, bool default_value)
+{
+    if (!gui.theme_obj)
+        return default_value;
+    cJSON *root = section ? cJSON_GetObjectItem(gui.theme_obj, section) : gui.theme_obj;
+    if (!root)
+        return default_value;
+    cJSON *obj = cJSON_GetObjectItem(root, key);
+    if (!obj)
+        return default_value;
+    if (cJSON_IsBool(obj))
+        return cJSON_IsTrue(obj);
+    if (cJSON_IsNumber(obj))
+        return obj->valueint != 0;
+    if (cJSON_IsString(obj))
+    {
+        char *strval = cJSON_GetStringValue(obj);
+        if (strval)
+        {
+            if (strcmp(strval, "true") == 0 || strcmp(strval, "1") == 0)
+                return true;
+            if (strcmp(strval, "false") == 0 || strcmp(strval, "0") == 0)
+                return false;
+        }
+    }
+    return default_value;
+}
+
 rg_image_t *rg_gui_get_theme_image(const char *name)
 {
     char pathbuf[RG_PATH_MAX];

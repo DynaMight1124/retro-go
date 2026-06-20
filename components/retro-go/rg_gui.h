@@ -113,6 +113,8 @@ bool rg_gui_set_theme(const char *name);
 const char *rg_gui_get_theme_name(void);
 rg_image_t *rg_gui_get_theme_image(const char *name);
 rg_color_t rg_gui_get_theme_color(const char *section, const char *key, rg_color_t default_value);
+int rg_gui_get_theme_number(const char *section, const char *key, int default_value);
+bool rg_gui_get_theme_bool(const char *section, const char *key, bool default_value);
 rg_margins_t rg_gui_get_safe_area(void);
 void rg_gui_copy_buffer(int left, int top, int width, int height, int stride, const uint16_t *buffer, bool transparency);
 

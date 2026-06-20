@@ -1,0 +1,72 @@
+{
+    "description": "Art Book Next",
+    "website": "nothing",
+    "author": "Original Artwork by AnthonyCaccese",
+    "layout": {
+        "dynamic_theme": true,
+        "background_color": "0x0000",
+        "current_x": 85,
+        "current_y": 0,
+        "current_width": 150,
+        "current_height": 240,
+        "current_opacity": 100,
+        "prev_x": -35,
+        "prev_y": 0,
+        "prev_width": 150,
+        "prev_height": 240,
+        "prev_opacity": 30,
+        "next_x": 205,
+        "next_y": 0,
+        "next_width": 150,
+        "next_height": 240,
+        "next_opacity": 30
+    },
+    "dialog": {
+        "__comment": "This section contains global dialog colors",
+        "background": "0x0010",
+        "foreground": "0xFFFF",
+        "border": "0x6B4D",
+        "header": "0xFFFF",
+        "scrollbar": "0xFFFF",
+        "shadow": "none",
+        "item_standard": "0xFFFF",
+        "item_disabled": "0x8410",
+        "item_message": "0xBDF7"
+    },
+    "launcher_1": {
+        "__comment": "This section contains launcher colors variant 1",
+        "background": "0x0000",
+        "foreground": "0xFFDE",
+        "list_standard_bg": "transparent",
+        "list_standard_fg": "0x8410",
+        "list_selected_bg": "transparent",
+        "list_selected_fg": "0xFFFF"
+    },
+    "launcher_2": {
+        "__comment": "This section contains launcher colors variant 2",
+        "background": "0x0000",
+        "foreground": "0xFFDE",
+        "list_standard_bg": "transparent",
+        "list_standard_fg": "0x8410",
+        "list_selected_bg": "transparent",
+        "list_selected_fg": "0x07E0"
+    },
+    "launcher_3": {
+        "__comment": "This section contains launcher colors variant 3",
+        "background": "0x0000",
+        "foreground": "0xFFDE",
+        "list_standard_bg": "transparent",
+        "list_standard_fg": "0x8410",
+        "list_selected_bg": "0xFFFF",
+        "list_selected_fg": "0x0000"
+    },
+    "launcher_4": {
+        "__comment": "This section contains launcher colors variant 4",
+        "background": "0x0000",
+        "foreground": "0xFFDE",
+        "list_standard_bg": "transparent",
+        "list_standard_fg": "0xAD55",
+        "list_selected_bg": "0xFFFF",
+        "list_selected_fg": "0x0000"
+    }
+}
