@@ -92,11 +92,15 @@ const key_mapping_t keymap[] = {
 
 const size_t keymap_count = sizeof(keymap) / sizeof(keymap[0]);
 
+// Hotkey mappings
 const key_mapping_t shifted_keymap[] = {
-    {RG_KEY_UP,    SDL_SCANCODE_RETURN,      SDLK_RETURN,       RG_MODE_GAME}, // Use Inventory Item
-    {RG_KEY_DOWN,  SDL_SCANCODE_J,           SDLK_j,            RG_MODE_GAME}, // Jetpack
-    {RG_KEY_LEFT,  SDL_SCANCODE_LEFTBRACKET, SDLK_LEFTBRACKET,  RG_MODE_GAME}, // Previous Item
-    {RG_KEY_RIGHT, SDL_SCANCODE_RIGHTBRACKET,SDLK_RIGHTBRACKET, RG_MODE_GAME}, // Next Item
+    {RG_KEY_UP,    SDL_SCANCODE_RETURN,      SDLK_RETURN,       RG_MODE_GAME}, // Use Inventory Item (Up + Hotkey)
+    {RG_KEY_DOWN,  SDL_SCANCODE_J,           SDLK_j,            RG_MODE_GAME}, // Jetpack (Down + Hotkey)
+    {RG_KEY_LEFT,  SDL_SCANCODE_LEFTBRACKET, SDLK_LEFTBRACKET,  RG_MODE_GAME}, // Previous Item (Left + Hotkey)
+    {RG_KEY_RIGHT, SDL_SCANCODE_RIGHTBRACKET,SDLK_RIGHTBRACKET, RG_MODE_GAME}, // Next Item (Right + Hotkey)
+    {RG_KEY_B,     SDL_SCANCODE_END,         SDLK_END,          RG_MODE_GAME}, // Look Down (B + Hotkey)
+    {RG_KEY_X,     SDL_SCANCODE_HOME,        SDLK_HOME,         RG_MODE_GAME}, // Look Up (X + Hotkey)
+    {RG_KEY_OPTION,SDL_SCANCODE_HOME,        SDLK_HOME,         RG_MODE_GAME}, // Look Up (OPTION + Hotkey)
 };
 
 const size_t shifted_keymap_count = sizeof(shifted_keymap) / sizeof(shifted_keymap[0]);
