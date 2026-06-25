@@ -1388,13 +1388,12 @@ void waitforeverybody()
 
 void dofrontscreens(void)
 {
-    int32_t i,j;
+    int32_t j;
 
     if(ud.recstat != 2)
     {
         ps[myconnectindex].palette = palette;
         for(j=0;j<63;j+=7) palto(0,0,0,j);
-        i = ud.screen_size;
         ud.screen_size = 0;
         vscrn();
         clearview(0L);

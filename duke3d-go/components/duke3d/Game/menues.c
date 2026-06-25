@@ -1850,9 +1850,32 @@ void menus(void)
         // ---------------------------------------------------------------
         case 10100:
         {
-            // cheat_id == -1 means "warp to vol/level" rather than a cheatquotes[] index.
+            static int selected_level[4] = { 0, 0, 0, 0 };
+            int max_levels[4];
+            for (int v = 0; v < 4; v++)
+            {
+                int nl = 0;
+                while (nl < 11 && level_file_names[v * 11 + nl][0] != '\0')
+                {
+                    nl++;
+                }
+                if (nl == 0)
+                {
+                    // Fallback to standard counts
+                    if (v == 0) nl = 6;
+                    else nl = 11;
+                }
+                // Episode 1 always contains exactly 6 playable levels else it shows shareware messages as levels.
+                if (v == 0)
+                {
+                    nl = 6;
+                }
+                max_levels[v] = nl;
+            }
+
+            // cheat_id == -1 means "warp to episode/level", -2 means custom warp toggle
             static const struct {
-                int        cheat_id;  // cheatquotes[] index, or -1 for warp
+                int        cheat_id;  // cheatquotes[] index, or -1 for warp, -2 for custom warp
                 int8_t     vol;       // 0-based volume (warp entries only)
                 int8_t     level;     // 0-based level  (warp entries only)
                 const char *label;
@@ -1862,13 +1885,25 @@ void menus(void)
                 {  1, 0, 0, "ALL STUFF"       },  // stuff
              // { 17, 0, 0, "SHOW FULL MAP"   },  // showmap — temporarily hidden
                 { 13, 0, 0, "MONSTERS"        },  // monsters
-                { -1, 0, 1, "WARP TO E1L2"   },  // DNSCOTTY102
-                { -1, 0, 2, "WARP TO E1L3"   },  // DNSCOTTY103
-                { -1, 0, 3, "WARP TO E1L4"   },  // DNSCOTTY104
-                { -1, 0, 4, "WARP TO E1L5"   },  // DNSCOTTY105
-                { -1, 0, 5, "WARP TO E1L6"   },  // DNSCOTTY106
+                { -2, 0, 0, "EPISODE 1"       },  // episode 1 toggle
+                { -2, 1, 0, "EPISODE 2"       },  // episode 2 toggle
+                { -2, 2, 0, "EPISODE 3"       },  // episode 3 toggle
+                { -2, 3, 0, "EPISODE 4"       },  // episode 4 toggle
             };
-            #define NUM_CHEAT_ENTRIES ((int)(sizeof(cheat_entries)/sizeof(cheat_entries[0])))
+
+            int num_cheat_entries = 5; // God, Noclip, Stuff, Monsters, Episode 1
+            if (grpVersion == REGULAR_GRP13D)
+            {
+                num_cheat_entries = 7; // Ep 1, 2, 3
+            }
+            else if (grpVersion == ATOMIC_GRP14_15 || grpVersion == DUKEITOUTINDC_GRP)
+            {
+                num_cheat_entries = 8; // Ep 1, 2, 3, 4
+            }
+            else if (!VOLUMEONE)
+            {
+                num_cheat_entries = 7; // Fallback
+            }
 
             int ingame = (ps[myconnectindex].gm & MODE_GAME) != 0;
 
@@ -1876,10 +1911,13 @@ void menus(void)
             rotatesprite(320<<15,19<<16,65536L,0,MENUBAR,16,0,10,0,0,xdim-1,ydim-1);
             menutext(320>>1,24,0,0,"CHEATS");
 
-            x = probe(c+6,43,16,NUM_CHEAT_ENTRIES);
+            onbar = (probey >= 4 && probey < num_cheat_entries);
+
+            x = probe(c+6,43,16,num_cheat_entries);
 
             if(x == -1)
             {
+                onbar = 0;
                 cmenu(702);
                 probey = 7;  // keep cursor on CHEATS in GAME OPTIONS
                 break;
@@ -1895,12 +1933,37 @@ void menus(void)
                     ud.m_level_number  = ud.level_number  = cheat_entries[x].level;
                     ps[myconnectindex].gm |= MODE_RESTART;
                 }
+                else if(cheat_entries[x].cheat_id == -2)
+                {
+                    int v = cheat_entries[x].vol;
+                    if (KB_KeyPressed(sc_LeftArrow) || KB_KeyPressed(sc_kpad_4))
+                    {
+                        KB_ClearKeyDown(sc_LeftArrow);
+                        KB_ClearKeyDown(sc_kpad_4);
+                        selected_level[v] = (selected_level[v] + max_levels[v] - 1) % max_levels[v];
+                        sound(KICK_HIT);
+                    }
+                    else if (KB_KeyPressed(sc_RightArrow) || KB_KeyPressed(sc_kpad_6))
+                    {
+                        KB_ClearKeyDown(sc_RightArrow);
+                        KB_ClearKeyDown(sc_kpad_6);
+                        selected_level[v] = (selected_level[v] + 1) % max_levels[v];
+                        sound(KICK_HIT);
+                    }
+                    else
+                    {
+                        // ENTER/SPACE or mouse click -> Warp!
+                        ud.m_volume_number = ud.volume_number = v;
+                        ud.m_level_number  = ud.level_number  = selected_level[v];
+                        ps[myconnectindex].gm |= MODE_RESTART;
+                    }
+                }
                 else
                     activate_cheat(cheat_entries[x].cheat_id);
             }
 
             // Draw all labels; grey them out when not in-game
-            for(int ci = 0; ci < NUM_CHEAT_ENTRIES; ci++)
+            for(int ci = 0; ci < num_cheat_entries; ci++)
             {
                 int grey = ingame ? 0 : 1;
                 menutext(c, 43+16*ci, 0, grey, (char*)cheat_entries[ci].label);
@@ -1919,7 +1982,16 @@ void menus(void)
             if(actor_tog) menutext(c+200, 43+16*3, 0, 0, "OFF");
             else          menutext(c+200, 43+16*3, 0, 0, "ON");
 
-            #undef NUM_CHEAT_ENTRIES
+            // Episode toggle displays (rows 4 to num_cheat_entries - 1)
+            for (int ci = 4; ci < num_cheat_entries; ci++)
+            {
+                int v = cheat_entries[ci].vol;
+                int grey = ingame ? 0 : 1;
+                char lvl_label[32];
+                snprintf(lvl_label, sizeof(lvl_label), "E%dL%d", v + 1, selected_level[v] + 1);
+                menutext(c+200, 43+16*ci, 0, grey, lvl_label);
+            }
+
             break;
         }
 

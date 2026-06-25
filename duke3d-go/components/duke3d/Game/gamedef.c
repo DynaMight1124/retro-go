@@ -1547,7 +1547,6 @@ void copydefaultcons(void)
 void loadefs(char  *filenam, char  *mptr, int readfromGRP)
 {
     int32_t fs = 0, fp = 0;
-	uint8_t  kbdKey;
 
 	memset(script, 0, sizeof(script));
 

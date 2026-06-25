@@ -8228,6 +8228,80 @@ void findGRPToUse(char * groupfilefullpath){
 
 #endif
 
+static int name_contains(const char *haystack, const char *needle)
+{
+    int hlen = strlen(haystack);
+    int nlen = strlen(needle);
+    for (int i = 0; i <= hlen - nlen; i++)
+    {
+        int match = 1;
+        for (int j = 0; j < nlen; j++)
+        {
+            if (tolower((unsigned char)haystack[i + j]) != tolower((unsigned char)needle[j]))
+            {
+                match = 0;
+                break;
+            }
+        }
+        if (match) return 1;
+    }
+    return 0;
+}
+
+static int is_expansion_grp(const char *name)
+{
+    if (name_contains(name, "dukedc")) return 1;
+    if (name_contains(name, "vacation")) return 1;
+    if (name_contains(name, "carib")) return 1;
+    if (name_contains(name, "nwinter")) return 1;
+    if (name_contains(name, "winter")) return 1;
+    return 0;
+}
+
+static void detect_and_set_confilename(void)
+{
+    int32_t fd;
+    
+    // Check Duke It Out In D.C.
+    fd = kopen4load("dukedc.con", 1);
+    if (fd >= 0) {
+        kclose(fd);
+        strcpy(confilename, "dukedc.con");
+        printf("Expansion GRP loaded: using dukedc.con\n");
+        return;
+    } else if (SafeFileExists("dukedc.con")) {
+        strcpy(confilename, "dukedc.con");
+        printf("Expansion GRP loaded: using external dukedc.con\n");
+        return;
+    }
+    
+    // Check Duke Caribbean (Life's a Beach)
+    fd = kopen4load("vacation.con", 1);
+    if (fd >= 0) {
+        kclose(fd);
+        strcpy(confilename, "vacation.con");
+        printf("Expansion GRP loaded: using vacation.con\n");
+        return;
+    } else if (SafeFileExists("vacation.con")) {
+        strcpy(confilename, "vacation.con");
+        printf("Expansion GRP loaded: using external vacation.con\n");
+        return;
+    }
+    
+    // Check Duke: Nuclear Winter
+    fd = kopen4load("nwinter.con", 1);
+    if (fd >= 0) {
+        kclose(fd);
+        strcpy(confilename, "nwinter.con");
+        printf("Expansion GRP loaded: using nwinter.con\n");
+        return;
+    } else if (SafeFileExists("nwinter.con")) {
+        strcpy(confilename, "nwinter.con");
+        printf("Expansion GRP loaded: using external nwinter.con\n");
+        return;
+    }
+}
+
 static int load_duke3d_groupfile(void)
 {
 	// FIX_00032: Added multi base GRP manager. Use duke3d*.grp to handle multiple grp.
@@ -8243,6 +8317,18 @@ static int load_duke3d_groupfile(void)
 		if (!rg_storage_unzip_file(app->romPath, NULL, &grp_data, &grp_size, 0))
 			Error(EXIT_SUCCESS, "Unable to unzip ROM archive: %s\n", app->romPath);
 
+        const char *shortzip = app->romPath;
+        const char *pz1 = strrchr(app->romPath, '/');
+        const char *pz2 = strrchr(app->romPath, '\\');
+        if (pz1 || pz2) {
+            shortzip = (pz1 > pz2) ? pz1 + 1 : pz2 + 1;
+        }
+
+        if (is_expansion_grp(shortzip)) {
+            // Load base duke3d.grp first
+            initgroupfile(RG_BASE_PATH_ROMS "/duke3d/duke3d.grp");
+        }
+
 		if (initgroupfile_from_memory(app->romPath, grp_data, (int32_t)grp_size) == -1)
 		{
 			free(grp_data);
@@ -8250,6 +8336,7 @@ static int load_duke3d_groupfile(void)
 		}
 
 		RG_LOGI("Using Duke3D GRP extracted to RAM from ZIP: %s", app->romPath);
+        detect_and_set_confilename();
 		return true;
 	}
 
@@ -8264,7 +8351,24 @@ static int load_duke3d_groupfile(void)
 
 	FixFilePath(groupfilefullpath);
 
-	return(initgroupfile(groupfilefullpath) != -1);
+    const char *shortname = groupfilefullpath;
+    const char *p1 = strrchr(groupfilefullpath, '/');
+    const char *p2 = strrchr(groupfilefullpath, '\\');
+    if (p1 || p2) {
+        shortname = (p1 > p2) ? p1 + 1 : p2 + 1;
+    }
+
+    if (is_expansion_grp(shortname)) {
+        // Load base duke3d.grp first
+        initgroupfile(RG_BASE_PATH_ROMS "/duke3d/duke3d.grp");
+    }
+
+    int res = (initgroupfile(groupfilefullpath) != -1);
+    if (res)
+    {
+        detect_and_set_confilename();
+    }
+    return res;
 }
 
 int main(int argc,char  **argv)
