@@ -1,0 +1,34 @@
+; Vertex shader for rendering coloured vertices for PICA200 GPU on the Nintendo 3DS
+; ==================================================================================
+
+; Uniforms (layout common to all shaders)
+.alias MVP_0      c0
+.alias MVP_1      c1
+.alias MVP_2      c2
+.alias MVP_3      c3
+.alias TEX_OFFSET c4
+
+; Constants (initialised in Graphics_3DS.c)
+.alias ONE_DIV_255 c5
+
+; Outputs
+.out out_pos position
+.out out_col color
+
+; Inputs (defined as aliases for convenience)
+.alias in_pos v0
+.alias in_col v1
+
+.proc main
+	; out_pos = MVP * in_pos
+	dp4 out_pos.x, MVP_0, in_pos
+	dp4 out_pos.y, MVP_1, in_pos
+	dp4 out_pos.z, MVP_2, in_pos
+	dp4 out_pos.w, MVP_3, in_pos
+
+	; out_col = in_col * ONE_DIV_255
+	mul out_col, ONE_DIV_255, in_col
+	
+	end
+.end
+

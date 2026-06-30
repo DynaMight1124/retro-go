@@ -1,0 +1,94 @@
+#ifndef CC_LAUNCHER_H
+#define CC_LAUNCHER_H
+#include "Bitmap.h"
+CC_BEGIN_HEADER
+
+/* Implements the launcher part of the game.
+	Copyright 2014-2025 ClassiCube | Licensed under BSD-3
+*/
+struct LScreen;
+struct FontDesc;
+struct Context2D;
+struct HttpRequest;
+
+/* The screen/menu currently being shown */
+extern struct LScreen* Launcher_Active;
+
+typedef void (*Launcher_WebErrorCallback)(struct HttpRequest* req);
+
+/* Whether at the next tick, the launcher window should proceed to exit its main loop */
+extern cc_bool Launcher_ShouldStop;
+/* Whether game should be updated on exit */
+extern cc_bool Launcher_ShouldUpdate;
+/* (optional) Hash of the server the game should automatically try to connect to after signing in */
+extern cc_string Launcher_AutoHash;
+/* The username of currently active user */
+extern cc_string Launcher_Username;
+/* Whether to show empty servers in the server list */
+extern cc_bool Launcher_ShowEmptyServers;
+
+struct LauncherTheme {
+	/* Whether to use stone tile background like minecraft.net */
+	cc_bool ClassicBackground;
+	/* Base colour of pixels before any widgets are drawn */
+	BitmapCol BackgroundColor;
+	/* Colour of pixels on the 4 line borders around buttons */
+	BitmapCol ButtonBorderColor;
+	/* Colour of button when user has mouse over it */
+	BitmapCol ButtonForeActiveColor;
+	/* Colour of button when user does not have mouse over it */
+	BitmapCol ButtonForeColor;
+	/* Colour of line at top of buttons to give them a less flat look*/
+	BitmapCol ButtonHighlightColor;
+};
+/* Currently active theme */
+extern struct LauncherTheme Launcher_Theme;
+/* Modern / enhanced theme */
+extern const struct LauncherTheme Launcher_ModernTheme;
+/* Minecraft Classic theme */
+extern const struct LauncherTheme Launcher_ClassicTheme;
+/* Custom Nordic style theme */
+extern const struct LauncherTheme Launcher_NordicTheme;
+
+/* Loads theme from options. */
+void LauncherTheme_Load(struct LauncherTheme* theme);
+/* Saves the theme to options. */
+/* NOTE: Does not save options file itself. */
+void LauncherTheme_Save(struct LauncherTheme* theme);
+
+/* Whether logo should be drawn using bitmapped text */
+cc_bool Launcher_BitmappedText(void);
+/* Draws title styled text using the given font */
+void Launcher_DrawTitle(struct FontDesc* font, const char* text, struct Context2D* ctx);
+/* Allocates a font appropriate for drawing title text */
+void Launcher_MakeTitleFont(struct FontDesc* font);
+
+/* Attempts to load font and terrain from texture pack. */
+void Launcher_TryLoadTexturePack(void);
+/* Fills the given region of the given bitmap with the default background */
+void Launcher_DrawBackground(struct Context2D* ctx, int x, int y, int width, int height);
+/* Fills the entire contents of the given bitmap with the default background */
+/* NOTE: Also draws titlebar at top, if current screen permits it */
+void Launcher_DrawBackgroundAll(struct Context2D* ctx);
+
+/* Sets currently active screen/menu, freeing old one. */
+void Launcher_SetScreen(struct LScreen* screen);
+
+void Launcher_FilterUrlHash(cc_string* hash);
+/* Attempts to start the game by connecting to the given server. */
+cc_bool Launcher_ConnectToServer(const cc_string* hash, Launcher_WebErrorCallback errorCallback);
+
+/* Starts the game from the given arguments. */
+cc_bool Launcher_StartGame(const cc_string* user, const cc_string* mppass, const cc_string* ip, const cc_string* port, const cc_string* server, int numStates);
+/* Prints information about a http error to dst */
+void Launcher_FormatHttpError(struct HttpRequest* req, const char* action, cc_string* dst);
+
+/* Sets up state and then creates the launcher window */
+void Launcher_Setup(void);
+/* Ticks the launcher main loop */
+cc_bool Launcher_Tick(void);
+/* Cleans up state and then destroys the launcher window */
+void Launcher_Finish(void);
+
+CC_END_HEADER
+#endif

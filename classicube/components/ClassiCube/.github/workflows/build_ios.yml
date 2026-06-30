@@ -1,0 +1,57 @@
+name: Build latest (iOS)
+# trigger via either push to selected branches or on manual run
+on:
+  push:
+    branches:
+      - main
+      - master
+      - ios_no_arc
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.ref }}-ios
+  cancel-in-progress: true
+
+jobs:
+  build:
+    timeout-minutes: 10
+    runs-on: macOS-14
+    steps:
+      - uses: actions/checkout@v5
+      - name: Setup environment
+        run: |
+          sudo xcode-select -s /Applications/Xcode_15.0.1.app/Contents/Developer
+          echo "XCODE_APP=Xcode_15.0.1.app" >> "$GITHUB_ENV"
+          echo "IOS_SDK_VERSION=17.0" >> "$GITHUB_ENV"
+
+      - name: Compile iOS build
+        run: |
+          make ios
+
+#      - name: Compile iOS simulator build
+#        run: |
+#          make IOS_SIM=1 ios
+
+          
+      - uses: ./.github/actions/upload_build
+        with:
+          SOURCE_FILE: 'ClassiCube-iPhoneOS.ipa'
+          DEST_NAME: 'cc.ipa'
+          
+#      - uses: ./.github/actions/upload_build
+#        with:
+#          SOURCE_FILE: 'ClassiCube-iPhoneSimulator.ipa'
+#          DEST_NAME: 'cc-simulator.ipa'
+          
+          
+      - uses: ./.github/actions/notify_success
+        with:
+          DESTINATION_URL: '${{ secrets.NOTIFY_URL }}'
+          WORKFLOW_NAME: 'ios'
+
+
+      - uses: ./.github/actions/notify_failure
+        if: failure()
+        with:
+          NOTIFY_MESSAGE: 'Failed to produce iOS build'
+          WEBHOOK_URL: '${{ secrets.WEBHOOK_URL }}'

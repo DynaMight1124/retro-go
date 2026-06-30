@@ -1,0 +1,81 @@
+name: Build latest (Windows ARM32/64)
+# trigger via either push to selected branches or on manual run
+on:
+  push:
+    branches:
+      - main
+      - master
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.ref }}-windows-arm
+  cancel-in-progress: true
+
+jobs:
+#============================================
+# ============== ARM32 WINDOWS ==============
+# ===========================================
+  build-32:
+    timeout-minutes: 10
+    runs-on: ubuntu-latest
+    container:
+      image: dockcross/windows-armv7
+    steps:
+      - uses: actions/checkout@v5
+      - name: Compile ARM32 Windows builds
+        shell: bash
+        env:
+          LIBS: "-lwinmm -limagehlp"
+          SRCS: "src/*.c third_party/bearssl/*.c"
+          COMMON_FLAGS: "-O1 -s -fno-stack-protector -fno-math-errno -Qn -Werror -Wno-pragma-pack"
+          WIN32_FLAGS:  "-mwindows -nostartfiles -Wl,-emain_real -DCC_NOMAIN -DCC_GFX_BACKEND=CC_GFX_BACKEND_D3D11"
+        run: |
+          LATEST_FLAG=-DCC_COMMIT_SHA=\"${GITHUB_SHA::9}\"
+          
+          armv7-w64-mingw32-gcc ${{ env.SRCS }} ${{ env.COMMON_FLAGS }} ${{ env.WIN32_FLAGS }} -o cc-arm32-d3d11.exe $LATEST_FLAG ${{ env.LIBS }}
+          
+      - uses: ./.github/actions/upload_build
+        with:
+          SOURCE_FILE: 'cc-arm32-d3d11.exe'
+          DEST_NAME: 'ClassiCube-arm32-Direct3D11.exe'
+          
+          
+      - uses: ./.github/actions/notify_failure
+        if: failure()
+        with:
+          NOTIFY_MESSAGE: 'Failed to produce 32 bit Windows-ARM build'
+          WEBHOOK_URL: '${{ secrets.WEBHOOK_URL }}'
+#============================================
+# ============== ARM64 WINDOWS ==============
+# ===========================================
+  build-64:
+    timeout-minutes: 10
+    runs-on: ubuntu-latest
+    container:
+      image: dockcross/windows-arm64
+    steps:
+      - uses: actions/checkout@v5
+      - name: Compile ARM64 Windows builds
+        shell: bash
+        env: 
+          LIBS: "-lwinmm -limagehlp"
+          SRCS: "src/*.c third_party/bearssl/*.c"
+          COMMON_FLAGS: "-O1 -s -fno-stack-protector -fno-math-errno -Qn -Werror -Wno-pragma-pack"
+          WIN64_FLAGS:  "-mwindows -nostartfiles -Wl,-emain_real -DCC_NOMAIN -DCC_GFX_BACKEND=CC_GFX_BACKEND_D3D11"
+        run: |
+          LATEST_FLAG=-DCC_COMMIT_SHA=\"${GITHUB_SHA::9}\"
+          
+          aarch64-w64-mingw32-gcc ${{ env.SRCS }} ${{ env.COMMON_FLAGS }} ${{ env.WIN64_FLAGS }} -o cc-arm64-d3d11.exe $LATEST_FLAG ${{ env.LIBS }}
+          
+
+      - uses: ./.github/actions/upload_build
+        with:
+          SOURCE_FILE: 'cc-arm64-d3d11.exe'
+          DEST_NAME: 'ClassiCube-arm64-Direct3D11.exe'          
+          
+
+      - uses: ./.github/actions/notify_failure
+        if: failure()
+        with:
+          NOTIFY_MESSAGE: 'Failed to produce 64 bit Windows-ARM build'
+          WEBHOOK_URL: '${{ secrets.WEBHOOK_URL }}'
