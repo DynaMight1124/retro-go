@@ -1,0 +1,2210 @@
+This is the complete list of games supported by MAME GCW0 1.2 (based on 0.37b5) (Dec 30 2013)
+
+The list is generated automatically and is not 100% accurate, particularly in
+the "Screen Flip" column. Please let us know of any errors you find so we can
+correct them.
+
+The meanings of the columns are as follows:
+Working - "No" means that the emulation has shortcomings that cause the game
+  not to work correctly. This can be anywhere from just showing a black screen
+  to being playable with major problems.
+Correct Colors - "Yes" means that colors should be identical to the original,
+  "Close" that they are very similar but wrong in places, "No" that they are
+  completely wrong. In some cases, we were not able to find the color PROMs of
+  the game. Those PROMs will be reported as "NO GOOD DUMP KNOWN" on startup,
+  and the game will have wrong colors. The game is still reported as "Yes" in
+  this column, because the code to handle the color PROMs is in the driver and
+  if you provide them colors will be correct.
+Sound - "Partial" means that sound support is either incomplete or not entirely
+  accurate. Note that, due to analog circuitry which is difficult to emulate,
+  sound may be significantly different from the real board. A common case is
+  the presence of low pass filters that make the real board sound less harsh
+  than the emulation.
+Screen Flip - A large number of games have a dip switch setting for "Cocktail"
+  cabinet, meaning that the players sit in front of each other, and the screen
+  is flipped when player 2 is playing. Some games also have a "Flip Screen" dip
+  switch. Those need special support in the driver, which is missing in many
+  cases.
+Internal Name - This is the unique name that should be specified on the command
+  line to run the game. ROMs must be placed in the ROM path, either in a .zip
+  file or in a subdirectory of the same name. The former is suggested, because
+  the files will be identified by their CRC instead of requiring specific
+  names.
+
++----------------------------------+-------+-------+-------+-------+----------+
+|                                  |       |Correct|       |Screen | Internal |
+| Game Name                        |Working|Colors | Sound | Flip  |   Name   |
++----------------------------------+-------+-------+-------+-------+----------+
+| PuckMan (Japan set 1)            |  Yes  |  Yes  |  Yes  |  Yes  | pacman   |
+| PuckMan (Japan set 2)            |  Yes  |  Yes  |  Yes  |  Yes  | pacmanjp |
+| Pac-Man (Midway)                 |  Yes  |  Yes  |  Yes  |  Yes  | pacmanm  |
+| PuckMan (harder?)                |  Yes  |  Yes  |  Yes  |  Yes  | npacmod  |
+| Pac-Man (Midway, harder)         |  Yes  |  Yes  |  Yes  |  Yes  | pacmod   |
+| Hangly-Man (set 1)               |  Yes  |  Yes  |  Yes  |  Yes  | hangly   |
+| Hangly-Man (set 2)               |  Yes  |  Yes  |  Yes  |  Yes  | hangly2  |
+| New Puck-X                       |  Yes  |  Yes  |  Yes  |  Yes  | puckman  |
+| Pac-Man (Hearts)                 |  Yes  |  Yes  |  Yes  |  Yes  | pacheart |
+| Piranha                          |  Yes  |  Yes  |  Yes  |  Yes  | piranha  |
+| Pac-Man Plus                     |  Yes  |  Yes  |  Yes  |  Yes  | pacplus  |
+| Ms. Pac-Man                      |  Yes  |  Yes  |  Yes  |  Yes  | mspacman |
+| Ms. Pac-Man Plus                 |  Yes  |  Yes  |  Yes  |  Yes  | mspacatk |
+| Pac-Gal                          |  Yes  |  Yes  |  Yes  |  Yes  | pacgal   |
+| Make Trax                        |  Yes  |  Yes  |  Yes  |  Yes  | maketrax |
+| Crush Roller (Kural Samno)       |  Yes  |  Yes  |  Yes  |  Yes  | crush    |
+| Crush Roller (Kural Esco - bootle|  Yes  |  Yes  |  Yes  |  Yes  | crush2   |
+| Crush Roller (Kural - bootleg?)  |  Yes  |  Yes  |  Yes  |  Yes  | crush3   |
+| Magic Brush                      |  Yes  |  Yes  |  Yes  |  Yes  | mbrush   |
+| Paint Roller                     |  Yes  |  Yes  |  Yes  |  Yes  | paintrlr |
+| Eyes (Digitrex Techstar)         |  Yes  |  Yes  |  Yes  |  Yes  | eyes     |
+| Eyes (Techstar Inc.)             |  Yes  |  Yes  |  Yes  |  Yes  | eyes2    |
+| Mr. TNT                          |  Yes  |  Yes  |  Yes  |  Yes  | mrtnt    |
+| Ponpoko                          |  Yes  |  Yes  |  Yes  |  Yes  | ponpoko  |
+| Ponpoko (Venture Line)           |  Yes  |  Yes  |  Yes  |  Yes  | ponpokov |
+| Lizard Wizard                    |  Yes  |  Yes  |  Yes  |  Yes  | lizwiz   |
+| Glob, The                        |  Yes  |  Yes  |  Yes  |  Yes  | theglob  |
+| Beastie Feastie                  |  Yes  |  Yes  |  Yes  |  Yes  | beastf   |
+| Jump Shot                        |  Yes  |  Yes  |  Yes  |  Yes  | jumpshot |
+| Shoot the Bull                   |  Yes  |  Yes  |  Yes  |  Yes  | shootbul |
+| Dream Shopper                    |  Yes  |  Yes  |  Yes  |  Yes  | dremshpr |
+| Van Van Car                      |  Yes  |  Yes  |  Yes  |  Yes  | vanvan   |
+| Van Van Car (Sanritsu)           |  Yes  |  Yes  |  Yes  |  Yes  | vanvans  |
+| Ali Baba and 40 Thieves          |  Yes  |  Yes  |  Yes  |  Yes  | alibaba  |
+| Pengo (set 1)                    |  Yes  |  Yes  |  Yes  |  Yes  | pengo    |
+| Pengo (set 2)                    |  Yes  |  Yes  |  Yes  |  Yes  | pengo2   |
+| Pengo (set 2 not encrypted)      |  Yes  |  Yes  |  Yes  |  Yes  | pengo2u  |
+| Penta                            |  Yes  |  Yes  |  Yes  |  Yes  | penta    |
+| Jr. Pac-Man                      |  Yes  |  Yes  |  Yes  |  Yes  | jrpacman |
+| Galaxian (Namco)                 |  Yes  |  Yes  |  Yes  |  Yes  | galaxian |
+| Galaxian (Midway)                |  Yes  |  Yes  |  Yes  |  Yes  | galmidw  |
+| Super Galaxians                  |  Yes  |  Yes  |  Yes  |  Yes  | superg   |
+| Galaxian (bootleg)               |  Yes  |  Yes  |  Yes  |  Yes  | galaxb   |
+| Galaxian Part X                  |  Yes  |  Yes  |  Yes  |  Yes  | galapx   |
+| Space Invaders Galactica         |  Yes  |  Yes  |  Yes  |  Yes  | galap1   |
+| Galaxian Part 4                  |  Yes  |  Yes  |  Yes  |  Yes  | galap4   |
+| Galaxian Turbo                   |  Yes  |  Yes  |  Yes  |  Yes  | galturbo |
+| Swarm                            |  Yes  |  Yes  |  Yes  |  Yes  | swarm    |
+| Zero Time                        |  Yes  |  Yes  |  Yes  |  Yes  | zerotime |
+| Pisces                           |  Yes  |  Yes  |  Yes  |  Yes  | pisces   |
+| UniWar S                         |  Yes  |  Yes  |  Yes  |  Yes  | uniwars  |
+| Gingateikoku No Gyakushu         |  Yes  |  Yes  |  Yes  |  Yes  | gteikoku |
+| Space Battle                     |  Yes  |  Yes  |  Yes  |  Yes  | spacbatt |
+| War of the Bugs                  |  Yes  |  Yes  |  Yes  |  Yes  | warofbug |
+| Defend the Terra Attack on the Re|  Yes  |  Yes  |  Yes  |  Yes  | redufo   |
+| Exodus (bootleg?)                |  Yes  |  Yes  |  Yes  |  Yes  | exodus   |
+| Pac-Man (bootleg on Galaxian hard|  Yes  |  Yes  |  Yes  |  Yes  | pacmanbl |
+| Devil Fish (Galaxian hardware, bo|  Yes  |  Yes  |  Yes  |  Yes  | devilfsg |
+| Zig Zag (Galaxian hardware, set 1|  Yes  |  Yes  |  Yes  |  Yes  | zigzag   |
+| Zig Zag (Galaxian hardware, set 2|  Yes  |  Yes  |  Yes  |  Yes  | zigzag2  |
+| Jump Bug                         |  Yes  |  Yes  |  Yes  |  Yes  | jumpbug  |
+| Jump Bug (bootleg)               |  Yes  |  Yes  |  Yes  |  Yes  | jumpbugb |
+| Levers                           |  Yes  |  Yes  |  Yes  |  Yes  | levers   |
+| Azurian Attack                   |  Yes  |  Yes  |  Yes  |  Yes  | azurian  |
+| Orbitron                         |  Yes  |  Yes  |  Yes  |  Yes  | orbitron |
+| Moon Cresta (bootleg on Galaxian |  Yes  |  Yes  |  Yes  |  Yes  | mooncrgx |
+| Moon Cresta (Nichibutsu)         |  Yes  |  Yes  |  Yes  |  Yes  | mooncrst |
+| Moon Cresta (Gremlin)            |  Yes  |  Yes  |  Yes  |  Yes  | mooncrsg |
+| Super Moon Cresta                |  Yes  |  Yes  |  Yes  |  Yes  | smooncrs |
+| Moon Cresta (bootleg set 1)      |  Yes  |  Yes  |  Yes  |  Yes  | mooncrsb |
+| Moon Cresta (bootleg set 2)      |  Yes  |  Yes  |  Yes  |  Yes  | mooncrs2 |
+| Fantazia                         |  Yes  |  Yes  |  Yes  |  Yes  | fantazia |
+| Eagle (set 1)                    |  Yes  |  Yes  |  Yes  |  Yes  | eagle    |
+| Eagle (set 2)                    |  Yes  |  Yes  |  Yes  |  Yes  | eagle2   |
+| Moon Quasar                      |  Yes  |  Yes  |  Yes  |  Yes  | moonqsr  |
+| Checkman                         |  Yes  |  Yes  |  Yes  |  Yes  | checkman |
+| Checkman (Japan)                 |  Yes  |  Yes  |  Yes  |  Yes  | checkmaj |
+| Streaking                        |  Yes  |  Yes  |  Yes  |  Yes  | streakng |
+| Black Hole                       |  Yes  |  Yes  |  Yes  |  Yes  | blkhole  |
+| Moon Alien Part 2                |  Yes  |  Yes  |  Yes  |  Yes  | moonal2  |
+| Moon Alien Part 2 (older version)|  Yes  |  Yes  |  Yes  |  Yes  | moonal2b |
+| King & Balloon (US)              |  Yes  |  Yes  |  Yes  |  Yes  | kingball |
+| King & Balloon (Japan)           |  Yes  |  Yes  |  Yes  |  Yes  | kingbalj |
+| Scramble                         |  Yes  |  Yes  |  Yes  |  Yes  | scramble |
+| Scramble (Stern)                 |  Yes  |  Yes  |  Yes  |  Yes  | scrambls |
+| Scramble (bootleg on Galaxian har|  Yes  |  Yes  |  Yes  |  Yes  | scramblb |
+| Battle of Atlantis (set 1)       |  Yes  |  Yes  |  Yes  |  Yes  | atlantis |
+| Battle of Atlantis (set 2)       |  Yes  |  Yes  |  Yes  |  Yes  | atlants2 |
+| End, The                         |  Yes  |  Yes  |  Yes  |  Yes  | theend   |
+| End, The (Stern)                 |  Yes  |  Yes  |  Yes  |  Yes  | theends  |
+| Crazy Kong (Scramble hardware)   |  Yes  |  Yes  |  Yes  |  Yes  | ckongs   |
+| Frog                             |  Yes  |  Yes  |  Yes  |  Yes  | froggers |
+| Amidar (Scramble hardware)       |  Yes  |  Yes  |  Yes  |  Yes  | amidars  |
+| Triple Punch                     |  Yes  |  Yes  |  Yes  |  Yes  | triplep  |
+| Knock Out !!                     |  Yes  |  Yes  |  Yes  |  Yes  | knockout |
+| Mariner                          |  Yes  |  Yes  |  Yes  |  Yes  | mariner  |
+| 800 Fathoms                      |  Yes  |  Yes  |  Yes  |  Yes  | 800fath  |
+| Mars                             |  Yes  |  Yes  |  Yes  |  Yes  | mars     |
+| Devil Fish                       |  Yes  |  Yes  |  Yes  |  Yes  | devilfsh |
+| New Sinbad 7                     |  Yes  | Close |  Yes  |  Yes  | newsin7  |
+| Hot Shocker                      |  Yes  |  Yes  |  Yes  |  Yes  | hotshock |
+| Hunchback (Scramble hardware)    |  Yes  |  Yes  |  Yes  |  Yes  | hunchbks |
+| Super Cobra                      |  Yes  |  Yes  |  Yes  |  Yes  | scobra   |
+| Super Cobra (Stern)              |  Yes  |  Yes  |  Yes  |  Yes  | scobras  |
+| Super Cobra (bootleg)            |  Yes  |  Yes  |  Yes  |  Yes  | scobrab  |
+| Strategy X                       |  Yes  |  Yes  |  Yes  |  Yes  | stratgyx |
+| Strategy X (Stern)               |  Yes  |  Yes  |  Yes  |  Yes  | stratgys |
+| Armored Car (set 1)              |  Yes  |  Yes  |  Yes  |  Yes  | armorcar |
+| Armored Car (set 2)              |  Yes  |  Yes  |  Yes  |  Yes  | armorca2 |
+| Moon War II (set 1)              |  Yes  |  Yes  |  Yes  |  Yes  | moonwar2 |
+| Moon War II (set 2)              |  Yes  |  Yes  |  Yes  |  Yes  | monwar2a |
+| Speed Coin (prototype)           |  Yes  |  Yes  |  Yes  |  Yes  | spdcoin  |
+| Dark Planet                      |   No  |  Yes  |  Yes  |  Yes  | darkplnt |
+| Tazz-Mania (Scramble hardware)   |  Yes  |  Yes  |  Yes  |  Yes  | tazmania |
+| Tazz-Mania (Strategy X hardware) |  Yes  |  Yes  |  Yes  |  Yes  | tazmani2 |
+| Calipso                          |  Yes  |  Yes  |  Yes  |  Yes  | calipso  |
+| Anteater                         |  Yes  |  Yes  |  Yes  |  Yes  | anteater |
+| Rescue                           |  Yes  |  Yes  |  Yes  |  Yes  | rescue   |
+| Minefield                        |  Yes  |  Yes  |  Yes  |  Yes  | minefld  |
+| Lost Tomb (easy)                 |  Yes  |  Yes  |  Yes  |  Yes  | losttomb |
+| Lost Tomb (hard)                 |  Yes  |  Yes  |  Yes  |  Yes  | losttmbh |
+| Super Bond                       |  Yes  |  Yes  |  Yes  |  Yes  | superbon |
+| Video Hustler                    |  Yes  |  Yes  |  Yes  |  Yes  | hustler  |
+| Billiards, The                   |  Yes  |  Yes  |  Yes  |  Yes  | billiard |
+| Video Hustler (bootleg)          |  Yes  |  Yes  |  Yes  |  Yes  | hustlerb |
+| Frogger                          |  Yes  |  Yes  |  Yes  |  Yes  | frogger  |
+| Frogger (Sega set 1)             |  Yes  |  Yes  |  Yes  |  Yes  | frogseg1 |
+| Frogger (Sega set 2)             |  Yes  |  Yes  |  Yes  |  Yes  | frogseg2 |
+| Frogger (modified Moon Cresta har|  Yes  |  Yes  |  Yes  |  Yes  | froggrmc |
+| Amidar                           |  Yes  |  Yes  |  Yes  |  Yes  | amidar   |
+| Amidar (Stern)                   |  Yes  |  Yes  |  Yes  |  Yes  | amidaru  |
+| Amidar (Olympia)                 |  Yes  |  Yes  |  Yes  |  Yes  | amidaro  |
+| Amigo                            |  Yes  |  Yes  |  Yes  |  Yes  | amigo    |
+| Turtles                          |  Yes  |  Yes  |  Yes  |  Yes  | turtles  |
+| Turpin                           |  Yes  |  Yes  |  Yes  |  Yes  | turpin   |
+| 600                              |  Yes  |  Yes  |  Yes  |  Yes  | 600      |
+| Fly-Boy                          | No(1) |  Yes  |  Yes  |  Yes  | flyboy   |
+| Fly-Boy (bootleg)                |  Yes  |  Yes  |  Yes  |  Yes  | flyboyb  |
+| Fast Freddie                     |  Yes  |  Yes  |  Yes  |  Yes  | fastfred |
+| Jump Coaster                     |  Yes  |  Yes  |  Yes  |  Yes  | jumpcoas |
+| Crazy Climber (US)               |  Yes  |  Yes  |  Yes  |  Yes  | cclimber |
+| Crazy Climber (Japan)            |  Yes  |  Yes  |  Yes  |  Yes  | cclimbrj |
+| Crazy Climber (bootleg set 1)    |  Yes  |  Yes  |  Yes  |  Yes  | ccboot   |
+| Crazy Climber (bootleg set 2)    |  Yes  |  Yes  |  Yes  |  Yes  | ccboot2  |
+| Crazy Kong (set 1)               |  Yes  |  Yes  |  Yes  |  Yes  | ckong    |
+| Crazy Kong (set 2)               |  Yes  |  Yes  |  Yes  |  Yes  | ckonga   |
+| Crazy Kong (Jeutel bootleg)      |  Yes  |  Yes  |  Yes  |  Yes  | ckongjeu |
+| Crazy Kong (Orca bootleg)        |  Yes  |  Yes  |  Yes  |  Yes  | ckongo   |
+| Crazy Kong (Alca bootleg)        |  Yes  |  Yes  |  Yes  |  Yes  | ckongalc |
+| Monkey Donkey                    |  Yes  |  Yes  |  Yes  |  Yes  | monkeyd  |
+| River Patrol (bootleg)           |  Yes  |  Yes  |  Yes  |  Yes  | rpatrolb |
+| Silver Land                      |  Yes  |  Yes  |  Yes  |  Yes  | silvland |
+| Yamato (set 1)                   |  Yes  |  Yes  |  Yes  |  Yes  | yamato   |
+| Yamato (set 2)                   |  Yes  |  Yes  |  Yes  |  Yes  | yamato2  |
+| Swimmer (set 1)                  |  Yes  |  Yes  |  Yes  |  Yes  | swimmer  |
+| Swimmer (set 2)                  |  Yes  |  Yes  |  Yes  |  Yes  | swimmera |
+| Guzzler                          |  Yes  |  Yes  |  Yes  |  Yes  | guzzler  |
+| Frisky Tom                       |  Yes  |  Yes  |  Yes  |   No  | friskyt  |
+| Radical Radial                   |  Yes  |  Yes  |  Yes  |   No  | radrad   |
+| Seicross                         |  Yes  |  Yes  |  Yes  |   No  | seicross |
+| Sector Zone                      |  Yes  |  Yes  |  Yes  |   No  | sectrzon |
+| Wiping                           |  Yes  |  Yes  |  Yes  |  Yes  | wiping   |
+| Rug Rats                         |  Yes  |  Yes  |  Yes  |  Yes  | rugrats  |
+| Cop 01 (set 1)                   |  Yes  | Close |  Yes  |  Yes  | cop01    |
+| Cop 01 (set 2)                   |  Yes  | Close |  Yes  |  Yes  | cop01a   |
+| Terra Cresta (YM3526 set 1)      |  Yes  |  Yes  |  Yes  |  Yes  | terracre |
+| Terra Cresta (YM3526 set 2)      |  Yes  |  Yes  |  Yes  |  Yes  | terracrb |
+| Terra Cresta (YM2203)            |  Yes  |  Yes  |  Yes  |  Yes  | terracra |
+| Galivan - Cosmo Police (12/16/198|  Yes  |  Yes  |  Yes  |  Yes  | galivan  |
+| Galivan - Cosmo Police (12/11/198|  Yes  |  Yes  |  Yes  |  Yes  | galivan2 |
+| Dangar - Ufo Robo (12/1/1986)    |  Yes  |  Yes  |  Yes  |  Yes  | dangar   |
+| Dangar - Ufo Robo (9/26/1986)    |  Yes  |  Yes  |  Yes  |  Yes  | dangar2  |
+| Dangar - Ufo Robo (bootleg)      |  Yes  |  Yes  |  Yes  |  Yes  | dangarb  |
+| Ninja Emaki (US)                 |  Yes  |  Yes  |  Yes  |  Yes  | ninjemak |
+| Youma Ninpou Chou (Japan)        |  Yes  |  Yes  |  Yes  |  Yes  | youma    |
+| Terra Force                      |  Yes  |  Yes  |  Yes  |   No  | terraf   |
+| Terra Force (US)                 |  Yes  |  Yes  |  Yes  |   No  | terrafu  |
+| Kodure Ookami (Japan)            |  Yes  |  Yes  |  Yes  |   No  | kodure   |
+| Armed Formation                  |  Yes  |  Yes  |  Yes  |   No  | armedf   |
+| Crazy Climber 2 (Japan)          |  Yes  |  Yes  |  Yes  |   No  | cclimbr2 |
+| Safari Rally                     |  Yes  | Close |   No  |  Yes  | safarir  |
+| Phoenix (Amstar)                 |  Yes  |  Yes  |  Yes  |   No  | phoenix  |
+| Phoenix (Centuri)                |  Yes  |  Yes  |  Yes  |   No  | phoenixa |
+| Phoenix (Taito)                  |  Yes  |  Yes  |  Yes  |   No  | phoenixt |
+| Phoenix (T.P.N.)                 |  Yes  |  Yes  |  Yes  |   No  | phoenix3 |
+| Phoenix (IRECSA, G.G.I Corp)     |  Yes  |  Yes  |  Yes  |   No  | phoenixc |
+| Pleiads (Tehkan)                 |  Yes  |  Yes  |  Yes  |   No  | pleiads  |
+| Pleiads (bootleg)                |  Yes  |  Yes  |  Yes  |   No  | pleiadbl |
+| Pleiads (Centuri)                |  Yes  |  Yes  |  Yes  |   No  | pleiadce |
+| Naughty Boy                      |  Yes  |  Yes  |  Yes  |   No  | naughtyb |
+| Naughty Boy (bootleg)            |  Yes  |  Yes  |  Yes  |   No  | naughtya |
+| Naughty Boy (Cinematronics)      |  Yes  |  Yes  |  Yes  |   No  | naughtyc |
+| Pop Flamer (set 1)               |  Yes  |  Yes  |  Yes  |   No  | popflame |
+| Pop Flamer (set 2)               |  Yes  |  Yes  |  Yes  |   No  | popflama |
+| Gee Bee                          |  Yes  |  Yes  |  Yes  |  Yes  | geebee   |
+| Gee Bee (Gremlin)                |  Yes  |  Yes  |  Yes  |  Yes  | geebeeg  |
+| Bomb Bee                         |  Yes  |  Yes  |  Yes  |   No  | bombbee  |
+| Cutie Q                          |  Yes  |  Yes  |  Yes  |   No  | cutieq   |
+| Navalone                         |  Yes  |  Yes  |Partial|  Yes  | navalone |
+| Kaitei Takara Sagashi            |  Yes  |  Yes  |  Yes  |  Yes  | kaitei   |
+| Kaitei Takara Sagashi (Namco)    |  Yes  |  Yes  |  Yes  |  Yes  | kaitein  |
+| SOS                              |  Yes  |  Yes  |Partial|  Yes  | sos      |
+| Tank Battalion                   |  Yes  |  Yes  | Yes(2)|  Yes  | tankbatt |
+| Warp & Warp                      |  Yes  |  Yes  |  Yes  |   No  | warpwarp |
+| Warp Warp (Rock-ola set 1)       |  Yes  |  Yes  |  Yes  |   No  | warpwarr |
+| Warp Warp (Rock-ola set 2)       |  Yes  |  Yes  |  Yes  |   No  | warpwar2 |
+| Rally X                          |  Yes  |  Yes  | Yes(2)|  Yes  | rallyx   |
+| Rally X (Midway)                 |  Yes  |  Yes  | Yes(2)|  Yes  | rallyxm  |
+| New Rally X                      |  Yes  |  Yes  | Yes(2)|  Yes  | nrallyx  |
+| Jungler                          |  Yes  |  Yes  |  Yes  |  Yes  | jungler  |
+| Jungler (Stern)                  |  Yes  |  Yes  |  Yes  |  Yes  | junglers |
+| Loco-Motion                      |  Yes  |  Yes  |  Yes  |  Yes  | locomotn |
+| Guttang Gottong                  |  Yes  |  Yes  |  Yes  |  Yes  | gutangtn |
+| Cotocoto Cottong                 |  Yes  |  Yes  |  Yes  |  Yes  | cottong  |
+| Commando (Sega)                  |  Yes  |  Yes  |  Yes  |  Yes  | commsega |
+| Bosconian (new version)          |  Yes  |  Yes  | Yes(2)|  Yes  | bosco    |
+| Bosconian (old version)          |  Yes  |  Yes  | Yes(2)|  Yes  | boscoo   |
+| Bosconian (older version)        |  Yes  |  Yes  | Yes(2)|  Yes  | boscoo2  |
+| Bosconian (Midway, new version)  |  Yes  |  Yes  | Yes(2)|  Yes  | boscomd  |
+| Bosconian (Midway, old version)  |  Yes  |  Yes  | Yes(2)|  Yes  | boscomdo |
+| Galaga (Namco)                   |  Yes  |  Yes  | Yes(2)|  Yes  | galaga   |
+| Galaga (Midway)                  |  Yes  |  Yes  | Yes(2)|  Yes  | galagamw |
+| Galaga (fast shoot)              |  Yes  |  Yes  | Yes(2)|  Yes  | galagads |
+| Gallag                           |  Yes  |  Yes  | Yes(2)|  Yes  | gallag   |
+| Galaga (bootleg)                 |  Yes  |  Yes  | Yes(2)|  Yes  | galagab2 |
+| Galaga '84                       |  Yes  |  Yes  | Yes(2)|  Yes  | galaga84 |
+| Nebulous Bee                     |  Yes  |  Yes  | Yes(2)|  Yes  | nebulbee |
+| Dig Dug (set 1)                  |  Yes  |  Yes  |  Yes  |  Yes  | digdug   |
+| Dig Dug (set 2)                  |  Yes  |  Yes  |  Yes  |  Yes  | digdugb  |
+| Dig Dug (Atari)                  |  Yes  |  Yes  |  Yes  |  Yes  | digdugat |
+| Zig Zag (Dig Dug hardware)       |  Yes  |  Yes  |  Yes  |  Yes  | dzigzag  |
+| Xevious (Namco)                  |  Yes  |  Yes  | Yes(2)|  Yes  | xevious  |
+| Xevious (Atari)                  |  Yes  |  Yes  | Yes(2)|  Yes  | xeviousa |
+| Xevios                           |  Yes  |  Yes  | Yes(2)|  Yes  | xevios   |
+| Super Xevious                    |  Yes  |  Yes  | Yes(2)|  Yes  | sxevious |
+| Super Pac-Man                    |  Yes  |  Yes  |  Yes  |  Yes  | superpac |
+| Super Pac-Man (Midway)           |  Yes  |  Yes  |  Yes  |  Yes  | superpcm |
+| Pac & Pal                        |  Yes  |  Yes  |  Yes  |  Yes  | pacnpal  |
+| Pac & Pal (older)                |  Yes  |  Yes  |  Yes  |  Yes  | pacnpal2 |
+| Pac-Man & Chomp Chomp            |  Yes  | Close |  Yes  |  Yes  | pacnchmp |
+| Phozon                           |  Yes  |  Yes  |  Yes  |   No  | phozon   |
+| Mappy (US)                       |  Yes  |  Yes  |  Yes  |  Yes  | mappy    |
+| Mappy (Japan)                    |  Yes  |  Yes  |  Yes  |  Yes  | mappyjp  |
+| Dig Dug II (set 1)               |  Yes  |  Yes  |  Yes  |  Yes  | digdug2  |
+| Dig Dug II (set 2)               |  Yes  |  Yes  |  Yes  |  Yes  | digdug2a |
+| Tower of Druaga (set 1)          |  Yes  |  Yes  |  Yes  |  Yes  | todruaga |
+| Tower of Druaga (set 2)          |  Yes  |  Yes  |  Yes  |  Yes  | todruagb |
+| Motos                            |  Yes  |  Yes  |  Yes  |  Yes  | motos    |
+| Grobda (New version)             |  Yes  |  Yes  |  Yes  |  Yes  | grobda   |
+| Grobda (Old version set 1)       |  Yes  |  Yes  |  Yes  |  Yes  | grobda2  |
+| Grobda (Old version set 2)       |  Yes  |  Yes  |  Yes  |  Yes  | grobda3  |
+| Gaplus (set 1)                   |  Yes  |  Yes  | Yes(2)|  Yes  | gaplus   |
+| Gaplus (set 2)                   |  Yes  |  Yes  | Yes(2)|  Yes  | gaplusa  |
+| Galaga 3 (set 1)                 |  Yes  |  Yes  | Yes(2)|  Yes  | galaga3  |
+| Galaga 3 (set 2)                 |  Yes  |  Yes  | Yes(2)|  Yes  | galaga3a |
+| Toypop                           |  Yes  |  Yes  |  Yes  |  Yes  | toypop   |
+| Pole Position                    |  Yes  |  Yes  | Yes(2)|  Yes  | polepos  |
+| Pole Position (Atari version 2)  |  Yes  |  Yes  | Yes(2)|  Yes  | poleposa |
+| Pole Position (Atari version 1)  |  Yes  |  Yes  | Yes(2)|  Yes  | polepos1 |
+| Top Racer                        |  Yes  |  Yes  | Yes(2)|  Yes  | topracer |
+| Pole Position II                 |  Yes  |  Yes  | Yes(2)|  Yes  | polepos2 |
+| Pole Position II (Atari)         |  Yes  |  Yes  | Yes(2)|  Yes  | poleps2a |
+| Pole Position II (Atari bootleg 1|  Yes  |  Yes  | Yes(2)|  Yes  | poleps2b |
+| Pole Position II (Atari bootleg 2|  Yes  |  Yes  | Yes(2)|  Yes  | poleps2c |
+| Pac-Land (set 1)                 |  Yes  |  Yes  |  Yes  |   No  | pacland  |
+| Pac-Land (set 2)                 |  Yes  |  Yes  |  Yes  |   No  | pacland2 |
+| Pac-Land (set 3)                 |  Yes  |  Yes  |  Yes  |   No  | pacland3 |
+| Pac-Land (Midway)                |  Yes  |  Yes  |  Yes  |   No  | paclandm |
+| Dragon Buster                    |  Yes  |  Yes  |  Yes  |  Yes  | drgnbstr |
+| Sky Kid                          |  Yes  |  Yes  |  Yes  |  Yes  | skykid   |
+| Baraduke                         |  Yes  |  Yes  |  Yes  |  Yes  | baraduke |
+| Metro-Cross                      |  Yes  |  Yes  |  Yes  |  Yes  | metrocrs |
+| Hopping Mappy                    |  Yes  |  Yes  |  Yes  |  Yes  | hopmappy |
+| Sky Kid Deluxe (set 1)           |  Yes  |  Yes  |  Yes  |  Yes  | skykiddx |
+| Sky Kid Deluxe (set 2)           |  Yes  |  Yes  |  Yes  |  Yes  | skykiddo |
+| Return of Ishtar, The            |  Yes  |  Yes  |  Yes  |  Yes  | roishtar |
+| Genpei ToumaDen                  |  Yes  |  Yes  |  Yes  |  Yes  | genpeitd |
+| Rolling Thunder (new version)    |  Yes  |  Yes  |  Yes  |  Yes  | rthunder |
+| Rolling Thunder (old version)    |  Yes  |  Yes  |  Yes  |  Yes  | rthundro |
+| Wonder Momo                      |  Yes  |  Yes  |  Yes  |  Yes  | wndrmomo |
+| Shadow Land                      |  Yes  |  Yes  |  Yes  |  Yes  | shadowld |
+| Yokai Douchuuki (Japan new versio|  Yes  |  Yes  |  Yes  |  Yes  | youkaidk |
+| Yokai Douchuuki (Japan old versio|  Yes  |  Yes  |  Yes  |  Yes  | yokaidko |
+| Dragon Spirit (new version)      |  Yes  |  Yes  |  Yes  |  Yes  | dspirit  |
+| Dragon Spirit (old version)      |  Yes  |  Yes  |  Yes  |  Yes  | dspirito |
+| Blazer (Japan)                   |  Yes  |  Yes  |  Yes  |  Yes  | blazer   |
+| Quester (Japan)                  |  Yes  |  Yes  |  Yes  |  Yes  | quester  |
+| Pac-Mania                        |  Yes  |  Yes  |  Yes  |  Yes  | pacmania |
+| Pac-Mania (Japan)                |  Yes  |  Yes  |  Yes  |  Yes  | pacmanij |
+| Galaga '88 (set 1)               |  Yes  |  Yes  |  Yes  |  Yes  | galaga88 |
+| Galaga '88 (set 2)               |  Yes  |  Yes  |  Yes  |  Yes  | galag88b |
+| Galaga '88 (Japan)               |  Yes  |  Yes  |  Yes  |  Yes  | galag88j |
+| World Stadium (Japan)            |  Yes  |  Yes  |  Yes  |  Yes  | ws       |
+| Beraboh Man (Japan)              |  Yes  |  Yes  |  Yes  |  Yes  | berabohm |
+| Marchen Maze (Japan)             |  Yes  |  Yes  |  Yes  |  Yes  | mmaze    |
+| Bakutotsu Kijuutei               |  Yes  |  Yes  |  Yes  |  Yes  | bakutotu |
+| World Court (Japan)              |  Yes  |  Yes  |  Yes  |  Yes  | wldcourt |
+| Splatter House (Japan)           |  Yes  |  Yes  |  Yes  |  Yes  | splatter |
+| Face Off (Japan)                 |  Yes  |  Yes  |  Yes  |  Yes  | faceoff  |
+| Rompers (Japan)                  |  Yes  |  Yes  |  Yes  |  Yes  | rompers  |
+| Rompers (Japan old version)      |  Yes  |  Yes  |  Yes  |  Yes  | romperso |
+| Blast Off (Japan)                |  Yes  |  Yes  |  Yes  |  Yes  | blastoff |
+| World Stadium '89 (Japan)        |  Yes  |  Yes  |  Yes  |  Yes  | ws89     |
+| Dangerous Seed (Japan)           |  Yes  |  Yes  |  Yes  |  Yes  | dangseed |
+| World Stadium '90 (Japan)        |  Yes  |  Yes  |  Yes  |  Yes  | ws90     |
+| Pistol Daimyo no Bouken (Japan)  |  Yes  |  Yes  |  Yes  |  Yes  | pistoldm |
+| Souko Ban Deluxe (Japan)         |  Yes  |  Yes  |  Yes  |  Yes  | soukobdx |
+| Puzzle Club (Japan prototype)    |  Yes  |  Yes  |  Yes  |  Yes  | puzlclub |
+| Tank Force (US)                  |  Yes  |  Yes  |  Yes  |  Yes  | tankfrce |
+| Tank Force (Japan)               |  Yes  |  Yes  |  Yes  |  Yes  | tankfrcj |
+| Assault                          |  Yes  |  Yes  |  Yes  |  Yes  | assault  |
+| Assault (Japan)                  |  Yes  |  Yes  |  Yes  |  Yes  | assaultj |
+| Assault Plus (Japan)             |  Yes  |  Yes  |  Yes  |  Yes  | assaultp |
+| Mirai Ninja (Japan)              |  Yes  |  Yes  |  Yes  |  Yes  | mirninja |
+| Ordyne (Japan)                   |  Yes  |  Yes  |  Yes  |  Yes  | ordyne   |
+| Phelios (Japan)                  |  Yes  |  Yes  |  Yes  |  Yes  | phelios  |
+| Burning Force (Japan)            |  Yes  |  Yes  |  Yes  |  Yes  | burnforc |
+| Finest Hour (Japan)              |  Yes  |  Yes  |  Yes  |  Yes  | finehour |
+| Marvel Land (US)                 |  Yes  |  Yes  |  Yes  |  Yes  | marvland |
+| Marvel Land (Japan)              |  Yes  |  Yes  |  Yes  |  Yes  | marvlanj |
+| Legend of the Valkyrie (Japan)   |  Yes  |  Yes  |  Yes  |  Yes  | valkyrie |
+| Kyuukai Douchuuki (Japan new vers|  Yes  |  Yes  |  Yes  |  Yes  | kyukaidk |
+| Kyuukai Douchuuki (Japan old vers|  Yes  |  Yes  |  Yes  |  Yes  | kyukaido |
+| Dragon Saber                     |  Yes  |  Yes  |  Yes  |  Yes  | dsaber   |
+| Dragon Saber (Japan)             |  Yes  |  Yes  |  Yes  |  Yes  | dsaberj  |
+| Rolling Thunder 2                |  Yes  |  Yes  |  Yes  |  Yes  | rthun2   |
+| Rolling Thunder 2 (Japan)        |  Yes  |  Yes  |  Yes  |  Yes  | rthun2j  |
+| Cosmo Gang the Video (US)        |  Yes  |  Yes  |  Yes  |  Yes  | cosmogng |
+| Cosmo Gang the Video (Japan)     |  Yes  |  Yes  |  Yes  |  Yes  | cosmognj |
+| Super World Stadium '92 (Japan)  |  Yes  |  Yes  |  Yes  |  Yes  | sws92    |
+| Super World Stadium '93 (Japan)  |  Yes  |  Yes  |  Yes  |  Yes  | sws93    |
+| Cosmic Guerilla                  |  Yes  |  Yes  | Yes(2)|   No  | cosmicg  |
+| Cosmic Alien                     |  Yes  |  Yes  |   No  |  Yes  | cosmica  |
+| Cosmic Alien (older)             |  Yes  |  Yes  |   No  |  Yes  | cosmica2 |
+| Space Panic (set 1)              |  Yes  |  Yes  | Yes(2)|  Yes  | panic    |
+| Space Panic (set 2)              |  Yes  |  Yes  | Yes(2)|  Yes  | panica   |
+| Space Panic (German)             |  Yes  |  Yes  | Yes(2)|  Yes  | panicger |
+| Magical Spot II                  |  Yes  |  Yes  |Partial|  Yes  | magspot2 |
+| Devil Zone                       |  Yes  |  Yes  |Partial|  Yes  | devzone  |
+| No Man's Land                    |  Yes  |   No  |Partial|  Yes  | nomnlnd  |
+| No Man's Land (Gottlieb)         |  Yes  |   No  |Partial|  Yes  | nomnlndg |
+| Cheeky Mouse                     |  Yes  |   No  |Partial|  Yes  | cheekyms |
+| Lady Bug                         |  Yes  |  Yes  |  Yes  |  Yes  | ladybug  |
+| Lady Bug (bootleg)               |  Yes  |  Yes  |  Yes  |  Yes  | ladybugb |
+| Snap Jack                        |  Yes  |  Yes  |  Yes  |  Yes  | snapjack |
+| Cosmic Avenger                   |  Yes  |  Yes  |  Yes  |  Yes  | cavenger |
+| Mr. Do! (Universal)              |  Yes  |  Yes  |  Yes  |  Yes  | mrdo     |
+| Mr. Do! (Taito)                  |  Yes  |  Yes  |  Yes  |  Yes  | mrdot    |
+| Mr. Do! (bugfixed)               |  Yes  |  Yes  |  Yes  |  Yes  | mrdofix  |
+| Mr. Lo!                          |  Yes  |  Yes  |  Yes  |  Yes  | mrlo     |
+| Mr. Du!                          |  Yes  |  Yes  |  Yes  |  Yes  | mrdu     |
+| Mr. Do! (Yukidaruma)             |  Yes  |  Yes  |  Yes  |  Yes  | mrdoy    |
+| Yankee DO!                       |  Yes  |  Yes  |  Yes  |  Yes  | yankeedo |
+| Mr. Do's Castle (set 1)          |  Yes  |  Yes  |  Yes  |  Yes  | docastle |
+| Mr. Do's Castle (set 2)          |  Yes  |  Yes  |  Yes  |  Yes  | docastl2 |
+| Mr. Do vs. Unicorns              |  Yes  |  Yes  |  Yes  |  Yes  | douni    |
+| Do! Run Run (set 1)              |  Yes  |  Yes  |  Yes  |  Yes  | dorunrun |
+| Do! Run Run (set 2)              |  Yes  |  Yes  |  Yes  |  Yes  | dorunru2 |
+| Do! Run Run (Do's Castle hardware|  Yes  |  Yes  |  Yes  |  Yes  | dorunruc |
+| Super Pierrot (Japan)            |  Yes  |  Yes  |  Yes  |  Yes  | spiero   |
+| Mr. Do's Wild Ride               |  Yes  |  Yes  |  Yes  |  Yes  | dowild   |
+| Jumping Jack                     |  Yes  |  Yes  |  Yes  |  Yes  | jjack    |
+| Kick Rider                       |  Yes  |  Yes  |  Yes  |  Yes  | kickridr |
+| Radar Scope                      |  Yes  |  Yes  |Part(2)|  Yes  | radarscp |
+| Donkey Kong (US)                 |  Yes  |  Yes  | Yes(2)|  Yes  | dkong    |
+| Donkey Kong (Japan set 1)        |  Yes  |  Yes  | Yes(2)|  Yes  | dkongjp  |
+| Donkey Kong (Japan set 2)        |  Yes  |  Yes  | Yes(2)|  Yes  | dkongjpo |
+| Donkey Kong Junior (US)          |  Yes  |  Yes  | Yes(2)|  Yes  | dkongjr  |
+| Donkey Kong Jr. (Original Japanes|  Yes  |  Yes  | Yes(2)|  Yes  | dkngjrjp |
+| Donkey Kong Junior (Japan)       |  Yes  |  Yes  | Yes(2)|  Yes  | dkjrjp   |
+| Donkey Kong Junior (bootleg?)    |  Yes  |  Yes  | Yes(2)|  Yes  | dkjrbl   |
+| Donkey Kong 3 (US)               |  Yes  |  Yes  |  Yes  |  Yes  | dkong3   |
+| Donkey Kong 3 (Japan)            |  Yes  |  Yes  |  Yes  |  Yes  | dkong3j  |
+| Mario Bros. (US)                 |  Yes  |  Yes  | Yes(2)|  Yes  | mario    |
+| Mario Bros. (Japan)              |  Yes  |  Yes  | Yes(2)|  Yes  | mariojp  |
+| Masao                            |  Yes  |  Yes  |  Yes  |  Yes  | masao    |
+| Hunchback (Donkey Kong conversion|  Yes  |   No  |  Yes  |  Yes  | hunchbkd |
+| Herbie at the Olympics (DK conver|  Yes  |   No  |  Yes  |  Yes  | herbiedk |
+| herocast                         |  Yes  |  Yes  | Yes(2)|  Yes  | herocast |
+| Popeye (set 1)                   |  Yes  |  Yes  |  Yes  |   No  | popeye   |
+| Popeye (set 2)                   |  Yes  |  Yes  |  Yes  |   No  | popeye2  |
+| Popeye (bootleg)                 |  Yes  |  Yes  |  Yes  |   No  | popeyebl |
+| Punch-Out!!                      |  Yes  |  Yes  |  Yes  |  Yes  | punchout |
+| Super Punch-Out!!                |  Yes  |  Yes  |  Yes  |  Yes  | spnchout |
+| Super Punch-Out!! (Japan)        |  Yes  |  Yes  |  Yes  |  Yes  | spnchotj |
+| Arm Wrestling                    |  Yes  |  Yes  |  Yes  |  Yes  | armwrest |
+| Sea Wolf                         |  Yes  |  Yes  |   No  |  Yes  | seawolf  |
+| Gun Fight                        |  Yes  |  Yes  |   No  |  Yes  | gunfight |
+| Tornado Baseball                 |  Yes  |  Yes  |   No  |  Yes  | tornbase |
+| Datsun 280 Zzzap                 |  Yes  |  Yes  |   No  |  Yes  | 280zzzap |
+| Amazing Maze                     |  Yes  |  Yes  |   No  |  Yes  | maze     |
+| Boot Hill                        |  Yes  |  Yes  | Yes(2)|  Yes  | boothill |
+| Checkmate                        |  Yes  |  Yes  |   No  |  Yes  | checkmat |
+| Desert Gun                       |  Yes  |  Yes  |   No  |  Yes  | desertgu |
+| Double Play                      |  Yes  |  Yes  |   No  |  Yes  | dplay    |
+| Laguna Racer                     |  Yes  |  Yes  |   No  |  Yes  | lagunar  |
+| Guided Missile                   |  Yes  |  Yes  |   No  |  Yes  | gmissile |
+| M-4                              |  Yes  |  Yes  |   No  |  Yes  | m4       |
+| Clowns                           |  Yes  |  Yes  |   No  |  Yes  | clowns   |
+| Extra Innings                    |  Yes  |  Yes  |   No  |  Yes  | einnings |
+| Shuffleboard                     |  Yes  |  Yes  |   No  |  Yes  | shuffle  |
+| Dog Patch                        |  Yes  |  Yes  |   No  |  Yes  | dogpatch |
+| Space Encounters                 |  Yes  |  Yes  |   No  |  Yes  | spcenctr |
+| Phantom II                       |  Yes  |  Yes  |   No  |  Yes  | phantom2 |
+| 4 Player Bowling                 |  Yes  |  Yes  |   No  |  Yes  | bowler   |
+| Space Invaders                   |  Yes  |  Yes  | Yes(2)|  Yes  | invaders |
+| Blue Shark                       |  Yes  |  Yes  |   No  |  Yes  | blueshrk |
+| Space Invaders II (Midway, cockta|  Yes  |  Yes  | Yes(2)|  Yes  | invad2ct |
+| Space Invaders Part II (Taito)   |  Yes  |  Yes  | Yes(2)|  Yes  | invadpt2 |
+| Space Invaders Deluxe            |  Yes  |  Yes  | Yes(2)|  Yes  | invaddlx |
+| Moon Base                        |  Yes  |  Yes  | Yes(2)|  Yes  | moonbase |
+| Super Earth Invasion             |  Yes  |  Yes  | Yes(2)|  Yes  | earthinv |
+| Space Attack II                  |  Yes  |  Yes  | Yes(2)|  Yes  | spaceatt |
+| Super Invaders (Zenitone-Microsec|  Yes  |  Yes  | Yes(2)|  Yes  | sinvzen  |
+| Super Invaders                   |  Yes  |  Yes  | Yes(2)|  Yes  | superinv |
+| Super Invaders (EMAG)            |  Yes  |  Yes  | Yes(2)|  Yes  | sinvemag |
+| Jatre Specter                    |  Yes  |  Yes  | Yes(2)|  Yes  | jspecter |
+| Invader's Revenge                |  Yes  |  Yes  |   No  |  Yes  | invrvnge |
+| Invader's Revenge (Dutchford)    |  Yes  |  Yes  |   No  |  Yes  | invrvnga |
+| Galaxy Wars                      |  Yes  |  Yes  | Yes(2)|  Yes  | galxwars |
+| Star Wars                        |  Yes  |  Yes  | Yes(2)|  Yes  | starw    |
+| Lunar Rescue                     |  Yes  |  Yes  | Yes(2)|  Yes  | lrescue  |
+| Galaxy Rescue                    |  Yes  |  Yes  | Yes(2)|  Yes  | grescue  |
+| Destination Earth                |  Yes  |  Yes  | Yes(2)|  Yes  | desterth |
+| Cosmic Monsters                  |  Yes  |  Yes  | Yes(2)|  Yes  | cosmicmo |
+| Rolling Crash / Moon Base        |  Yes  |  Yes  |   No  |  Yes  | rollingc |
+| Sheriff                          |  Yes  |  Yes  |  Yes  |  Yes  | sheriff  |
+| Bandido                          |  Yes  |  Yes  |  Yes  |  Yes  | bandido  |
+| Ozma Wars                        |  Yes  |  Yes  | Yes(2)|  Yes  | ozmawars |
+| Solar Fight                      |  Yes  |  Yes  | Yes(2)|  Yes  | solfight |
+| Space Phantoms                   |  Yes  |  Yes  | Yes(2)|  Yes  | spaceph  |
+| Space Chaser                     |  Yes  | Close |Partial|  Yes  | schaser  |
+| Space Chaser (CV version)        |  Yes  | Close |   No  |   No  | schasrcv |
+| Lupin III                        |  Yes  |  Yes  |   No  |   No  | lupin3   |
+| HeliFire (set 1)                 |  Yes  |  Yes  |Partial|   No  | helifire |
+| HeliFire (set 2)                 |  Yes  |  Yes  |Partial|   No  | helifira |
+| Space Fever (set 1)              |  Yes  |  Yes  |  Yes  |  Yes  | spacefev |
+| Space Fever (set 2)              |  Yes  |  Yes  |  Yes  |  Yes  | spacefva |
+| Space Laser                      |  Yes  |  Yes  | Yes(2)|  Yes  | spclaser |
+| Laser                            |  Yes  |  Yes  | Yes(2)|  Yes  | laser    |
+| Space War (Leijac)               |  Yes  |  Yes  | Yes(2)|  Yes  | spcewarl |
+| Polaris (set 1)                  |  Yes  |  Yes  |   No  |  Yes  | polaris  |
+| Polaris (set 2)                  |  Yes  |  Yes  |   No  |  Yes  | polarisa |
+| Balloon Bomber                   |  Yes  |  Yes  |  Yes  |  Yes  | ballbomb |
+| M79 Ambush                       |  Yes  |  Yes  |  Yes  |  Yes  | m79amb   |
+| Alien Invasion Part II           |  Yes  |  Yes  | Yes(2)|  Yes  | alieninv |
+| Space Invaders (TV Version)      |  Yes  |  Yes  | Yes(2)|  Yes  | sitv     |
+| Space Invaders (CV Version)      |  Yes  |  Yes  | Yes(2)|  Yes  | sicv     |
+| Space Invaders (SV Version)      |  Yes  |  Yes  | Yes(2)|  Yes  | sisv     |
+| Space Invaders (SV Version 2)    |  Yes  |  Yes  | Yes(2)|  Yes  | sisv2    |
+| Space War Part 3                 |  Yes  |  Yes  | Yes(2)|  Yes  | spacewr3 |
+| Space Invaders (Logitec)         |  Yes  |  Yes  | Yes(2)|  Yes  | invaderl |
+| Yosaku To Donbee (bootleg)       |  Yes  |  Yes  |   No  |  Yes  | yosakdon |
+| Space King                       |  Yes  |  Yes  | Yes(2)|  Yes  | spceking |
+| Space War (Sanritsu)             |  Yes  |  Yes  | Yes(2)|  Yes  | spcewars |
+| Astro Invader                    |  Yes  |  Yes  | Yes(2)|  Yes  | astinvad |
+| Kamikaze                         |  Yes  |  Yes  | Yes(2)|  Yes  | kamikaze |
+| Space Intruder                   |  Yes  |   No  |   No  |   No  | spaceint |
+| Lazer Command                    |  Yes  |  Yes  |  Yes  |  Yes  | lazercmd |
+| Dead Eye                         |  Yes  |  Yes  |  Yes  |  Yes  | deadeye  |
+| Gypsy Juggler                    |  Yes  |  Yes  |  Yes  |  Yes  | gypsyjug |
+| Meadows Lanes                    |  Yes  |  Yes  |  Yes  |  Yes  | medlanes |
+| Sea Wolf II                      |  Yes  |  Yes  |   No  |  Yes  | seawolf2 |
+| Space Zap                        |  Yes  |  Yes  |  Yes  |  Yes  | spacezap |
+| Extra Bases                      |  Yes  |  Yes  |  Yes  |  Yes  | ebases   |
+| Wizard of Wor                    |  Yes  |  Yes  |  Yes  |  Yes  | wow      |
+| Gorf                             |  Yes  |  Yes  |  Yes  |  Yes  | gorf     |
+| Gorf (Program 1)                 |  Yes  |  Yes  |  Yes  |  Yes  | gorfpgm1 |
+| Robby Roto                       |  Yes  |  Yes  |  Yes  |  Yes  | robby    |
+| Solar Fox                        |  Yes  |  Yes  |  Yes  |  Yes  | solarfox |
+| Kick (upright)                   |  Yes  |  Yes  |  Yes  |  Yes  | kick     |
+| Kick (cocktail)                  |  Yes  |  Yes  |  Yes  |  Yes  | kicka    |
+| Satan's Hollow (set 1)           |  Yes  |  Yes  |  Yes  |  Yes  | shollow  |
+| Satan's Hollow (set 2)           |  Yes  |  Yes  |  Yes  |  Yes  | shollow2 |
+| Tron (set 1)                     |  Yes  |  Yes  |  Yes  |  Yes  | tron     |
+| Tron (set 2)                     |  Yes  |  Yes  |  Yes  |  Yes  | tron2    |
+| Kozmik Kroozr                    |  Yes  |  Yes  |  Yes  |  Yes  | kroozr   |
+| Domino Man                       |  Yes  |  Yes  |  Yes  |  Yes  | domino   |
+| Wacko                            |  Yes  |  Yes  |  Yes  |  Yes  | wacko    |
+| Two Tigers                       |  Yes  |  Yes  |  Yes  |  Yes  | twotiger |
+| Journey                          |  Yes  |  Yes  |Partial|  Yes  | journey  |
+| Tapper (Budweiser)               |  Yes  |  Yes  |  Yes  |  Yes  | tapper   |
+| Tapper (alternate)               |  Yes  |  Yes  |  Yes  |  Yes  | tappera  |
+| Tapper (Suntory)                 |  Yes  |  Yes  |  Yes  |  Yes  | sutapper |
+| Tapper (Root Beer)               |  Yes  |  Yes  |  Yes  |  Yes  | rbtapper |
+| Timber                           |  Yes  |  Yes  |  Yes  |  Yes  | timber   |
+| Discs of Tron (Upright)          |  Yes  |  Yes  |  Yes  |  Yes  | dotron   |
+| Discs of Tron (Environmental)    |  Yes  |  Yes  |  Yes  |  Yes  | dotrone  |
+| Demolition Derby                 |  Yes  |  Yes  |  Yes  |  Yes  | destderb |
+| Demolition Derby (2-Player Mono B|  Yes  |  Yes  |  Yes  |  Yes  | destderm |
+| Sarge                            |  Yes  |  Yes  |  Yes  |  Yes  | sarge    |
+| Rampage (revision 3)             |  Yes  |  Yes  |  Yes  |  Yes  | rampage  |
+| Rampage (revision 2)             |  Yes  |  Yes  |  Yes  |  Yes  | rampage2 |
+| Power Drive                      |  Yes  |  Yes  |  Yes  |  Yes  | powerdrv |
+| Max RPM                          |  Yes  |  Yes  |  Yes  |  Yes  | maxrpm   |
+| Spy Hunter                       |  Yes  |  Yes  |  Yes  |  Yes  | spyhunt  |
+| Turbo Tag (Prototype)            |  Yes  |  Yes  |  Yes  |  Yes  | turbotag |
+| Crater Raider                    |  Yes  |  Yes  |  Yes  |  Yes  | crater   |
+| Zwackery                         |  Yes  |  Yes  |  Yes  |  Yes  | zwackery |
+| Xenophobe                        |  Yes  |  Yes  |  Yes  |  Yes  | xenophob |
+| Spy Hunter 2 (rev 2)             |  Yes  |  Yes  |  Yes  |  Yes  | spyhunt2 |
+| Spy Hunter 2 (rev 1)             |  Yes  |  Yes  |  Yes  |  Yes  | spyhnt2a |
+| Blasted                          |  Yes  |  Yes  |  Yes  |  Yes  | blasted  |
+| Arch Rivals (rev 4.0)            |  Yes  |  Yes  |  Yes  |  Yes  | archrivl |
+| Arch Rivals (rev 2.0)            |  Yes  |  Yes  |  Yes  |  Yes  | archriv2 |
+| Tri-Sports                       |  Yes  |  Yes  |  Yes  |  Yes  | trisport |
+| Pigskin 621AD                    |  Yes  |  Yes  |  Yes  |  Yes  | pigskin  |
+| Sente Diagnostic Cartridge       |  Yes  |  Yes  |  Yes  |  Yes  | sentetst |
+| Chicken Shift                    |  Yes  |  Yes  |  Yes  |  Yes  | cshift   |
+| Goalie Ghost                     |  Yes  |  Yes  |  Yes  |  Yes  | gghost   |
+| Hat Trick                        |  Yes  |  Yes  |  Yes  |  Yes  | hattrick |
+| Off the Wall (Sente)             |  Yes  |  Yes  |  Yes  |  Yes  | otwalls  |
+| Snake Pit                        |  Yes  |  Yes  |  Yes  |  Yes  | snakepit |
+| Snacks'n Jaxson                  |  Yes  |  Yes  |  Yes  |  Yes  | snakjack |
+| Stocker                          |  Yes  |  Yes  |  Yes  |  Yes  | stocker  |
+| Trivial Pursuit (Genus I)        |  Yes  |  Yes  |  Yes  |  Yes  | triviag1 |
+| Trivial Pursuit (Genus II)       |  Yes  |  Yes  |  Yes  |  Yes  | triviag2 |
+| Trivial Pursuit (All Star Sports |  Yes  |  Yes  |  Yes  |  Yes  | triviasp |
+| Trivial Pursuit (Young Players Ed|  Yes  |  Yes  |  Yes  |  Yes  | triviayp |
+| Trivial Pursuit (Baby Boomer Edit|  Yes  |  Yes  |  Yes  |  Yes  | triviabb |
+| Gimme A Break                    |  Yes  |  Yes  |  Yes  |  Yes  | gimeabrk |
+| Mini Golf (set 1)                |  Yes  |  Yes  |  Yes  |  Yes  | minigolf |
+| Mini Golf (set 2)                |  Yes  |  Yes  |  Yes  |  Yes  | minigol2 |
+| Toggle                           |  Yes  |  Yes  |  Yes  |  Yes  | toggle   |
+| Name That Tune                   |  Yes  |  Yes  |  Yes  |  Yes  | nametune |
+| Night Stocker                    |  Yes  |  Yes  |  Yes  |  Yes  | nstocker |
+| Street Football                  |  Yes  |  Yes  |  Yes  |  Yes  | sfootbal |
+| Spiker                           |  Yes  |  Yes  |  Yes  |  Yes  | spiker   |
+| Rescue Raider                    |  Yes  |  Yes  |  Yes  |  Yes  | rescraid |
+| Rescue Raider (Stand-Alone)      |  Yes  |  Yes  |  Yes  |  Yes  | rescrdsa |
+| Sky Chuter                       |  Yes  |   No  |  Yes  |  Yes  | skychut  |
+| Red Alert                        |  Yes  |   No  |Partial|  Yes  | redalert |
+| Oli-Boo-Chu                      |  Yes  |   No  |Partial|  Yes  | olibochu |
+| Moon Patrol                      |  Yes  |  Yes  |  Yes  |  Yes  | mpatrol  |
+| Moon Patrol (Williams)           |  Yes  |  Yes  |  Yes  |  Yes  | mpatrolw |
+| Moon Ranger                      |  Yes  |  Yes  |  Yes  |  Yes  | mranger  |
+| Tropical Angel                   |  Yes  |  Yes  |  Yes  |  Yes  | troangel |
+| 10 Yard Fight                    |  Yes  |  Yes  |  Yes  |  Yes  | yard     |
+| 10 Yard Fight (Vs. version 11/05/|  Yes  |  Yes  |  Yes  |  Yes  | vsyard   |
+| 10 Yard Fight (Vs. version, set 2|  Yes  |  Yes  |  Yes  |  Yes  | vsyard2  |
+| Traverse USA / Zippy Race        |  Yes  |  Yes  |  Yes  |  Yes  | travrusa |
+| MotoRace USA                     |  Yes  |  Yes  |  Yes  |  Yes  | motorace |
+| Kung Fu Master                   |  Yes  |  Yes  |  Yes  |  Yes  | kungfum  |
+| Kung Fu Master (Data East)       |  Yes  |  Yes  |  Yes  |  Yes  | kungfud  |
+| Spartan X (Japan)                |  Yes  |  Yes  |  Yes  |  Yes  | spartanx |
+| Kung Fu Master (bootleg set 1)   |  Yes  |  Yes  |  Yes  |  Yes  | kungfub  |
+| Kung Fu Master (bootleg set 2)   |  Yes  |  Yes  |  Yes  |  Yes  | kungfub2 |
+| Battle-Road, The                 |  Yes  |  Yes  |  Yes  |  Yes  | battroad |
+| Lode Runner (set 1)              |  Yes  |  Yes  |  Yes  |  Yes  | ldrun    |
+| Lode Runner (set 2)              |  Yes  |  Yes  |  Yes  |  Yes  | ldruna   |
+| Lode Runner II - The Bungeling St|  Yes  |  Yes  |  Yes  |  Yes  | ldrun2   |
+| Lode Runner III - Majin No Fukkat|  Yes  |  Yes  |  Yes  |  Yes  | ldrun3   |
+| Lode Runner IV - Teikoku Karano D|  Yes  |  Yes  |  Yes  |  Yes  | ldrun4   |
+| Lot Lot                          |  Yes  |  Yes  |  Yes  |  Yes  | lotlot   |
+| Kid Niki - Radical Ninja (US)    |  Yes  |  Yes  |Partial|  Yes  | kidniki  |
+| Kaiketsu Yanchamaru (Japan)      |  Yes  |  Yes  |Partial|  Yes  | yanchamr |
+| Little Hero                      |  Yes  |  Yes  |Partial|  Yes  | lithero  |
+| Spelunker                        |  Yes  |  Yes  |  Yes  |  Yes  | spelunkr |
+| Spelunker II                     |  Yes  |  Yes  |  Yes  |  Yes  | spelunk2 |
+| Vigilante (World)                |  Yes  |  Yes  |  Yes  |   No  | vigilant |
+| Vigilante (US)                   |  Yes  |  Yes  |  Yes  |   No  | vigilntu |
+| Vigilante (Japan)                |  Yes  |  Yes  |  Yes  |   No  | vigilntj |
+| Meikyu Jima (Japan)              |  Yes  |  Yes  |  Yes  |   No  | kikcubic |
+| R-Type (Japan)                   |  Yes  |  Yes  |  Yes  |   No  | rtype    |
+| R-Type (Japan prototype)         |  Yes  |  Yes  |  Yes  |   No  | rtypepj  |
+| R-Type (US)                      |  Yes  |  Yes  |  Yes  |   No  | rtypeu   |
+| Battle Chopper                   |  Yes  |  Yes  |  Yes  |   No  | bchopper |
+| Mr. HELI no Dai-Bouken           |  Yes  |  Yes  |  Yes  |   No  | mrheli   |
+| Ninja Spirit                     |  Yes  |  Yes  |  Yes  |   No  | nspirit  |
+| Saigo no Nindou (Japan)          |  Yes  |  Yes  |  Yes  |   No  | nspiritj |
+| Image Fight (Japan)              |  Yes  |  Yes  |  Yes  |   No  | imgfight |
+| Legend of Hero Tonma             |  Yes  |  Yes  |  Yes  |   No  | loht     |
+| X Multiply (Japan)               |  Yes  |  Yes  |  Yes  |   No  | xmultipl |
+| Dragon Breed                     |  Yes  |  Yes  |  Yes  |   No  | dbreed   |
+| R-Type II                        |  Yes  |  Yes  |  Yes  |   No  | rtype2   |
+| R-Type II (Japan)                |  Yes  |  Yes  |  Yes  |   No  | rtype2j  |
+| Major Title (Japan)              |   No  |  Yes  |  Yes  |   No  | majtitle |
+| Hammerin' Harry (World)          |  Yes  |  Yes  |  Yes  |   No  | hharry   |
+| Hammerin' Harry (US)             |  Yes  |  Yes  |  Yes  |   No  | hharryu  |
+| Daiku no Gensan (Japan)          |  Yes  |  Yes  |  Yes  |   No  | dkgensan |
+| Ken-Go                           |  Yes  |  Yes  |  Yes  |   No  | kengo    |
+| Pound for Pound (World)          |  Yes  |  Yes  |Partial|   No  | poundfor |
+| Pound for Pound (US)             |  Yes  |  Yes  |Partial|   No  | poundfou |
+| Air Duel (Japan)                 |  Yes  |  Yes  |Partial|   No  | airduel  |
+| Gallop - Armed police Unit (Japan|  Yes  |  Yes  |Partial|   No  | gallop   |
+| Sichuan II (hack?) (set 1)       |  Yes  |  Yes  |  Yes  |  Yes  | sichuan2 |
+| Sichuan II (hack ?) (set 2)      |  Yes  |  Yes  |  Yes  |  Yes  | sichuana |
+| Shisensho - Joshiryo-Hen (Japan) |  Yes  |  Yes  |  Yes  |  Yes  | shisen   |
+| Hasamu (Japan)                   |  Yes  |  Yes  |  Yes  |   No  | hasamu   |
+| Bomber Man World (World)         |  Yes  |  Yes  |Partial|   No  | bbmanw   |
+| Bomber Man World (Japan)         |  Yes  |  Yes  |  Yes  |   No  | bbmanwj  |
+| Dynablaster (World)              |  Yes  |  Yes  |  Yes  |   No  | dynablst |
+| Bomberman (Japan)                |  Yes  |  Yes  |  Yes  |   No  | bombrman |
+| Blade Master (World)             |  Yes  |  Yes  |  Yes  |  Yes  | bmaster  |
+| Gunforce - Battle Fire Engulfed T|  Yes  |  Yes  |  Yes  |  Yes  | gunforce |
+| Gunforce - Battle Fire Engulfed T|  Yes  |  Yes  |  Yes  |  Yes  | gunforcu |
+| Gunforce - Battle Fire Engulfed T|  Yes  |  Yes  |  Yes  |  Yes  | gunforcj |
+| Hook (World)                     |  Yes  |  Yes  |  Yes  |  Yes  | hook     |
+| Hook (US)                        |  Yes  |  Yes  |  Yes  |  Yes  | hooku    |
+| Mystic Riders (World)            |  Yes  |  Yes  |  Yes  |  Yes  | mysticri |
+| Gun Hohki (Japan)                |  Yes  |  Yes  |  Yes  |  Yes  | gunhohki |
+| Undercover Cops (World)          |  Yes  |  Yes  |  Yes  |  Yes  | uccops   |
+| Undercover Cops (Japan)          |  Yes  |  Yes  |  Yes  |  Yes  | uccopsj  |
+| R-Type Leo (Japan)               |  Yes  |  Yes  |  Yes  |  Yes  | rtypeleo |
+| Major Title 2 (World)            |  Yes  |  Yes  |  Yes  |  Yes  | majtitl2 |
+| Irem Skins Game, The (US set 1)  |  Yes  |  Yes  |  Yes  |  Yes  | skingame |
+| Irem Skins Game, The (US set 2)  |  Yes  |  Yes  |  Yes  |  Yes  | skingam2 |
+| In The Hunt (World)              |  Yes  |  Yes  |  Yes  |  Yes  | inthunt  |
+| In The Hunt (US)                 |  Yes  |  Yes  |  Yes  |  Yes  | inthuntu |
+| Kaitei Daisensou (Japan)         |  Yes  |  Yes  |  Yes  |  Yes  | kaiteids |
+| Ninja Baseball Batman (US)       |  Yes  |  Yes  |  Yes  |  Yes  | nbbatman |
+| Yakyuu Kakutou League-Man (Japan)|  Yes  |  Yes  |  Yes  |  Yes  | leaguemn |
+| Lethal Thunder (World)           |  Yes  |  Yes  |  Yes  |  Yes  | lethalth |
+| Thunder Blaster (Japan)          |  Yes  |  Yes  |  Yes  |  Yes  | thndblst |
+| Perfect Soldiers (Japan)         |  Yes  |  Yes  |  Yes  |  Yes  | psoldier |
+| Dream Soccer '94                 |  Yes  |  Yes  |   No  |  Yes  | dsoccr94 |
+| Reactor                          |  Yes  |  Yes  |  Yes  |  Yes  | reactor  |
+| Mad Planets                      |  Yes  |  Yes  |  Yes  |  Yes  | mplanets |
+| Q*bert (US)                      |  Yes  |  Yes  |  Yes  |  Yes  | qbert    |
+| Q*bert (Japan)                   |  Yes  |  Yes  |  Yes  |  Yes  | qbertjp  |
+| Insector (prototype)             |  Yes  |  Yes  |   No  |  Yes  | insector |
+| Krull                            |  Yes  |  Yes  |  Yes  |  Yes  | krull    |
+| Faster, Harder, More Challenging |  Yes  |  Yes  |  Yes  |  Yes  | sqbert   |
+| M.A.C.H. 3                       |   No  |  Yes  |  Yes  |  Yes  | mach3    |
+| Us vs. Them                      |   No  |  Yes  |  Yes  |  Yes  | usvsthem |
+| Three Stooges                    |  Yes  |  Yes  |Partial|  Yes  | 3stooges |
+| Q*bert's Qubes                   |  Yes  |  Yes  |  Yes  |  Yes  | qbertqub |
+| Screw Loose (prototype)          |  Yes  |  Yes  |  Yes  |  Yes  | screwloo |
+| Curve Ball                       |  Yes  |  Yes  |  Yes  |  Yes  | curvebal |
+| Crazy Balloon (set 1)            |  Yes  |  Yes  |Partial|  Yes  | crbaloon |
+| Crazy Balloon (set 2)            |  Yes  |  Yes  |Partial|  Yes  | crbalon2 |
+| Qix (set 1)                      |  Yes  |  Yes  |  Yes  |   No  | qix      |
+| Qix (set 2)                      |  Yes  |  Yes  |  Yes  |   No  | qixa     |
+| Qix (set 3)                      |  Yes  |  Yes  |  Yes  |   No  | qixb     |
+| Qix II (Tournament)              |  Yes  |  Yes  |  Yes  |   No  | qix2     |
+| Space Dungeon                    |  Yes  |  Yes  |  Yes  |   No  | sdungeon |
+| Electric Yo-Yo, The (set 1)      |  Yes  |  Yes  |  Yes  |   No  | elecyoyo |
+| Electric Yo-Yo, The (set 2)      |  Yes  |  Yes  |  Yes  |   No  | elecyoy2 |
+| Kram (set 1)                     |  Yes  |  Yes  |  Yes  |   No  | kram     |
+| Kram (set 2)                     |  Yes  |  Yes  |  Yes  |   No  | kram2    |
+| Zoo Keeper (set 1)               |  Yes  |  Yes  |  Yes  |   No  | zookeep  |
+| Zoo Keeper (set 2)               |  Yes  |  Yes  |  Yes  |   No  | zookeep2 |
+| Zoo Keeper (set 3)               |  Yes  |  Yes  |  Yes  |   No  | zookeep3 |
+| Space Seeker                     |  Yes  |  Yes  |  Yes  |  Yes  | spaceskr |
+| Space Cruiser                    |  Yes  |  Yes  |  Yes  |  Yes  | spacecr  |
+| Jungle King (Japan)              |  Yes  |  Yes  |  Yes  |  Yes  | junglek  |
+| Jungle King (Japan, earlier)     |  Yes  |  Yes  |  Yes  |  Yes  | junglkj2 |
+| Jungle Hunt (US)                 |  Yes  |  Yes  |  Yes  |  Yes  | jungleh  |
+| Jungle Hunt (Brazil)             |  Yes  |  Yes  |  Yes  |  Yes  | junglhbr |
+| Pirate Pete                      |  Yes  |  Yes  |  Yes  |  Yes  | piratpet |
+| Alpine Ski (set 1)               |  Yes  |  Yes  |  Yes  |  Yes  | alpine   |
+| Alpine Ski (set 2)               |  Yes  |  Yes  |  Yes  |  Yes  | alpinea  |
+| Time Tunnel                      |  Yes  |  Yes  |  Yes  |  Yes  | timetunl |
+| Wild Western (set 1)             |  Yes  |  Yes  |  Yes  |  Yes  | wwestern |
+| Wild Western (set 2)             |  Yes  |  Yes  |  Yes  |  Yes  | wwester1 |
+| Front Line                       |  Yes  |  Yes  |  Yes  |  Yes  | frontlin |
+| Elevator Action                  |  Yes  |  Yes  |  Yes  |  Yes  | elevator |
+| Elevator Action (bootleg)        |  Yes  |  Yes  |  Yes  |  Yes  | elevatob |
+| Tin Star, The                    |  Yes  |  Yes  |  Yes  |  Yes  | tinstar  |
+| Water Ski                        |  Yes  |  Yes  |  Yes  |  Yes  | waterski |
+| Bio Attack                       |  Yes  |  Yes  |  Yes  |  Yes  | bioatack |
+| High Way Race                    |  Yes  |  Yes  |  Yes  |  Yes  | hwrace   |
+| Sea Fighter Poseidon             |  Yes  |  Yes  |  Yes  |  Yes  | sfposeid |
+| Kick Start Wheelie King          |  Yes  |  Yes  |  Yes  |  Yes  | kikstart |
+| Birdie King 2                    |  Yes  |  Yes  |  Yes  |  Yes  | bking2   |
+| Great Swordsman                  |  Yes  | Close |  Yes  |  Yes  | gsword   |
+| Legend of Kage, The              |  Yes  |  Yes  |  Yes  |  Yes  | lkage    |
+| Legend of Kage, The (bootleg set | No(1) |  Yes  |  Yes  |  Yes  | lkageb   |
+| Legend of Kage, The (bootleg set |  Yes  |  Yes  |  Yes  |  Yes  | lkageb2  |
+| Legend of Kage, The (bootleg set |  Yes  |  Yes  |  Yes  |  Yes  | lkageb3  |
+| Return of the Invaders           |  Yes  |  Yes  |  Yes  |  Yes  | retofinv |
+| Return of the Invaders (bootleg s|  Yes  |  Yes  |  Yes  |  Yes  | retofin1 |
+| Return of the Invaders (bootleg s|  Yes  |  Yes  |  Yes  |  Yes  | retofin2 |
+| Samurai Nihon-ichi (set 1)       |  Yes  |  Yes  |  Yes  |  Yes  | tsamurai |
+| Samurai Nihon-ichi (set 2)       |  Yes  |  Yes  |  Yes  |  Yes  | tsamura2 |
+| Nunchackun                       |  Yes  |   No  |  Yes  |  Yes  | nunchaku |
+| Go Go Mr. Yamaguchi / Yuke Yuke Y|  Yes  | Close |  Yes  |  Yes  | yamagchi |
+| FairyLand Story, The             |  Yes  |  Yes  |Partial|   No  | flstory  |
+| FairyLand Story, The (Japan)     |  Yes  |  Yes  |Partial|   No  | flstoryj |
+| Gladiator (US)                   |  Yes  |  Yes  |  Yes  |   No  | gladiatr |
+| Ohgon no Siro (Japan)            |  Yes  |  Yes  |  Yes  |   No  | ogonsiro |
+| Land Sea Air Squad / Riku Kai Kuu|  Yes  |  Yes  |  Yes  |  Yes  | lsasquad |
+| Storming Party / Riku Kai Kuu Sai|  Yes  |  Yes  |  Yes  |  Yes  | storming |
+| Tokio / Scramble Formation       | No(1) |  Yes  |  Yes  |  Yes  | tokio    |
+| Tokio / Scramble Formation (bootl|  Yes  |  Yes  |  Yes  |  Yes  | tokiob   |
+| Bubble Bobble                    |  Yes  |  Yes  |  Yes  |  Yes  | bublbobl |
+| Bubble Bobble (US with mode selec|  Yes  |  Yes  |  Yes  |  Yes  | bublbobr |
+| Bubble Bobble (US)               |  Yes  |  Yes  |  Yes  |  Yes  | bubbobr1 |
+| Bobble Bobble                    |  Yes  |  Yes  |  Yes  |  Yes  | boblbobl |
+| Super Bobble Bobble              |  Yes  |  Yes  |  Yes  |  Yes  | sboblbob |
+| Kick and Run                     |  Yes  |  Yes  |  Yes  |  Yes  | kicknrun |
+| Mexico 86                        |  Yes  |  Yes  |  Yes  |  Yes  | mexico86 |
+| KiKi KaiKai                      |  Yes  |  Yes  |  Yes  |  Yes  | kikikai  |
+| Rastan (World)                   |  Yes  |  Yes  |  Yes  |  Yes  | rastan   |
+| Rastan (US set 1)                |  Yes  |  Yes  |  Yes  |  Yes  | rastanu  |
+| Rastan (US set 2)                |  Yes  |  Yes  |  Yes  |  Yes  | rastanu2 |
+| Rastan Saga (Japan)              |  Yes  |  Yes  |  Yes  |  Yes  | rastsaga |
+| Rainbow Islands                  |  Yes  |  Yes  |  Yes  |  Yes  | rainbow  |
+| Rainbow Islands (Extra)          | No(1) |  Yes  |  Yes  |  Yes  | rainbowe |
+| Jumping                          |  Yes  |  Yes  |  Yes  |  Yes  | jumping  |
+| Arkanoid (World)                 |  Yes  |  Yes  |  Yes  |  Yes  | arkanoid |
+| Arkanoid (US)                    |  Yes  |  Yes  |  Yes  |  Yes  | arknoidu |
+| Arkanoid (Japan)                 |  Yes  |  Yes  |  Yes  |  Yes  | arknoidj |
+| Arkanoid (Japanese bootleg Set 2)| No(1) |  Yes  |  Yes  |  Yes  | arkbl2   |
+| Arkanoid (Tayto bootleg, Japanese|  Yes  |  Yes  |  Yes  |  Yes  | arkatayt |
+| Block (Game Corporation bootleg) |  Yes  |  Yes  |  Yes  |  Yes  | arkbloc2 |
+| Arkanoid (Game Corporation bootle|  Yes  |  Yes  |  Yes  |  Yes  | arkangc  |
+| Tournament Arkanoid (US)         |  Yes  |  Yes  |  Yes  |  Yes  | arkatour |
+| Super Qix                        | No(1) |  Yes  |  Yes  |   No  | superqix |
+| Super Qix (bootleg)              |  Yes  |  Yes  |  Yes  |   No  | sqixbl   |
+| Superman                         |  Yes  |  Yes  |  Yes  |   No  | superman |
+| Minivader                        |  Yes  |  Yes  |  Yes  |  Yes  | minivadr |
+| Extermination (US)               |  Yes  |  Yes  |  Yes  |  Yes  | extrmatn |
+| Arkanoid - Revenge of DOH (World)|  Yes  |  Yes  |  Yes  |  Yes  | arkanoi2 |
+| Arkanoid - Revenge of DOH (US)   |  Yes  |  Yes  |  Yes  |  Yes  | ark2us   |
+| Arkanoid - Revenge of DOH (Japan)|  Yes  |  Yes  |  Yes  |  Yes  | ark2jp   |
+| Plump Pop (Japan)                |  Yes  |  Yes  |  Yes  |  Yes  | plumppop |
+| Dr. Toppel's Tankentai (Japan)   |  Yes  |  Yes  |  Yes  |  Yes  | drtoppel |
+| Chuka Taisen (Japan)             |  Yes  |  Yes  |  Yes  |  Yes  | chukatai |
+| NewZealand Story, The (Japan)    |  Yes  |  Yes  |  Yes  |  Yes  | tnzs     |
+| NewZealand Story, The (World, boo|  Yes  |  Yes  |  Yes  |  Yes  | tnzsb    |
+| NewZealand Story 2, The (World)  |  Yes  |  Yes  |  Yes  |  Yes  | tnzs2    |
+| Insector X (World)               |  Yes  |  Yes  |  Yes  |  Yes  | insectx  |
+| Kageki (US)                      |  Yes  |  Yes  |  Yes  |  Yes  | kageki   |
+| Kageki (Japan)                   |  Yes  |  Yes  |  Yes  |  Yes  | kagekij  |
+| Raimais (Japan)                  |  Yes  |  Yes  |  Yes  |  Yes  | raimais  |
+| Fighting Hawk (Japan)            |  Yes  |  Yes  |  Yes  |  Yes  | fhawk    |
+| Champion Wrestler (World)        |  Yes  |  Yes  |  Yes  |  Yes  | champwr  |
+| Champion Wrestler (US)           |  Yes  |  Yes  |  Yes  |  Yes  | champwru |
+| Champion Wrestler (Japan)        |  Yes  |  Yes  |  Yes  |  Yes  | champwrj |
+| Kuri Kinton (World)              |  Yes  |  Yes  |  Yes  |  Yes  | kurikint |
+| Kuri Kinton (prototype?)         |  Yes  |  Yes  |  Yes  |  Yes  | kurikina |
+| Plotting (World)                 |  Yes  |  Yes  |  Yes  |  Yes  | plotting |
+| Puzznic (Japan)                  |  Yes  |  Yes  |  Yes  |  Yes  | puzznic  |
+| American Horseshoes (US)         |  Yes  |  Yes  |  Yes  |  Yes  | horshoes |
+| Palamedes (Japan)                |  Yes  |  Yes  |  Yes  |  Yes  | palamed  |
+| Cachat (Japan)                   |  Yes  |  Yes  |  Yes  |  Yes  | cachat   |
+| Tube-It                          |  Yes  |  Yes  |  Yes  |  Yes  | tubeit   |
+| Cuby Bop                         |  Yes  |  Yes  |  Yes  |  Yes  | cubybop  |
+| Play Girls                       |  Yes  |  Yes  |  Yes  |  Yes  | plgirls  |
+| Play Girls 2                     |  Yes  |  Yes  |  Yes  |  Yes  | plgirls2 |
+| Master of Weapon (World)         |  Yes  |  Yes  |  Yes  |   No  | masterw  |
+| Nastar (World)                   |  Yes  |  Yes  |  Yes  |   No  | nastar   |
+| Nastar Warrior (US)              |  Yes  |  Yes  |  Yes  |   No  | nastarw  |
+| Rastan Saga 2 (Japan)            |  Yes  |  Yes  |  Yes  |   No  | rastsag2 |
+| Crime City (World)               |  Yes  |  Yes  |  Yes  |   No  | crimec   |
+| Crime City (US)                  |  Yes  |  Yes  |  Yes  |   No  | crimecu  |
+| Crime City (Japan)               |  Yes  |  Yes  |  Yes  |   No  | crimecj  |
+| Tetris (Japan, B-System)         |  Yes  |  Yes  |  Yes  |   No  | tetrist  |
+| Violence Fight (World)           |  Yes  |  Yes  |  Yes  |   No  | viofight |
+| Ashura Blaster (Japan)           |  Yes  |  Yes  |  Yes  |   No  | ashura   |
+| Ashura Blaster (US)              |  Yes  |  Yes  |  Yes  |   No  | ashurau  |
+| Hit the Ice (US)                 |  Yes  |  Yes  |  Yes  |   No  | hitice   |
+| Rambo III (set 1, Europe)        |  Yes  |  Yes  |  Yes  |   No  | rambo3   |
+| Rambo III (set 2, US)            |  Yes  |  Yes  |  Yes  |   No  | rambo3a  |
+| Puzzle Bobble (Japan, B-System)  |  Yes  |  Yes  |  Yes  |   No  | puzbobb  |
+| Quiz Sekai wa SHOW by shobai (Jap|  Yes  |  Yes  |  Yes  |   No  | qzshowby |
+| Space Invaders DX (Japan)        |  Yes  |  Yes  |  Yes  |   No  | spacedx  |
+| Silent Dragon (World)            |  Yes  |  Yes  |  Yes  |   No  | silentd  |
+| Final Blow (World)               |  Yes  |  Yes  |  Yes  |  Yes  | finalb   |
+| Final Blow (Japan)               |  Yes  |  Yes  |  Yes  |  Yes  | finalbj  |
+| Don Doko Don (Japan)             |  Yes  |  Yes  |  Yes  |  Yes  | dondokod |
+| Thunder Fox (Japan)              |  Yes  |  Yes  |  Yes  |  Yes  | thundfox |
+| Camel Try (Japan)                |  Yes  |  Yes  |  Yes  |  Yes  | cameltry |
+| Camel Try (US)                   |  Yes  |  Yes  |  Yes  |  Yes  | cameltru |
+| Quiz Torimonochou (Japan)        |  Yes  |  Yes  |  Yes  |  Yes  | qtorimon |
+| Liquid Kids (World)              |  Yes  |  Yes  |  Yes  |  Yes  | liquidk  |
+| Liquid Kids (US)                 |  Yes  |  Yes  |  Yes  |  Yes  | liquidku |
+| Mizubaku Daibouken (Japan)       |  Yes  |  Yes  |  Yes  |  Yes  | mizubaku |
+| Quiz HQ (Japan)                  |  Yes  |  Yes  |  Yes  |  Yes  | quizhq   |
+| Super Space Invaders '91 (World) |  Yes  |  Yes  |  Yes  |  Yes  | ssi      |
+| Majestic Twelve - The Space Invad|  Yes  |  Yes  |  Yes  |  Yes  | majest12 |
+| Gun & Frontier (World)           |  Yes  |  Yes  |  Yes  |  Yes  | gunfront |
+| Gun Frontier (Japan)             |  Yes  |  Yes  |  Yes  |  Yes  | gunfronj |
+| Growl (World)                    |  Yes  |  Yes  |  Yes  |  Yes  | growl    |
+| Growl (US)                       |  Yes  |  Yes  |  Yes  |  Yes  | growlu   |
+| Runark (Japan)                   |  Yes  |  Yes  |  Yes  |  Yes  | runark   |
+| Mahjong Quest (Japan)            |  Yes  |  Yes  |  Yes  |  Yes  | mjnquest |
+| Mahjong Quest (No Nudity)        |  Yes  |  Yes  |  Yes  |  Yes  | mjnquesb |
+| Football Champ (World)           |  Yes  |  Yes  |  Yes  |  Yes  | footchmp |
+| Hat Trick Hero (Japan)           |  Yes  |  Yes  |  Yes  |  Yes  | hthero   |
+| Euro Champ '92 (World)           |  Yes  |  Yes  |  Yes  |  Yes  | euroch92 |
+| Ah Eikou no Koshien (Japan)      |  Yes  |  Yes  |  Yes  |  Yes  | koshien  |
+| Yuuyu no Quiz de GO!GO! (Japan)  |  Yes  |  Yes  |  Yes  |  Yes  | yuyugogo |
+| Ninja Kids (World)               |  Yes  |  Yes  |  Yes  |  Yes  | ninjak   |
+| Ninja Kids (Japan)               |  Yes  |  Yes  |  Yes  |  Yes  | ninjakj  |
+| Solitary Fighter (World)         |  Yes  |  Yes  |  Yes  |  Yes  | solfigtr |
+| Quiz Quest - Hime to Yuusha no Mo|  Yes  |  Yes  |  Yes  |  Yes  | qzquest  |
+| PuLiRuLa (World)                 |  Yes  |  Yes  |  Yes  |  Yes  | pulirula |
+| PuLiRuLa (Japan)                 |  Yes  |  Yes  |  Yes  |  Yes  | pulirulj |
+| Quiz Chikyu Bouei Gun (Japan)    |  Yes  |  Yes  |  Yes  |  Yes  | qzchikyu |
+| Yes/No Sinri Tokimeki Chart      |  Yes  |  Yes  |  Yes  |  Yes  | yesnoj   |
+| Dead Connection (World)          |  Yes  |  Yes  |  Yes  |  Yes  | deadconx |
+| Dead Connection (Japan)          |  Yes  |  Yes  |  Yes  |  Yes  | deadconj |
+| Dino Rex (World)                 |  Yes  |  Yes  |  Yes  |  Yes  | dinorex  |
+| Dino Rex (Japan)                 |  Yes  |  Yes  |  Yes  |  Yes  | dinorexj |
+| Dino Rex (US)                    |  Yes  |  Yes  |  Yes  |  Yes  | dinorexu |
+| Quiz Jinsei Gekijoh (Japan)      |  Yes  |  Yes  |  Yes  |  Yes  | qjinsei  |
+| Quiz Crayon Shinchan (Japan)     |  Yes  |  Yes  |  Yes  |  Yes  | qcrayon  |
+| Crayon Shinchan Orato Asobo (Japa|  Yes  |  Yes  |  Yes  |  Yes  | qcrayon2 |
+| Drift Out (Japan)                |  Yes  |  Yes  |  Yes  |   No  | driftout |
+| Drive Out                        |  Yes  |  Yes  |   No  |  Yes  | driveout |
+| Tiger Heli (set 1)               | No(1) |  Yes  |  Yes  |   No  | tigerh   |
+| Tiger Heli (set 2)               | No(1) |  Yes  |  Yes  |   No  | tigerh2  |
+| Tiger Heli (Japan)               | No(1) |  Yes  |  Yes  |   No  | tigerhj  |
+| Tiger Heli (bootleg 1)           |  Yes  |  Yes  |  Yes  |   No  | tigerhb1 |
+| Tiger Heli (bootleg 2)           |  Yes  |  Yes  |  Yes  |   No  | tigerhb2 |
+| Slap Fight                       | No(1) |  Yes  |  Yes  |   No  | slapfigh |
+| Slap Fight (Japan bootleg)       |  Yes  |  Yes  |  Yes  |   No  | slapbtjp |
+| Slap Fight (English bootleg)     |  Yes  |  Yes  |  Yes  |   No  | slapbtuk |
+| Alcon                            | No(1) |  Yes  |  Yes  |   No  | alcon    |
+| Guardian                         | No(1) |  Yes  |  Yes  |   No  | getstar  |
+| Get Star (Japan)                 | No(1) |  Yes  |  Yes  |   No  | getstarj |
+| Get Star (bootleg)               |  Yes  |  Yes  |  Yes  |   No  | getstarb |
+| Flying Shark (World)             |  Yes  |  Yes  |  Yes  |  Yes  | fshark   |
+| Sky Shark (US)                   |  Yes  |  Yes  |  Yes  |  Yes  | skyshark |
+| Hishou Zame (Japan)              |  Yes  |  Yes  |  Yes  |  Yes  | hishouza |
+| Flying Shark (bootleg)           |  Yes  |  Yes  |  Yes  |  Yes  | fsharkbt |
+| Wardner (World)                  |  Yes  |  Yes  |  Yes  |  Yes  | wardner  |
+| Pyros (US)                       |  Yes  |  Yes  |  Yes  |  Yes  | pyros    |
+| Wardna no Mori (Japan)           |  Yes  |  Yes  |  Yes  |  Yes  | wardnerj |
+| Twin Cobra (World)               |  Yes  |  Yes  |  Yes  |  Yes  | twincobr |
+| Twin Cobra (US)                  |  Yes  |  Yes  |  Yes  |  Yes  | twincobu |
+| Kyukyoku Tiger (Japan)           |  Yes  |  Yes  |  Yes  |  Yes  | ktiger   |
+| Rally Bike / Dash Yarou          |  Yes  |  Yes  |  Yes  |  Yes  | rallybik |
+| Truxton / Tatsujin               |  Yes  |  Yes  |  Yes  |  Yes  | truxton  |
+| Hellfire                         |  Yes  |  Yes  |  Yes  |  Yes  | hellfire |
+| Zero Wing                        |  Yes  |  Yes  |  Yes  |  Yes  | zerowing |
+| Demon's World / Horror Story     |  Yes  |  Yes  |  Yes  |  Yes  | demonwld |
+| Fire Shark                       |  Yes  |  Yes  |   No  |  Yes  | fireshrk |
+| Same! Same! Same!                |  Yes  |  Yes  |   No  |  Yes  | samesame |
+| Out Zone                         |  Yes  |  Yes  |  Yes  |  Yes  | outzone  |
+| Out Zone (bootleg)               |  Yes  |  Yes  |  Yes  |  Yes  | outzonep |
+| Vimana (set 1)                   |  Yes  |  Yes  |   No  |  Yes  | vimana   |
+| Vimana (set 2)                   |  Yes  |  Yes  |   No  |  Yes  | vimana2  |
+| Vimana (Nova Apparate GMBH & Co) |  Yes  |  Yes  |   No  |  Yes  | vimanan  |
+| Snow Bros. - Nick & Tom (set 1)  |  Yes  |  Yes  |  Yes  |  Yes  | snowbros |
+| Snow Bros. - Nick & Tom (set 2)  |  Yes  |  Yes  |  Yes  |  Yes  | snowbroa |
+| Snow Bros. - Nick & Tom (set 3)  |  Yes  |  Yes  |  Yes  |  Yes  | snowbrob |
+| Snow Bros. - Nick & Tom (Japan)  |  Yes  |  Yes  |  Yes  |  Yes  | snowbroj |
+| Teki Paki                        |  Yes  |  Yes  |   No  |  Yes  | tekipaki |
+| Ghox                             |  Yes  |  Yes  |   No  |  Yes  | ghox     |
+| Dogyuun                          |  Yes  |  Yes  |   No  |  Yes  | dogyuun  |
+| Knuckle Bash                     |  Yes  |  Yes  |   No  |  Yes  | kbash    |
+| Truxton II / Tatsujin II / Tatsuj|  Yes  |  Yes  |  Yes  |  Yes  | tatsujn2 |
+| Pipi & Bibis / Whoopee (Japan)   |  Yes  |  Yes  |  Yes  |  Yes  | pipibibs |
+| Pipi & Bibis / Whoopee (Japan) [b|  Yes  |  Yes  |  Yes  |  Yes  | pipibibi |
+| Whoopee (Japan) / Pipi & Bibis (W|  Yes  |  Yes  |  Yes  |  Yes  | whoopee  |
+| V-Five (Japan)                   |  Yes  |  Yes  |   No  |  Yes  | vfive    |
+| Grind Stormer                    |  Yes  |  Yes  |   No  |  Yes  | grindstm |
+| Batsugun                         |  Yes  |  Yes  |   No  |  Yes  | batsugun |
+| Batsugun Special Ver.            |  Yes  |  Yes  |   No  |  Yes  | batugnsp |
+| Snow Bros. 2 - With New Elves    |  Yes  |  Yes  |  Yes  |  Yes  | snowbro2 |
+| Mahou Daisakusen (Japan)         |  Yes  |  Yes  |  Yes  |  Yes  | mahoudai |
+| Shippu Mahou Daisakusen (Japan)  |  Yes  |  Yes  |  Yes  |  Yes  | shippumd |
+| Dodonpachi (Japan)               |  Yes  |  Yes  |  Yes  |  Yes  | ddonpach |
+| Dangun Feveron (Japan)           |  Yes  |  Yes  |  Yes  |  Yes  | dfeveron |
+| ESP Ra.De. (Japan)               |  Yes  |  Yes  |  Yes  |  Yes  | esprade  |
+| Uo Poko (Japan)                  |  Yes  |  Yes  |  Yes  |  Yes  | uopoko   |
+| Gyrodine                         |  Yes  |  Yes  |  Yes  |  Yes  | gyrodine |
+| Son of Phoenix                   |  Yes  |  Yes  |  Yes  |  Yes  | sonofphx |
+| Repulse                          |  Yes  |  Yes  |  Yes  |  Yes  | repulse  |
+| '99 The Last War                 |  Yes  |  Yes  |  Yes  |  Yes  | 99lstwar |
+| '99 The Last War (alternate)     |  Yes  |  Yes  |  Yes  |  Yes  | 99lstwra |
+| Flash Gal                        |  Yes  |  Yes  |  Yes  |  Yes  | flashgal |
+| S.R.D. Mission                   |  Yes  |  Yes  |  Yes  |  Yes  | srdmissn |
+| Air Wolf                         |  Yes  |  Yes  |  Yes  |  Yes  | airwolf  |
+| Sky Wolf (set 1)                 |  Yes  |  Yes  |  Yes  |  Yes  | skywolf  |
+| Sky Wolf (set 2)                 |  Yes  |  Yes  |  Yes  |  Yes  | skywolf2 |
+| Defender (Red label)             |  Yes  |  Yes  |  Yes  |  Yes  | defender |
+| Defender (Green label)           |  Yes  |  Yes  |  Yes  |  Yes  | defendg  |
+| Defender (White label)           |  Yes  |  Yes  |  Yes  |  Yes  | defendw  |
+| Defense Command (set 1)          |  Yes  |  Yes  |  Yes  |  Yes  | defcmnd  |
+| Defence Command                  |  Yes  |  Yes  |  Yes  |  Yes  | defence  |
+| Mayday (set 1)                   |  Yes  |  Yes  |  Yes  |  Yes  | mayday   |
+| Mayday (set 2)                   |  Yes  |  Yes  |  Yes  |  Yes  | maydaya  |
+| Colony 7 (set 1)                 |  Yes  |  Yes  |  Yes  |  Yes  | colony7  |
+| Colony 7 (set 2)                 |  Yes  |  Yes  |  Yes  |  Yes  | colony7a |
+| Stargate                         |  Yes  |  Yes  |  Yes  |  Yes  | stargate |
+| Robotron (Solid Blue label)      |  Yes  |  Yes  |  Yes  |  Yes  | robotron |
+| Robotron (Yellow/Orange label)   |  Yes  |  Yes  |  Yes  |  Yes  | robotryo |
+| Joust (White/Green label)        |  Yes  |  Yes  |  Yes  |  Yes  | joust    |
+| Joust (Solid Red label)          |  Yes  |  Yes  |  Yes  |  Yes  | joustr   |
+| Joust (White/Red label)          |  Yes  |  Yes  |  Yes  |  Yes  | joustwr  |
+| Bubbles                          |  Yes  |  Yes  |  Yes  |  Yes  | bubbles  |
+| Bubbles (Solid Red label)        |  Yes  |  Yes  |  Yes  |  Yes  | bubblesr |
+| Splat!                           |  Yes  |  Yes  |  Yes  |  Yes  | splat    |
+| Sinistar (revision 3)            |  Yes  |  Yes  |  Yes  |  Yes  | sinistar |
+| Sinistar (prototype version)     |  Yes  |  Yes  |  Yes  |  Yes  | sinista1 |
+| Sinistar (revision 2)            |  Yes  |  Yes  |  Yes  |  Yes  | sinista2 |
+| Blaster                          |  Yes  |  Yes  |  Yes  |  Yes  | blaster  |
+| Mystic Marathon                  |  Yes  |  Yes  |  Yes  |  Yes  | mysticm  |
+| Turkey Shoot                     |  Yes  |  Yes  |  Yes  |  Yes  | tshoot   |
+| Inferno                          |  Yes  |  Yes  |Partial|  Yes  | inferno  |
+| Joust 2 - Survival of the Fittest|  Yes  |  Yes  |  Yes  |  Yes  | joust2   |
+| Vulgus (set 1)                   |  Yes  |  Yes  |  Yes  |   No  | vulgus   |
+| Vulgus (set 2)                   |  Yes  |  Yes  |  Yes  |   No  | vulgus2  |
+| Vulgus (Japan?)                  |  Yes  |  Yes  |  Yes  |   No  | vulgusj  |
+| Son Son                          |  Yes  |  Yes  |  Yes  |   No  | sonson   |
+| Pirate Ship HigeMaru             |  Yes  |  Yes  |  Yes  |  Yes  | higemaru |
+| 1942 (set 1)                     |  Yes  |  Yes  |  Yes  |  Yes  | 1942     |
+| 1942 (set 2)                     |  Yes  |  Yes  |  Yes  |  Yes  | 1942a    |
+| 1942 (set 3)                     |  Yes  |  Yes  |  Yes  |  Yes  | 1942b    |
+| Exed Exes                        |  Yes  |  Yes  |  Yes  |   No  | exedexes |
+| Savage Bees                      |  Yes  |  Yes  |  Yes  |   No  | savgbees |
+| Commando (World)                 |  Yes  |  Yes  |  Yes  |  Yes  | commando |
+| Commando (US)                    |  Yes  |  Yes  |  Yes  |  Yes  | commandu |
+| Senjo no Ookami                  |  Yes  |  Yes  |  Yes  |  Yes  | commandj |
+| Space Invasion                   |  Yes  |  Yes  |  Yes  |  Yes  | spaceinv |
+| Ghosts'n Goblins (World? set 1)  |  Yes  |  Yes  |  Yes  |  Yes  | gng      |
+| Ghosts'n Goblins (World? set 2)  |  Yes  |  Yes  |  Yes  |  Yes  | gnga     |
+| Ghosts'n Goblins (US)            |  Yes  |  Yes  |  Yes  |  Yes  | gngt     |
+| Makai-Mura                       |  Yes  |  Yes  |  Yes  |  Yes  | makaimur |
+| Makai-Mura (Revision C)          |  Yes  |  Yes  |  Yes  |  Yes  | makaimuc |
+| Makai-Mura (Revision G)          |  Yes  |  Yes  |  Yes  |  Yes  | makaimug |
+| Diamond Run                      |  Yes  |  Yes  |  Yes  |  Yes  | diamond  |
+| Gun.Smoke (World)                |  Yes  |  Yes  |  Yes  |   No  | gunsmoke |
+| Gun.Smoke (US set 1)             |  Yes  |  Yes  |  Yes  |   No  | gunsmrom |
+| Gun.Smoke (US set 2)             |  Yes  |  Yes  |  Yes  |   No  | gunsmoka |
+| Gun.Smoke (Japan)                |  Yes  |  Yes  |  Yes  |   No  | gunsmokj |
+| Section Z (set 1)                |  Yes  |  Yes  |  Yes  |  Yes  | sectionz |
+| Section Z (set 2)                |  Yes  |  Yes  |  Yes  |  Yes  | sctionza |
+| Trojan (US)                      |  Yes  |  Yes  |  Yes  |  Yes  | trojan   |
+| Trojan (Romstar)                 |  Yes  |  Yes  |  Yes  |  Yes  | trojanr  |
+| Tatakai no Banka (Japan)         |  Yes  |  Yes  |  Yes  |  Yes  | trojanj  |
+| Speed Rumbler, The (set 1)       |  Yes  |  Yes  |  Yes  |  Yes  | srumbler |
+| Speed Rumbler, The (set 2)       |  Yes  |  Yes  |  Yes  |  Yes  | srumblr2 |
+| Rush & Crash (Japan)             |  Yes  |  Yes  |  Yes  |  Yes  | rushcrsh |
+| Legendary Wings (US set 1)       |  Yes  |  Yes  |  Yes  |  Yes  | lwings   |
+| Legendary Wings (US set 2)       |  Yes  |  Yes  |  Yes  |  Yes  | lwings2  |
+| Ales no Tsubasa (Japan)          |  Yes  |  Yes  |  Yes  |  Yes  | lwingsjp |
+| Side Arms - Hyper Dyne (World)   |  Yes  |  Yes  |  Yes  |   No  | sidearms |
+| Side Arms - Hyper Dyne (US)      |  Yes  |  Yes  |  Yes  |   No  | sidearmr |
+| Side Arms - Hyper Dyne (Japan)   |  Yes  |  Yes  |  Yes  |   No  | sidearjp |
+| Hissatsu Buraiken (Japan)        |  Yes  |  Yes  |  Yes  |  Yes  | buraiken |
+| Turtle Ship                      |  Yes  |  Yes  |  Yes  |   No  | turtship |
+| Dyger (set 1)                    |  Yes  |  Yes  |  Yes  |   No  | dyger    |
+| Dyger (set 2)                    |  Yes  |  Yes  |  Yes  |   No  | dygera   |
+| Avengers (US set 1)              |  Yes  |  Yes  |  Yes  |  Yes  | avengers |
+| Avengers (US set 2)              |  Yes  |  Yes  |  Yes  |  Yes  | avenger2 |
+| Bionic Commando (US set 1)       |  Yes  |  Yes  |  Yes  |  Yes  | bionicc  |
+| Bionic Commando (US set 2)       |  Yes  |  Yes  |  Yes  |  Yes  | bionicc2 |
+| Top Secret (Japan)               |  Yes  |  Yes  |  Yes  |  Yes  | topsecrt |
+| 1943 - The Battle of Midway (US) |  Yes  |  Yes  |  Yes  |   No  | 1943     |
+| 1943 - The Battle of Midway (Japa|  Yes  |  Yes  |  Yes  |   No  | 1943j    |
+| Black Tiger                      |  Yes  |  Yes  |  Yes  |   No  | blktiger |
+| Black Tiger (bootleg)            |  Yes  |  Yes  |  Yes  |   No  | bktigerb |
+| Black Dragon                     |  Yes  |  Yes  |  Yes  |   No  | blkdrgon |
+| Black Dragon (bootleg)           |  Yes  |  Yes  |  Yes  |   No  | blkdrgnb |
+| Street Fighter (World)           |  Yes  |  Yes  |  Yes  |   No  | sf1      |
+| Street Fighter (US)              |  Yes  |  Yes  |  Yes  |   No  | sf1us    |
+| Street Fighter (Japan)           |  Yes  |  Yes  |  Yes  |   No  | sf1jp    |
+| Tiger Road (US)                  |  Yes  |  Yes  |  Yes  |   No  | tigeroad |
+| Tora eno Michi (Japan)           |  Yes  |  Yes  |  Yes  |   No  | toramich |
+| F-1 Dream                        |  Yes  |  Yes  |  Yes  |   No  | f1dream  |
+| F-1 Dream (bootleg)              |  Yes  |  Yes  |  Yes  |   No  | f1dreamb |
+| 1943 Kai                         |  Yes  |  Yes  |  Yes  |   No  | 1943kai  |
+| Last Duel (US set 1)             |  Yes  |  Yes  |  Yes  |  Yes  | lastduel |
+| Last Duel (US set 2)             |  Yes  |  Yes  |  Yes  |  Yes  | lstduela |
+| Last Duel (bootleg)              |  Yes  |  Yes  |  Yes  |  Yes  | lstduelb |
+| Mad Gear (US)                    |  Yes  |  Yes  |  Yes  |  Yes  | madgear  |
+| Mad Gear (Japan)                 |  Yes  |  Yes  |  Yes  |  Yes  | madgearj |
+| Led Storm (US)                   |  Yes  |  Yes  |  Yes  |  Yes  | ledstorm |
+| Forgotten Worlds (US)            |  Yes  |  Yes  |  Yes  |  Yes  | forgottn |
+| Lost Worlds (Japan)              |  Yes  |  Yes  |  Yes  |  Yes  | lostwrld |
+| Ghouls'n Ghosts (World)          |  Yes  |  Yes  |  Yes  |  Yes  | ghouls   |
+| Ghouls'n Ghosts (US)             |  Yes  |  Yes  |  Yes  |  Yes  | ghoulsu  |
+| Dai Makai-Mura (Japan)           |  Yes  |  Yes  |  Yes  |  Yes  | ghoulsj  |
+| Strider (US)                     |  Yes  |  Yes  |  Yes  |  Yes  | strider  |
+| Strider Hiryu (Japan set 1)      |  Yes  |  Yes  |  Yes  |  Yes  | striderj |
+| Strider Hiryu (Japan set 2)      |  Yes  |  Yes  |  Yes  |  Yes  | stridrja |
+| Tenchi wo Kurau (Japan)          |  Yes  |  Yes  |  Yes  |  Yes  | dwj      |
+| Willow (Japan, English)          |  Yes  |  Yes  |  Yes  |  Yes  | willow   |
+| Willow (Japan, Japanese)         |  Yes  |  Yes  |  Yes  |  Yes  | willowj  |
+| U.N. Squadron (US)               |  Yes  |  Yes  |  Yes  |  Yes  | unsquad  |
+| Area 88 (Japan)                  |  Yes  |  Yes  |  Yes  |  Yes  | area88   |
+| Final Fight (World)              |  Yes  |  Yes  |  Yes  |  Yes  | ffight   |
+| Final Fight (US)                 |  Yes  |  Yes  |  Yes  |  Yes  | ffightu  |
+| Final Fight (Japan)              |  Yes  |  Yes  |  Yes  |  Yes  | ffightj  |
+| 1941 - Counter Attack (World)    |  Yes  |  Yes  |  Yes  |  Yes  | 1941     |
+| 1941 - Counter Attack (Japan)    |  Yes  |  Yes  |  Yes  |  Yes  | 1941j    |
+| Mercs (World)                    |  Yes  |  Yes  |  Yes  |  Yes  | mercs    |
+| Mercs (US)                       |  Yes  |  Yes  |  Yes  |  Yes  | mercsu   |
+| Senjo no Ookami II (Japan)       |  Yes  |  Yes  |  Yes  |  Yes  | mercsj   |
+| Mega Twins (World)               |  Yes  |  Yes  |  Yes  |  Yes  | mtwins   |
+| Chiki Chiki Boys (Japan)         |  Yes  |  Yes  |  Yes  |  Yes  | chikij   |
+| Magic Sword - Heroic Fantasy (Wor|  Yes  |  Yes  |  Yes  |  Yes  | msword   |
+| Magic Sword - Heroic Fantasy (US)|  Yes  |  Yes  |  Yes  |  Yes  | mswordu  |
+| Magic Sword (Japan)              |  Yes  |  Yes  |  Yes  |  Yes  | mswordj  |
+| Carrier Air Wing (World)         |  Yes  |  Yes  |  Yes  |  Yes  | cawing   |
+| U.S. Navy (Japan)                |  Yes  |  Yes  |  Yes  |  Yes  | cawingj  |
+| Nemo (World)                     |  Yes  |  Yes  |  Yes  |  Yes  | nemo     |
+| Nemo (Japan)                     |  Yes  |  Yes  |  Yes  |  Yes  | nemoj    |
+| Street Fighter II - The World War|  Yes  |  Yes  |  Yes  |  Yes  | sf2      |
+| Street Fighter II - The World War|  Yes  |  Yes  |  Yes  |  Yes  | sf2a     |
+| Street Fighter II - The World War|  Yes  |  Yes  |  Yes  |  Yes  | sf2b     |
+| Street Fighter II - The World War|  Yes  |  Yes  |  Yes  |  Yes  | sf2e     |
+| Street Fighter II - The World War|  Yes  |  Yes  |  Yes  |  Yes  | sf2j     |
+| Street Fighter II - The World War|  Yes  |  Yes  |  Yes  |  Yes  | sf2jb    |
+| Three Wonders (US)               |  Yes  |  Yes  |  Yes  |  Yes  | 3wonders |
+| Wonder 3 (Japan)                 |  Yes  |  Yes  |  Yes  |  Yes  | wonder3  |
+| King of Dragons, The (World)     |  Yes  |  Yes  |  Yes  |  Yes  | kod      |
+| King of Dragons, The (Japan)     |  Yes  |  Yes  |  Yes  |  Yes  | kodj     |
+| King of Dragons, The (bootleg)   | No(1) |  Yes  |  Yes  |  Yes  | kodb     |
+| Captain Commando (World)         |  Yes  |  Yes  |  Yes  |  Yes  | captcomm |
+| Captain Commando (US)            |  Yes  |  Yes  |  Yes  |  Yes  | captcomu |
+| Captain Commando (Japan)         |  Yes  |  Yes  |  Yes  |  Yes  | captcomj |
+| Knights of the Round (World)     |  Yes  |  Yes  |  Yes  |  Yes  | knights  |
+| Knights of the Round (Japan)     |  Yes  |  Yes  |  Yes  |  Yes  | knightsj |
+| Street Fighter II' - Champion Edi|  Yes  |  Yes  |  Yes  |  Yes  | sf2ce    |
+| Street Fighter II' - Champion Edi|  Yes  |  Yes  |  Yes  |  Yes  | sf2cea   |
+| Street Fighter II' - Champion Edi|  Yes  |  Yes  |  Yes  |  Yes  | sf2ceb   |
+| Street Fighter II' - Champion Edi|  Yes  |  Yes  |  Yes  |  Yes  | sf2cej   |
+| Street Fighter II' - Champion Edi|  Yes  |  Yes  |  Yes  |  Yes  | sf2rb    |
+| Street Fighter II' - Champion Edi|  Yes  |  Yes  |  Yes  |  Yes  | sf2red   |
+| Street Fighter II' - Champion Edi|  Yes  |  Yes  |  Yes  |  Yes  | sf2accp2 |
+| Varth - Operation Thunderstorm (W|  Yes  |  Yes  |  Yes  |  Yes  | varth    |
+| Varth - Operation Thunderstorm (U|  Yes  |  Yes  |  Yes  |  Yes  | varthu   |
+| Varth - Operation Thunderstorm (J|  Yes  |  Yes  |  Yes  |  Yes  | varthj   |
+| Capcom World 2 (Japan)           |  Yes  |  Yes  |  Yes  |  Yes  | cworld2j |
+| Warriors of Fate (World)         |  Yes  |  Yes  |  Yes  |  Yes  | wof      |
+| Sangokushi II (Asia)             |  Yes  |  Yes  |  Yes  |  Yes  | wofa     |
+| Tenchi wo Kurau II - Sekiheki no |  Yes  |  Yes  |  Yes  |  Yes  | wofj     |
+| Street Fighter II' - Hyper Fighti|  Yes  |  Yes  |  Yes  |  Yes  | sf2t     |
+| Street Fighter II' Turbo - Hyper |  Yes  |  Yes  |  Yes  |  Yes  | sf2tj    |
+| Cadillacs and Dinosaurs (World)  |  Yes  |  Yes  |  Yes  |  Yes  | dino     |
+| Cadillacs Kyouryuu-Shinseiki (Jap|  Yes  |  Yes  |  Yes  |  Yes  | dinoj    |
+| Punisher, The (World)            |  Yes  |  Yes  |  Yes  |  Yes  | punisher |
+| Punisher, The (US)               |  Yes  |  Yes  |  Yes  |  Yes  | punishru |
+| Punisher, The (Japan)            |  Yes  |  Yes  |  Yes  |  Yes  | punishrj |
+| Saturday Night Slam Masters (Worl|  Yes  |  Yes  |  Yes  |  Yes  | slammast |
+| Muscle Bomber - The Body Explosio|  Yes  |  Yes  |  Yes  |  Yes  | mbomberj |
+| Muscle Bomber Duo - Ultimate Team|  Yes  |  Yes  |  Yes  |  Yes  | mbombrd  |
+| Muscle Bomber Duo - Heat Up Warri|  Yes  |  Yes  |  Yes  |  Yes  | mbombrdj |
+| Pnickies (Japan)                 |  Yes  |  Yes  |  Yes  |  Yes  | pnickj   |
+| Quiz & Dragons (US)              |  Yes  |  Yes  |  Yes  |  Yes  | qad      |
+| Quiz & Dragons (Japan)           |  Yes  |  Yes  |  Yes  |  Yes  | qadj     |
+| Quiz Tonosama no Yabou 2 Zenkoku-|  Yes  |  Yes  |  Yes  |  Yes  | qtono2   |
+| Pang! 3 (Euro)                   |  Yes  |  Yes  |  Yes  |  Yes  | pang3    |
+| Pang! 3 (Japan)                  |  Yes  |  Yes  |  Yes  |  Yes  | pang3j   |
+| Mega Man - The Power Battle (Asia|  Yes  |  Yes  |  Yes  |  Yes  | megaman  |
+| Rockman - The Power Battle (Japan|  Yes  |  Yes  |  Yes  |  Yes  | rockmanj |
+| Mahjong Gakuen                   |  Yes  |  Yes  |  Yes  |  Yes  | mgakuen  |
+| Mahjong Gakuen 2 Gakuen-chou no F|  Yes  |  Yes  |  Yes  |  Yes  | mgakuen2 |
+| Poker Ladies                     |  Yes  |  Yes  |  Yes  |  Yes  | pkladies |
+| Dokaben (Japan)                  |  Yes  |  Yes  |  Yes  |  Yes  | dokaben  |
+| Pang (World)                     |  Yes  |  Yes  |  Yes  |  Yes  | pang     |
+| Pang (bootleg)                   |  Yes  |  Yes  |  Yes  |  Yes  | pangb    |
+| Buster Bros (US)                 |  Yes  |  Yes  |  Yes  |  Yes  | bbros    |
+| Pomping World (Japan)            |  Yes  |  Yes  |  Yes  |  Yes  | pompingw |
+| Capcom Baseball (Japan)          |  Yes  |  Yes  |  Yes  |  Yes  | cbasebal |
+| Capcom World (Japan)             |  Yes  |  Yes  |  Yes  |  Yes  | cworld   |
+| Adventure Quiz 2 Hatena Hatena no|  Yes  |  Yes  |  Yes  |  Yes  | hatena   |
+| Super Pang (World)               |  Yes  |  Yes  |  Yes  |  Yes  | spang    |
+| Super Buster Bros (US)           |  Yes  |  Yes  |  Yes  |  Yes  | sbbros   |
+| Super Marukin-Ban                |  Yes  |  Yes  |  Yes  |  Yes  | marukin  |
+| Quiz Tonosama no Yabou (Japan)   |  Yes  |  Yes  |  Yes  |  Yes  | qtono1   |
+| Quiz Sangokushi (Japan)          |  Yes  |  Yes  |  Yes  |  Yes  | qsangoku |
+| Block Block (World)              |  Yes  |  Yes  |  Yes  |  Yes  | block    |
+| Block Block (Japan)              |  Yes  |  Yes  |  Yes  |  Yes  | blockj   |
+| Block Block (bootleg)            |  Yes  |  Yes  |  Yes  |  Yes  | blockbl  |
+| Capcom Bowling (set 1)           |  Yes  |  Yes  |  Yes  |  Yes  | capbowl  |
+| Capcom Bowling (set 2)           |  Yes  |  Yes  |  Yes  |  Yes  | capbowl2 |
+| Coors Light Bowling              |  Yes  |  Yes  |  Yes  |  Yes  | clbowl   |
+| Bowl-O-Rama                      |  Yes  |  Yes  |  Yes  |  Yes  | bowlrama |
+| Cerberus                         |  Yes  |  Yes  |  Yes  |  Yes  | cerberus |
+| Mayhem 2002                      |  Yes  |  Yes  |  Yes  |  Yes  | mayhem   |
+| World Series: The Season         |  Yes  |  Yes  |  Yes  |  Yes  | wseries  |
+| Alley Master                     |  Yes  |  Yes  |  Yes  |  Yes  | alleymas |
+| Danger Zone                      |  Yes  |  Yes  |  Yes  |  Yes  | dangerz  |
+| Baseball The Season II           |  Yes  |  Yes  |  Yes  |  Yes  | basebal2 |
+| Super Baseball Double Play Home R|  Yes  |  Yes  |  Yes  |  Yes  | dblplay  |
+| Strike Zone                      |  Yes  |  Yes  |  Yes  |  Yes  | strkzone |
+| Redline Racer (2 players)        |  Yes  |  Yes  |  Yes  |  Yes  | redlin2p |
+| Quarterback                      |  Yes  |  Yes  |  Yes  |  Yes  | quarterb |
+| Quarterback (set 2)              |  Yes  |  Yes  |  Yes  |  Yes  | quartrba |
+| Viper                            |  Yes  |  Yes  |  Yes  |  Yes  | viper    |
+| John Elway's Team Quarterback    |  Yes  |  Yes  |  Yes  |  Yes  | teamqb   |
+| John Elway's Team Quarterback (se|  Yes  |  Yes  |  Yes  |  Yes  | teamqb2  |
+| All American Football (rev E)    |  Yes  |  Yes  |  Yes  |  Yes  | aafb     |
+| All American Football (rev D, 2 P|  Yes  |  Yes  |  Yes  |  Yes  | aafbd2p  |
+| All American Football (rev B)    |  Yes  |  Yes  |  Yes  |  Yes  | aafbb    |
+| Ironman Stewart's Super Off-Road |  Yes  |  Yes  |  Yes  |  Yes  | offroad  |
+| Ironman Stewart's Super Off-Road |  Yes  |  Yes  |  Yes  |  Yes  | offroadt |
+| Pigout                           |  Yes  |  Yes  |  Yes  |  Yes  | pigout   |
+| Pigout (alternate)               |  Yes  |  Yes  |  Yes  |  Yes  | pigouta  |
+| Ataxx (set 1)                    |  Yes  |  Yes  |  Yes  |  Yes  | ataxx    |
+| Ataxx (set 2)                    |  Yes  |  Yes  |  Yes  |  Yes  | ataxxa   |
+| Ataxx (Japan)                    |  Yes  |  Yes  |  Yes  |  Yes  | ataxxj   |
+| World Soccer Finals              |  Yes  |  Yes  |  Yes  |  Yes  | wsf      |
+| Danny Sullivan's Indy Heat       |  Yes  |  Yes  |  Yes  |  Yes  | indyheat |
+| Brute Force                      |  Yes  |  Yes  |  Yes  |  Yes  | brutforc |
+| Blockade                         |  Yes  |  Yes  |Part(2)|   No  | blockade |
+| Comotion                         |  Yes  |  Yes  |Part(2)|   No  | comotion |
+| Hustle                           |  Yes  |  Yes  |Part(2)|   No  | hustle   |
+| Blasto                           |  Yes  |  Yes  |Part(2)|   No  | blasto   |
+| Depthcharge                      |  Yes  |  Yes  |  Yes  |  Yes  | depthch  |
+| Safari                           |  Yes  |  Yes  |   No  |  Yes  | safari   |
+| Frogs                            |  Yes  |  Yes  |   No  |  Yes  | frogs    |
+| Space Attack (upright)           |  Yes  |  Yes  |   No  |  Yes  | sspaceat |
+| Space Attack (upright, older)    |  Yes  |  Yes  |   No  |  Yes  | sspacat2 |
+| Space Attack (cocktail)          |  Yes  |  Yes  |   No  |  Yes  | sspacatc |
+| Head On (2 players)              |  Yes  |  Yes  |   No  |  Yes  | headon   |
+| Head On (1 player)               |  Yes  |  Yes  |   No  |  Yes  | headonb  |
+| Head On 2                        |  Yes  |  Yes  |   No  |  Yes  | headon2  |
+| Invinco / Head On 2              |  Yes  |  Yes  |  Yes  |  Yes  | invho2   |
+| Samurai (Sega)                   |  Yes  |  Yes  |   No  |  Yes  | samurai  |
+| Invinco                          |  Yes  |  Yes  |  Yes  |  Yes  | invinco  |
+| Invinco / Deep Scan              |  Yes  |  Yes  |  Yes  |  Yes  | invds    |
+| Tranquilizer Gun                 |  Yes  |  Yes  |   No  |  Yes  | tranqgun |
+| Space Trek (upright)             |  Yes  |  Yes  |   No  |  Yes  | spacetrk |
+| Space Trek (cocktail)            |  Yes  |  Yes  |   No  |  Yes  | sptrekct |
+| Carnival (upright)               |  Yes  |  Yes  |  Yes  |  Yes  | carnival |
+| Carnival (cocktail)              |  Yes  |  Yes  |  Yes  |  Yes  | carnvckt |
+| Digger                           |  Yes  |  Yes  |   No  |  Yes  | digger   |
+| Pulsar                           |  Yes  |  Yes  |  Yes  |  Yes  | pulsar   |
+| Heiankyo Alien                   |  Yes  |  Yes  |   No  |  Yes  | heiankyo |
+| Space Fury (revision C)          |  Yes  |  Yes  | Yes(2)|  Yes  | spacfury |
+| Space Fury (revision A)          |  Yes  |  Yes  | Yes(2)|  Yes  | spacfura |
+| Zektor                           |  Yes  |  Yes  | Yes(2)|  Yes  | zektor   |
+| Tac/Scan                         |  Yes  |  Yes  | Yes(2)|  Yes  | tacscan  |
+| Eliminator (2 Players, set 1)    |  Yes  |  Yes  | Yes(2)|  Yes  | elim2    |
+| Eliminator (2 Players, set 2)    |  Yes  |  Yes  | Yes(2)|  Yes  | elim2a   |
+| Eliminator (4 Players)           |  Yes  |  Yes  | Yes(2)|  Yes  | elim4    |
+| Star Trek                        |  Yes  |  Yes  | Yes(2)|  Yes  | startrek |
+| Astro Blaster (version 3)        |  Yes  |  Yes  | Yes(2)|  Yes  | astrob   |
+| Astro Blaster (version 2)        |  Yes  |  Yes  | Yes(2)|  Yes  | astrob2  |
+| Astro Blaster (version 1)        | No(1) |  Yes  | Yes(2)|  Yes  | astrob1  |
+| 005                              |  Yes  |  Yes  |   No  |  Yes  | 005      |
+| Monster Bash                     |  Yes  |  Yes  | Yes(2)|  Yes  | monsterb |
+| Space Odyssey                    |  Yes  |  Yes  | Yes(2)|  Yes  | spaceod  |
+| Pig Newton (version C)           |  Yes  |  Yes  |   No  |  Yes  | pignewt  |
+| Pig Newton (version A)           |  Yes  |  Yes  |   No  |  Yes  | pignewta |
+| Sindbad Mystery                  |  Yes  |  Yes  |  Yes  |  Yes  | sindbadm |
+| Zaxxon (set 1)                   |  Yes  |  Yes  | Yes(2)|   No  | zaxxon   |
+| Zaxxon (set 2)                   |  Yes  |  Yes  | Yes(2)|   No  | zaxxon2  |
+| Jackson                          |  Yes  |  Yes  | Yes(2)|   No  | zaxxonb  |
+| Super Zaxxon                     |  Yes  |  Yes  | Yes(2)|   No  | szaxxon  |
+| Future Spy                       |  Yes  |  Yes  | Yes(2)|   No  | futspy   |
+| Razzmatazz                       |  Yes  |  Yes  |   No  |   No  | razmataz |
+| Congo Bongo                      |  Yes  |  Yes  | Yes(2)|  Yes  | congo    |
+| Tip Top                          |  Yes  |  Yes  | Yes(2)|  Yes  | tiptop   |
+| Star Jacker (Sega)               |  Yes  |  Yes  |  Yes  |   No  | starjack |
+| Star Jacker (Stern)              |  Yes  |  Yes  |  Yes  |   No  | starjacs |
+| Regulus                          |  Yes  |  Yes  |  Yes  |   No  | regulus  |
+| Regulus (not encrypted)          |  Yes  |  Yes  |  Yes  |   No  | regulusu |
+| Up'n Down                        |  Yes  |  Yes  |  Yes  |   No  | upndown  |
+| Mister Viking                    |  Yes  |  Yes  |  Yes  |   No  | mrviking |
+| Mister Viking (Japan)            |  Yes  |  Yes  |  Yes  |   No  | mrvikinj |
+| SWAT                             |  Yes  |  Yes  |  Yes  |   No  | swat     |
+| Flicky (set 1)                   |  Yes  |  Yes  |  Yes  |   No  | flicky   |
+| Flicky (set 2)                   |  Yes  |  Yes  |  Yes  |   No  | flicky2  |
+| Tougyuu, The (Japan)             |  Yes  |  Yes  |  Yes  |   No  | bullfgtj |
+| Pitfall II                       |  Yes  |  Yes  |  Yes  |   No  | pitfall2 |
+| Pitfall II (not encrypted)       |  Yes  |  Yes  |  Yes  |   No  | pitfallu |
+| Sega Ninja                       |  Yes  |  Yes  |  Yes  |   No  | seganinj |
+| Sega Ninja (not encrypted)       |  Yes  |  Yes  |  Yes  |   No  | seganinu |
+| Ninja Princess                   |  Yes  |  Yes  |  Yes  |   No  | nprinces |
+| Ninja Princess (not encrypted)   |  Yes  |  Yes  |  Yes  |   No  | nprincsu |
+| Ninja Princess (bootleg?)        |  Yes  |  Yes  |  Yes  |   No  | nprincsb |
+| I'm Sorry (US)                   |  Yes  |  Yes  |  Yes  |   No  | imsorry  |
+| I'm Sorry (Japan)                |  Yes  |  Yes  |  Yes  |   No  | imsorryj |
+| TeddyBoy Blues                   |  Yes  |  Yes  |  Yes  |   No  | teddybb  |
+| Heavy Metal                      |  Yes  |  Yes  |  Yes  |   No  | hvymetal |
+| My Hero (US)                     |  Yes  |  Yes  |  Yes  |   No  | myhero   |
+| Seishun Scandal (Japan)          |  Yes  |  Yes  |  Yes  |   No  | myheroj  |
+| My Hero (Korea)                  |  Yes  |  Yes  |  Yes  |   No  | myherok  |
+| Shooting Master                  |   No  |  Yes  |  Yes  |   No  | shtngmst |
+| Choplifter                       | No(1) |  Yes  |  Yes  |   No  | chplft   |
+| Choplifter (alternate)           |  Yes  |  Yes  |  Yes  |   No  | chplftb  |
+| Choplifter (bootleg)             |  Yes  |  Yes  |  Yes  |   No  | chplftbl |
+| 4-D Warriors                     |  Yes  |  Yes  |  Yes  |   No  | 4dwarrio |
+| Brain                            |  Yes  |  Yes  |  Yes  |   No  | brain    |
+| Wonder Boy (set 1)               |  Yes  |  Yes  |  Yes  |   No  | wboy     |
+| Wonder Boy (set 2)               |  Yes  |  Yes  |  Yes  |   No  | wboy2    |
+| Wonder Boy (set 3)               | No(1) |  Yes  |  Yes  |   No  | wboy3    |
+| Wonder Boy (set 4)               |  Yes  |  Yes  |  Yes  |   No  | wboy4    |
+| Wonder Boy (not encrypted)       |  Yes  |  Yes  |  Yes  |   No  | wboyu    |
+| Wonder Boy (set 4 not encrypted) |  Yes  |  Yes  |  Yes  |   No  | wboy4u   |
+| Wonder Boy Deluxe                |  Yes  |  Yes  |  Yes  |   No  | wbdeluxe |
+| Gardia                           |   No  |  Yes  |  Yes  |   No  | gardia   |
+| Gardia (bootleg)                 |   No  |  Yes  |  Yes  |   No  | gardiab  |
+| Block Gal                        |   No  |  Yes  |  Yes  |   No  | blockgal |
+| Block Gal (bootleg)              |   No  |  Yes  |  Yes  |   No  | blckgalb |
+| Toki no Senshi - Chrono Soldier  |  Yes  |  Yes  |  Yes  |   No  | tokisens |
+| Wonder Boy in Monster Land       |  Yes  |  Yes  |  Yes  |   No  | wbml     |
+| Wonder Boy in Monster Land (Japan| No(1) |  Yes  |  Yes  |   No  | wbmlj    |
+| Wonder Boy in Monster Land (Japan| No(1) |  Yes  |  Yes  |   No  | wbmlj2   |
+| Wonder Boy in Monster Land (Japan|  Yes  |  Yes  |  Yes  |   No  | wbmlju   |
+| DakkoChan Jansoh                 |   No  |  Yes  |  Yes  |   No  | dakkochn |
+| Ufo Senshi Yohko Chan            |   No  |  Yes  |  Yes  |   No  | ufosensi |
+| Turbo                            |  Yes  |  Yes  | Yes(2)|   No  | turbo    |
+| Turbo (encrypted set 1)          |  Yes  |  Yes  | Yes(2)|   No  | turboa   |
+| Turbo (encrypted set 2)          |  Yes  |  Yes  | Yes(2)|   No  | turbob   |
+| Super Locomotive                 |  Yes  |  Yes  |  Yes  |  Yes  | suprloco |
+| Appoooh                          |  Yes  |  Yes  |  Yes  |  Yes  | appoooh  |
+| Bank Panic                       |  Yes  |  Yes  |  Yes  |  Yes  | bankp    |
+| Combat Hawk                      |  Yes  |  Yes  |  Yes  |  Yes  | combh    |
+| Dottori Kun (new version)        |  Yes  |  Yes  |  Yes  |  Yes  | dotrikun |
+| Dottori Kun (old version)        |  Yes  |  Yes  |  Yes  |  Yes  | dotriku2 |
+| Alex Kidd (set 1)                | No(1) |  Yes  |  Yes  |  Yes  | alexkidd |
+| Alien Syndrome (set 2)           | No(1) |  Yes  |  Yes  |  Yes  | aliensya |
+| Alien Syndrome (set 3)           | No(1) |  Yes  |  Yes  |  Yes  | aliensyb |
+| Alien Syndrome (Japan)           | No(1) |  Yes  |  Yes  |  Yes  | aliensyj |
+| Alien Storm                      | No(1) |  Yes  |  Yes  |  Yes  | astorm   |
+| Alien Storm (2 Player)           | No(1) |  Yes  |  Yes  |  Yes  | astorm2p |
+| Aurail (set 2)                   |  Yes  |  Yes  |  Yes  |  Yes  | auraila  |
+| Bay Route (set 2)                | No(1) |  Yes  |  Yes  |  Yes  | bayrouta |
+| Bay Route (bootleg set 1)        | No(1) |  Yes  |  Yes  |  Yes  | bayrtbl1 |
+| Bay Route (bootleg set 2)        | No(1) |  Yes  |  Yes  |  Yes  | bayrtbl2 |
+| Enduro Racer                     | No(1) |  Yes  |  Yes  |  Yes  | enduror  |
+| E-Swat                           | No(1) |  Yes  |  Yes  |  Yes  | eswat    |
+| Flash Point                      | No(1) |  Yes  |  Yes  |  Yes  | fpoint   |
+| Golden Axe (Version 2 317-0110)  | No(1) |  Yes  |  Yes  |  Yes  | goldnaxb |
+| Golden Axe (Version 2 317-0122)  | No(1) |  Yes  |  Yes  |  Yes  | goldnaxc |
+| Golden Axe (Version 1, Japan)    | No(1) |  Yes  |  Yes  |  Yes  | goldnaxj |
+| Jyuohki (Japan)                  | No(1) |  Yes  |  Yes  |  Yes  | jyuohki  |
+| Moon Walker (Set 1)              | No(1) |  Yes  |  Yes  |  Yes  | moonwalk |
+| Moon Walker (Set 2)              | No(1) |  Yes  |  Yes  |  Yes  | moonwlka |
+| Passing Shot (2 Players)         | No(1) |  Yes  |  Yes  |  Yes  | passsht  |
+| SDI - Strategic Defense Initiativ| No(1) |  Yes  |  Yes  |  Yes  | sdioj    |
+| Super Hang-On                    | No(1) |  Yes  |  Yes  |  Yes  | shangon  |
+| Shinobi (set 2)                  | No(1) |  Yes  |  Yes  |  Yes  | shinobia |
+| Shinobi (set 3)                  | No(1) |  Yes  |  Yes  |  Yes  | shinobib |
+| Tetris (Sega Set 1)              | No(1) |  Yes  |  Yes  |  Yes  | tetris   |
+| Tetris (Sega Set 2)              | No(1) |  Yes  |  Yes  |  Yes  | tetrisa  |
+| Wonder Boy III - Monster Lair (se| No(1) |  Yes  |  Yes  |  Yes  | wb3a     |
+| Alex Kidd (set 2)                |  Yes  |  Yes  |  Yes  |  Yes  | alexkida |
+| Alien Syndrome (set 1)           |  Yes  |  Yes  |  Yes  |  Yes  | aliensyn |
+| Altered Beast (Version 2)        |  Yes  |  Yes  |   No  |  Yes  | altbeas2 |
+| Altered Beast (Version 1)        |  Yes  |  Yes  |  Yes  |  Yes  | altbeast |
+| Alien Storm (bootleg)            |  Yes  |  Yes  |  Yes  |  Yes  | astormbl |
+| Atomic Point                     |  Yes  |  Yes  |   No  |  Yes  | atomicp  |
+| Aurail (set 1)                   |  Yes  |  Yes  |  Yes  |  Yes  | aurail   |
+| Bay Route (set 1)                |  Yes  |  Yes  |  Yes  |  Yes  | bayroute |
+| Body Slam                        |  Yes  |  Yes  |  Yes  |  Yes  | bodyslam |
+| Dynamite Dux (bootleg)           |  Yes  |  Yes  |  Yes  |  Yes  | dduxbl   |
+| Dump Matsumoto (Japan)           |  Yes  |  Yes  |  Yes  |  Yes  | dumpmtmt |
+| Enduro Racer (bootleg set 2)     |  Yes  |  Yes  |  Yes  |  Yes  | endurob2 |
+| Enduro Racer (bootleg set 1)     |  Yes  |  Yes  |  Yes  |  Yes  | endurobl |
+| E-Swat (bootleg)                 |  Yes  |  Yes  |  Yes  |  Yes  | eswatbl  |
+| Fantasy Zone (Japan New Ver.)    |  Yes  |  Yes  |  Yes  |  Yes  | fantzone |
+| Fantasy Zone (Old Ver.)          |  Yes  |  Yes  |  Yes  |  Yes  | fantzono |
+| Flash Point (bootleg)            |  Yes  |  Yes  |  Yes  |  Yes  | fpointbl |
+| Golden Axe (bootleg)             | No(1) |  Yes  |  Yes  |  Yes  | goldnabl |
+| Golden Axe (Version 2)           |  Yes  |  Yes  |  Yes  |  Yes  | goldnaxa |
+| Golden Axe (Version 1)           |  Yes  |  Yes  |  Yes  |  Yes  | goldnaxe |
+| Hang-On                          |  Yes  |  Yes  |  Yes  |  Yes  | hangon   |
+| Heavyweight Champ                |  Yes  |  Yes  |  Yes  |  Yes  | hwchamp  |
+| Major League                     |  Yes  |  Yes  |  Yes  |  Yes  | mjleague |
+| Moon Walker (bootleg)            |  Yes  |  Yes  |  Yes  |  Yes  | moonwlkb |
+| Out Run (set 1)                  |  Yes  |  Yes  |  Yes  |  Yes  | outrun   |
+| Out Run (set 2)                  |  Yes  |  Yes  |  Yes  |  Yes  | outruna  |
+| Out Run (set 3)                  |  Yes  |  Yes  |  Yes  |  Yes  | outrunb  |
+| Passing Shot (4 Players) (bootleg|  Yes  |  Yes  |   No  |  Yes  | passht4b |
+| Passing Shot (2 Players) (bootleg|  Yes  |  Yes  |  Yes  |  Yes  | passshtb |
+| Quartet                          |  Yes  |  Yes  |  Yes  |  Yes  | quartet  |
+| Quartet II                       |  Yes  |  Yes  |  Yes  |  Yes  | quartet2 |
+| Quartet (Japan)                  |  Yes  |  Yes  |  Yes  |  Yes  | quartetj |
+| Riot City                        |  Yes  |  Yes  |  Yes  |  Yes  | riotcity |
+| SDI - Strategic Defense Initiativ|  Yes  |  Yes  |  Yes  |  Yes  | sdi      |
+| Super Hang-On (bootleg)          |  Yes  |  Yes  |  Yes  |  Yes  | shangonb |
+| Space Harrier                    |  Yes  |  Yes  |  Yes  |  Yes  | sharrier |
+| Shadow Dancer (bootleg)          | No(1) |  Yes  |  Yes  |  Yes  | shdancbl |
+| Shadow Dancer (US)               |  Yes  |  Yes  |  Yes  |  Yes  | shdancer |
+| Shadow Dancer (Japan)            |  Yes  |  Yes  |  Yes  |  Yes  | shdancrj |
+| Shinobi (set 1)                  |  Yes  |  Yes  |  Yes  |  Yes  | shinobi  |
+| Shinobi (bootleg)                |  Yes  |  Yes  |  Yes  |  Yes  | shinobl  |
+| Tetris (Sega bootleg)            |  Yes  |  Yes  |  Yes  |  Yes  | tetrisbl |
+| Time Scanner                     |  Yes  |  Yes  |  Yes  |  Yes  | timscanr |
+| Toryumon                         |  Yes  |  Yes  |  Yes  |  Yes  | toryumon |
+| Tough Turf (Japan)               |  Yes  |  Yes  |   No  |  Yes  | tturf    |
+| Tough Turf (bootleg)             |  Yes  |  Yes  |Partial|  Yes  | tturfbl  |
+| Tough Turf (US)                  |  Yes  |  Yes  |   No  |  Yes  | tturfu   |
+| Wonder Boy III - Monster Lair (se|  Yes  |  Yes  |  Yes  |  Yes  | wb3      |
+| Wonder Boy III - Monster Lair (bo|  Yes  |  Yes  |  Yes  |  Yes  | wb3bl    |
+| Wrestle War                      |  Yes  |  Yes  |  Yes  |  Yes  | wrestwar |
+| Logic Pro                        |  Yes  |  Yes  |  Yes  |  Yes  | logicpro |
+| Karian Cross                     |  Yes  |  Yes  |  Yes  |  Yes  | karianx  |
+| Logic Pro 2 (Japan)              |  Yes  |  Yes  |Partial|  Yes  | logicpr2 |
+| Lock'n'Chase                     |  Yes  |  Yes  |  Yes  |  Yes  | lnc      |
+| Zoar                             |  Yes  |  Yes  |  Yes  |  Yes  | zoar     |
+| Burger Time (Data East set 1)    |  Yes  |  Yes  |  Yes  |  Yes  | btime    |
+| Burger Time (Data East set 2)    |  Yes  |  Yes  |  Yes  |  Yes  | btime2   |
+| Burger Time (Midway)             |  Yes  |  Yes  |  Yes  |  Yes  | btimem   |
+| World Tennis                     |  Yes  |  Yes  |  Yes  |  Yes  | wtennis  |
+| Burnin' Rubber                   |  Yes  |  Yes  |  Yes  |  Yes  | brubber  |
+| Bump 'n' Jump                    |  Yes  |  Yes  |  Yes  |  Yes  | bnj      |
+| Car Action                       |  Yes  |  Yes  |  Yes  |  Yes  | caractn  |
+| Disco No.1                       |  Yes  |  Yes  |  Yes  |  Yes  | disco    |
+| Minky Monkey                     |  Yes  |  Yes  |  Yes  |  Yes  | mmonkey  |
+| Cook Race                        |  Yes  |  Yes  |  Yes  |  Yes  | cookrace |
+| Astro Fighter (set 1)            |  Yes  |  Yes  | Yes(2)|  Yes  | astrof   |
+| Astro Fighter (set 2)            |  Yes  |  Yes  | Yes(2)|  Yes  | astrof2  |
+| Astro Fighter (set 3)            |  Yes  |  Yes  | Yes(2)|  Yes  | astrof3  |
+| Tomahawk 777 (Revision 1)        |  Yes  |  Yes  | Yes(2)|  Yes  | tomahawk |
+| Tomahawk 777 (Revision 5)        |  Yes  |  Yes  | Yes(2)|  Yes  | tomahaw5 |
+| Karate Champ (US)                |  Yes  |  Yes  |  Yes  |   No  | kchamp   |
+| Karate Dou (Japan)               |  Yes  |  Yes  |  Yes  |   No  | karatedo |
+| Karate Champ (US VS version)     |  Yes  |  Yes  |  Yes  |   No  | kchampvs |
+| Taisen Karate Dou (Japan VS versi|  Yes  |  Yes  |  Yes  |   No  | karatevs |
+| Fire Trap                        |  Yes  |  Yes  |  Yes  |  Yes  | firetrap |
+| Fire Trap (Japan bootleg)        |  Yes  |  Yes  |  Yes  |  Yes  | firetpbl |
+| Break Thru (US)                  |  Yes  |  Yes  |  Yes  |  Yes  | brkthru  |
+| Kyohkoh-Toppa (Japan)            |  Yes  |  Yes  |  Yes  |  Yes  | brkthruj |
+| Darwin 4078 (Japan)              |  Yes  |  Yes  |  Yes  |  Yes  | darwin   |
+| Shoot Out (US)                   |  Yes  |  Yes  |  Yes  |   No  | shootout |
+| Shoot Out (Japan)                |  Yes  |  Yes  |  Yes  |   No  | shootouj |
+| Shoot Out (Korean Bootleg)       |  Yes  |  Yes  |  Yes  |   No  | shootoub |
+| Side Pocket (World)              |  Yes  |  Yes  |  Yes  |  Yes  | sidepckt |
+| Side Pocket (Japan)              |  Yes  |  Yes  |  Yes  |  Yes  | sidepctj |
+| Side Pocket (bootleg)            |  Yes  |  Yes  |  Yes  |  Yes  | sidepctb |
+| Express Raider (US)              |  Yes  |  Yes  |  Yes  |   No  | exprraid |
+| Western Express (World?)         |  Yes  |  Yes  |  Yes  |   No  | wexpress |
+| Western Express (bootleg)        |  Yes  |  Yes  |  Yes  |   No  | wexpresb |
+| Pocket Gal (Japan)               |  Yes  |  Yes  |  Yes  |  Yes  | pcktgal  |
+| Pocket Gal (bootleg)             |  Yes  |  Yes  |  Yes  |  Yes  | pcktgalb |
+| Pocket Gal 2 (World?)            |  Yes  |  Yes  |  Yes  |  Yes  | pcktgal2 |
+| Super Pool III (World?)          |  Yes  |  Yes  |  Yes  |  Yes  | spool3   |
+| Super Pool III (I-Vics)          |  Yes  |  Yes  |  Yes  |  Yes  | spool3i  |
+| Battle Rangers (World)           |  Yes  |  Yes  |Partial|  Yes  | battlera |
+| Bloody Wolf (US)                 |  Yes  |  Yes  |Partial|  Yes  | bldwolf  |
+| Act-Fancer Cybernetick Hyper Weap|  Yes  |  Yes  |  Yes  |  Yes  | actfancr |
+| Act-Fancer Cybernetick Hyper Weap|  Yes  |  Yes  |  Yes  |  Yes  | actfanc1 |
+| Act-Fancer Cybernetick Hyper Weap|  Yes  |  Yes  |  Yes  |  Yes  | actfancj |
+| Trio The Punch - Never Forget Me.|  Yes  |  Yes  |  Yes  |  Yes  | triothep |
+| Last Mission (US revision 6)     |  Yes  |  Yes  |  Yes  |  Yes  | lastmiss |
+| Last Mission (US revision 5)     |  Yes  |  Yes  |  Yes  |  Yes  | lastmss2 |
+| Shackled (US)                    |  Yes  |  Yes  |  Yes  |  Yes  | shackled |
+| Breywood (Japan revision 2)      |  Yes  |  Yes  |  Yes  |  Yes  | breywood |
+| Captain Silver (Japan)           |  Yes  |  Yes  |  Yes  |  Yes  | csilver  |
+| Real Ghostbusters, The (US 2 Play|  Yes  |  Yes  |  Yes  |  Yes  | ghostb   |
+| Real Ghostbusters, The (US 3 Play|  Yes  |  Yes  |  Yes  |  Yes  | ghostb3  |
+| Meikyuu Hunter G (Japan)         |  Yes  |  Yes  |  Yes  |  Yes  | meikyuh  |
+| Super Real Darwin (Japan)        |  Yes  |  Yes  |  Yes  |  Yes  | srdarwin |
+| Gondomania (US)                  |  Yes  |  Yes  |  Yes  |  Yes  | gondo    |
+| Makyou Senshi (Japan)            |  Yes  |  Yes  |  Yes  |  Yes  | makyosen |
+| Garyo Retsuden (Japan)           |  Yes  |  Yes  |  Yes  |  Yes  | garyoret |
+| Cobra-Command (World revision 5) |  Yes  |  Yes  |  Yes  |  Yes  | cobracom |
+| Cobra-Command (Japan)            |  Yes  |  Yes  |  Yes  |  Yes  | cobracmj |
+| Psycho-Nics Oscar (US)           |  Yes  |  Yes  |  Yes  |  Yes  | oscar    |
+| Psycho-Nics Oscar (Japan revision|  Yes  |  Yes  |  Yes  |  Yes  | oscarj   |
+| Psycho-Nics Oscar (Japan revision|  Yes  |  Yes  |  Yes  |  Yes  | oscarj1  |
+| Psycho-Nics Oscar (Japan revision|  Yes  |  Yes  |  Yes  |  Yes  | oscarj0  |
+| Karnov (US)                      |  Yes  |  Yes  |  Yes  |   No  | karnov   |
+| Karnov (Japan)                   |  Yes  |  Yes  |  Yes  |   No  | karnovj  |
+| Chelnov - Atomic Runner (US)     |  Yes  |  Yes  |  Yes  |   No  | chelnov  |
+| Chelnov - Atomic Runner (Japan)  |  Yes  |  Yes  |  Yes  |   No  | chelnovj |
+| Heavy Barrel (US)                |  Yes  |  Yes  |  Yes  |   No  | hbarrel  |
+| Heavy Barrel (World)             |  Yes  |  Yes  |  Yes  |   No  | hbarrelw |
+| Bad Dudes vs. Dragonninja (US)   |  Yes  |  Yes  |  Yes  |   No  | baddudes |
+| Dragonninja (Japan)              |  Yes  |  Yes  |  Yes  |   No  | drgninja |
+| Robocop (World revision 3)       | No(1) |  Yes  |  Yes  |   No  | robocop  |
+| Robocop (US revision 1)          | No(1) |  Yes  |  Yes  |   No  | robocopu |
+| Robocop (US revision 0)          | No(1) |  Yes  |  Yes  |   No  | robocpu0 |
+| Robocop (World bootleg)          |  Yes  |  Yes  |  Yes  |   No  | robocopb |
+| Hippodrome (US)                  |  Yes  |  Yes  |  Yes  |   No  | hippodrm |
+| Fighting Fantasy (Japan)         |  Yes  |  Yes  |  Yes  |   No  | ffantasy |
+| Sly Spy (US revision 3)          |  Yes  |  Yes  |  Yes  |   No  | slyspy   |
+| Sly Spy (US revision 2)          |  Yes  |  Yes  |  Yes  |   No  | slyspy2  |
+| Secret Agent (World)             |  Yes  |  Yes  |  Yes  |   No  | secretag |
+| Midnight Resistance (World)      |  Yes  |  Yes  |  Yes  |   No  | midres   |
+| Midnight Resistance (US)         |  Yes  |  Yes  |  Yes  |   No  | midresu  |
+| Midnight Resistance (Japan)      |  Yes  |  Yes  |  Yes  |   No  | midresj  |
+| Boulder Dash / Boulder Dash Part |  Yes  |  Yes  |  Yes  |   No  | bouldash |
+| Stadium Hero (Japan)             |  Yes  |  Yes  |  Yes  |  Yes  | stadhero |
+| Mad Motor                        |  Yes  |  Yes  |  Yes  |  Yes  | madmotor |
+| Vapor Trail - Hyper Offence Forma|  Yes  |  Yes  |  Yes  |  Yes  | vaportra |
+| Vapor Trail - Hyper Offence Forma|  Yes  |  Yes  |  Yes  |  Yes  | vaportru |
+| Kuhga - Operation Code 'Vapor Tra|  Yes  |  Yes  |  Yes  |  Yes  | kuhga    |
+| Crude Buster (World FX version)  |  Yes  |  Yes  |  Yes  |  Yes  | cbuster  |
+| Crude Buster (World FU version)  |  Yes  |  Yes  |  Yes  |  Yes  | cbusterw |
+| Crude Buster (Japan)             |  Yes  |  Yes  |  Yes  |  Yes  | cbusterj |
+| Two Crude (US)                   |  Yes  |  Yes  |  Yes  |  Yes  | twocrude |
+| Dark Seal (World revision 3)     |  Yes  |  Yes  |  Yes  |  Yes  | darkseal |
+| Dark Seal (World revision 1)     |  Yes  |  Yes  |  Yes  |  Yes  | darksea1 |
+| Dark Seal (Japan)                |  Yes  |  Yes  |  Yes  |  Yes  | darkseaj |
+| Gate of Doom (US revision 4)     |  Yes  |  Yes  |  Yes  |  Yes  | gatedoom |
+| Gate of Doom (US revision 1)     |  Yes  |  Yes  |  Yes  |  Yes  | gatedom1 |
+| Super Burger Time (World)        |  Yes  |  Yes  |  Yes  |  Yes  | supbtime |
+| Super Burger Time (Japan)        |  Yes  |  Yes  |  Yes  |  Yes  | supbtimj |
+| Caveman Ninja (World revision 3) |  Yes  |  Yes  |  Yes  |  Yes  | cninja   |
+| Caveman Ninja (World revision 0) |  Yes  |  Yes  |  Yes  |  Yes  | cninja0  |
+| Caveman Ninja (US)               |  Yes  |  Yes  |  Yes  |  Yes  | cninjau  |
+| Joe & Mac (Japan)                |  Yes  |  Yes  |  Yes  |  Yes  | joemac   |
+| Stoneage                         |  Yes  |  Yes  |  Yes  |  Yes  | stoneage |
+| Tumble Pop (World)               |  Yes  |  Yes  |  Yes  |  Yes  | tumblep  |
+| Tumble Pop (Japan)               |  Yes  |  Yes  |  Yes  |  Yes  | tumblepj |
+| Tumble Pop (bootleg set 1)       |  Yes  |  Yes  |Partial|  Yes  | tumblepb |
+| Tumble Pop (bootleg set 2)       |  Yes  |  Yes  |Partial|  Yes  | tumblep2 |
+| Senjyo                           |  Yes  |  Yes  |  Yes  |  Yes  | senjyo   |
+| Star Force                       |  Yes  |  Yes  |  Yes  |  Yes  | starforc |
+| Star Force (encrypted)           |  Yes  |  Yes  |  Yes  |  Yes  | starfore |
+| Mega Force                       |  Yes  |  Yes  |  Yes  |  Yes  | megaforc |
+| Baluba-louk no Densetsu          |  Yes  | Close |  Yes  |  Yes  | baluba   |
+| Bomb Jack (set 1)                |  Yes  |  Yes  |  Yes  |  Yes  | bombjack |
+| Bomb Jack (set 2)                |  Yes  |  Yes  |  Yes  |  Yes  | bombjac2 |
+| Pinball Action (set 1)           |  Yes  |  Yes  |  Yes  |  Yes  | pbaction |
+| Pinball Action (set 2)           |  Yes  |  Yes  |  Yes  |  Yes  | pbactio2 |
+| Tehkan World Cup                 |  Yes  |  Yes  |  Yes  |  Yes  | tehkanwc |
+| Gridiron Fight                   |  Yes  |  Yes  |  Yes  |  Yes  | gridiron |
+| Tee'd Off                        |   No  |  Yes  |  Yes  |  Yes  | teedoff  |
+| Solomon's Key (Japan)            |  Yes  |  Yes  |  Yes  |  Yes  | solomon  |
+| Rygar (US set 1)                 |  Yes  |  Yes  |  Yes  |  Yes  | rygar    |
+| Rygar (US set 2)                 |  Yes  |  Yes  |  Yes  |  Yes  | rygar2   |
+| Argus no Senshi (Japan)          |  Yes  |  Yes  |  Yes  |  Yes  | rygarj   |
+| Gemini Wing                      |  Yes  |  Yes  |  Yes  |  Yes  | gemini   |
+| Silkworm (set 1)                 |  Yes  |  Yes  |  Yes  |  Yes  | silkworm |
+| Silkworm (set 2)                 |  Yes  |  Yes  |  Yes  |  Yes  | silkwrm2 |
+| Ninja Gaiden (World)             |  Yes  |  Yes  |  Yes  |  Yes  | gaiden   |
+| Shadow Warriors (US)             |  Yes  |  Yes  |  Yes  |  Yes  | shadoww  |
+| Ninja Ryukenden (Japan)          |  Yes  |  Yes  |  Yes  |  Yes  | ryukendn |
+| Tecmo Knight                     |  Yes  |  Yes  |  Yes  |  Yes  | tknight  |
+| Wild Fang                        |  Yes  |  Yes  |  Yes  |  Yes  | wildfang |
+| World Cup 90                     |  Yes  |  Yes  |  Yes  |   No  | wc90     |
+| Euro League                      |  Yes  |  Yes  |  Yes  |   No  | wc90b    |
+| Final Star Force (US)            |  Yes  |  Yes  |  Yes  |  Yes  | fstarfrc |
+| Ganbare Ginkun                   |  Yes  |  Yes  |  Yes  |  Yes  | ginkun   |
+| Tutankham                        |  Yes  |  Yes  |  Yes  |  Yes  | tutankhm |
+| Tutankham (Stern)                |  Yes  |  Yes  |  Yes  |  Yes  | tutankst |
+| Juno First                       |  Yes  |  Yes  |  Yes  |  Yes  | junofrst |
+| Juno First (Gottlieb)            |  Yes  |  Yes  |  Yes  |  Yes  | junofstg |
+| Pooyan                           |  Yes  |  Yes  |  Yes  |  Yes  | pooyan   |
+| Pooyan (Stern)                   |  Yes  |  Yes  |  Yes  |  Yes  | pooyans  |
+| Pootan                           |  Yes  |  Yes  |  Yes  |  Yes  | pootan   |
+| Time Pilot                       |  Yes  |  Yes  |  Yes  |  Yes  | timeplt  |
+| Time Pilot (Centuri)             |  Yes  |  Yes  |  Yes  |  Yes  | timepltc |
+| Space Pilot                      |  Yes  |  Yes  |  Yes  |  Yes  | spaceplt |
+| Power Surge                      |  Yes  |  Yes  |  Yes  |  Yes  | psurge   |
+| Mega Zone                        |  Yes  |  Yes  |  Yes  |  Yes  | megazone |
+| Mega Zone (Kosuka)               |  Yes  |  Yes  |  Yes  |  Yes  | megaznik |
+| Pandora's Palace                 |  Yes  |  Yes  |  Yes  |  Yes  | pandoras |
+| Gyruss (Konami)                  |  Yes  |  Yes  |  Yes  |  Yes  | gyruss   |
+| Gyruss (Centuri)                 |  Yes  |  Yes  |  Yes  |  Yes  | gyrussce |
+| Venus                            |  Yes  |  Yes  |  Yes  |  Yes  | venus    |
+| Track & Field                    |  Yes  |  Yes  |  Yes  |  Yes  | trackfld |
+| Track & Field (Centuri)          |  Yes  |  Yes  |  Yes  |  Yes  | trackflc |
+| Hyper Olympic                    |  Yes  |  Yes  |  Yes  |  Yes  | hyprolym |
+| Hyper Olympic (bootleg)          |  Yes  |  Yes  |  Yes  |  Yes  | hyprolyb |
+| Roc'n Rope                       |  Yes  |  Yes  |  Yes  |  Yes  | rocnrope |
+| Roc'n Rope (Kosuka)              |  Yes  |  Yes  |  Yes  |  Yes  | rocnropk |
+| Circus Charlie                   |  Yes  |  Yes  |  Yes  |  Yes  | circusc  |
+| Circus Charlie (no level select) |  Yes  |  Yes  |  Yes  |  Yes  | circusc2 |
+| Circus Charlie (Centuri)         |  Yes  |  Yes  |  Yes  |  Yes  | circuscc |
+| Circus Charlie (Centuri, earlier)|  Yes  |  Yes  |  Yes  |  Yes  | circusce |
+| Time Pilot '84 (set 1)           |  Yes  |  Yes  |  Yes  |   No  | tp84     |
+| Time Pilot '84 (set 2)           |  Yes  |  Yes  |  Yes  |   No  | tp84a    |
+| Hyper Sports                     |  Yes  |  Yes  |  Yes  |  Yes  | hyperspt |
+| Hyper Olympics '84               |  Yes  |  Yes  |  Yes  |  Yes  | hpolym84 |
+| Super Basketball                 |  Yes  |  Yes  |  Yes  |  Yes  | sbasketb |
+| Mikie                            |  Yes  |  Yes  |  Yes  |  Yes  | mikie    |
+| Shinnyuushain Tooru-kun          |  Yes  |  Yes  |  Yes  |  Yes  | mikiej   |
+| Mikie (High School Graffiti)     |  Yes  |  Yes  |  Yes  |  Yes  | mikiehs  |
+| Road Fighter (set 1)             |  Yes  |  Yes  |  Yes  |  Yes  | roadf    |
+| Road Fighter (set 2)             |  Yes  |  Yes  |  Yes  |  Yes  | roadf2   |
+| Yie Ar Kung-Fu (set 1)           |  Yes  |  Yes  |  Yes  |  Yes  | yiear    |
+| Yie Ar Kung-Fu (set 2)           |  Yes  |  Yes  |  Yes  |  Yes  | yiear2   |
+| Kicker                           |  Yes  |  Yes  |  Yes  |  Yes  | kicker   |
+| Shao-Lin's Road                  |  Yes  |  Yes  |  Yes  |  Yes  | shaolins |
+| Ping Pong                        |  Yes  |  Yes  |  Yes  |  Yes  | pingpong |
+| Green Beret                      |  Yes  |  Yes  |  Yes  |  Yes  | gberet   |
+| Rush'n Attack                    |  Yes  |  Yes  |  Yes  |  Yes  | rushatck |
+| Green Beret (bootleg)            |  Yes  |  Yes  |  Yes  |  Yes  | gberetb  |
+| Mr. Goemon (Japan)               |  Yes  |  Yes  |  Yes  |  Yes  | mrgoemon |
+| Jail Break                       |  Yes  |  Yes  |  Yes  |   No  | jailbrek |
+| Finalizer - Super Transformation |  Yes  |  Yes  |Partial|   No  | finalizr |
+| Finalizer - Super Transformation |  Yes  |  Yes  |Partial|   No  | finalizb |
+| Iron Horse                       |  Yes  |  Yes  |  Yes  |   No  | ironhors |
+| Dai Ressya Goutou (Japan)        |  Yes  |  Yes  |  Yes  |   No  | dairesya |
+| Far West                         | No(1) |  Yes  |  Yes  |   No  | farwest  |
+| Jackal (World)                   |  Yes  | Close |  Yes  |   No  | jackal   |
+| Top Gunner (US)                  |  Yes  | Close |  Yes  |   No  | topgunr  |
+| Tokushu Butai Jackal (Japan)     |  Yes  | Close |  Yes  |   No  | jackalj  |
+| Top Gunner (bootleg)             |  Yes  | Close |  Yes  |   No  | topgunbl |
+| Double Dribble                   |  Yes  |  Yes  |  Yes  |  Yes  | ddribble |
+| Contra (US)                      |  Yes  |  Yes  |  Yes  |  Yes  | contra   |
+| Contra (US bootleg)              |  Yes  |  Yes  |  Yes  |  Yes  | contrab  |
+| Contra (Japan)                   |  Yes  |  Yes  |  Yes  |  Yes  | contraj  |
+| Contra (Japan bootleg)           |  Yes  |  Yes  |  Yes  |  Yes  | contrajb |
+| Gryzor                           |  Yes  |  Yes  |  Yes  |  Yes  | gryzor   |
+| Combat School (joystick)         |  Yes  |  Yes  |  Yes  |  Yes  | combasc  |
+| Combat School (trackball)        |  Yes  |  Yes  |  Yes  |  Yes  | combasct |
+| Combat School (Japan trackball)  |  Yes  |  Yes  |  Yes  |  Yes  | combascj |
+| Boot Camp                        |  Yes  |  Yes  |  Yes  |  Yes  | bootcamp |
+| Combat School (bootleg)          |  Yes  | Close |  Yes  |  Yes  | combascb |
+| Rock 'n Rage (World?)            |  Yes  |  Yes  |  Yes  |  Yes  | rockrage |
+| Koi no Hotrock (Japan)           |  Yes  |  Yes  |  Yes  |  Yes  | rockragj |
+| MX5000                           |  Yes  |  Yes  |  Yes  |  Yes  | mx5000   |
+| Flak Attack (Japan)              |  Yes  |  Yes  |  Yes  |  Yes  | flkatck  |
+| Fast Lane                        |   No  | Close |  Yes  |  Yes  | fastlane |
+| Labyrinth Runner (Japan)         |   No  |  Yes  |  Yes  |  Yes  | labyrunr |
+| Hustler, The (Japan version M)   |  Yes  |  Yes  |  Yes  |  Yes  | thehustl |
+| Hustler, The (Japan version J)   |  Yes  |  Yes  |  Yes  |  Yes  | thehustj |
+| Rack 'em Up                      |  Yes  |  Yes  |  Yes  |  Yes  | rackemup |
+| Battlantis                       |  Yes  |  Yes  |  Yes  |  Yes  | battlnts |
+| Battlantis (Japan)               |  Yes  |  Yes  |  Yes  |  Yes  | battlntj |
+| Blades of Steel (version T)      |  Yes  |  Yes  |Partial|  Yes  | bladestl |
+| Blades of Steel (version E)      |  Yes  |  Yes  |Partial|  Yes  | bladstle |
+| Haunted Castle (set 1)           |  Yes  |  Yes  |  Yes  |   No  | hcastle  |
+| Haunted Castle (set 2)           |  Yes  |  Yes  |  Yes  |   No  | hcastlea |
+| Akuma-Jou Dracula (Japan)        |  Yes  |  Yes  |  Yes  |   No  | hcastlej |
+| Ajax                             |  Yes  |  Yes  |  Yes  |  Yes  | ajax     |
+| Ajax (Japan)                     |  Yes  |  Yes  |  Yes  |  Yes  | ajaxj    |
+| Super Contra                     |  Yes  |  Yes  |  Yes  |  Yes  | scontra  |
+| Super Contra (Japan)             |  Yes  |  Yes  |  Yes  |  Yes  | scontraj |
+| Thunder Cross                    |  Yes  |  Yes  |  Yes  |  Yes  | thunderx |
+| Thunder Cross (Japan)            |  Yes  |  Yes  |  Yes  |  Yes  | thnderxj |
+| Main Event, The (version Y)      |  Yes  |  Yes  |  Yes  |  Yes  | mainevt  |
+| Main Event, The (version F)      |  Yes  |  Yes  |  Yes  |  Yes  | mainevt2 |
+| Ring no Ohja (Japan)             |  Yes  |  Yes  |  Yes  |  Yes  | ringohja |
+| Devastators (version Z)          |  Yes  |  Yes  |  Yes  |  Yes  | devstors |
+| Devastators (version X)          |  Yes  |  Yes  |  Yes  |  Yes  | devstor2 |
+| Devastators (version V)          |  Yes  |  Yes  |  Yes  |  Yes  | devstor3 |
+| Garuka (Japan)                   |  Yes  |  Yes  |  Yes  |  Yes  | garuka   |
+| '88 Games                        |  Yes  |  Yes  |  Yes  |  Yes  | 88games  |
+| Konami '88                       |  Yes  |  Yes  |  Yes  |  Yes  | konami88 |
+| Hyper Sports Special (Japan)     |  Yes  |  Yes  |  Yes  |  Yes  | hypsptsp |
+| Gang Busters                     |  Yes  |  Yes  |  Yes  |  Yes  | gbusters |
+| Crazy Cop (Japan)                |  Yes  |  Yes  |  Yes  |  Yes  | crazycop |
+| Crime Fighters (US 4 players)    |  Yes  |  Yes  |  Yes  |  Yes  | crimfght |
+| Crime Fighters (World 2 Players) |  Yes  |  Yes  |  Yes  |  Yes  | crimfgt2 |
+| Crime Fighters (Japan 2 Players) |  Yes  |  Yes  |  Yes  |  Yes  | crimfgtj |
+| S.P.Y. - Special Project Y (US)  |  Yes  |  Yes  |  Yes  |  Yes  | spy      |
+| Bottom of the Ninth (version T)  |  Yes  |  Yes  |  Yes  |  Yes  | bottom9  |
+| Bottom of the Ninth (version N)  |  Yes  |  Yes  |  Yes  |  Yes  | bottom9n |
+| Block Hole                       |  Yes  |  Yes  |  Yes  |  Yes  | blockhl  |
+| Quarth (Japan)                   |  Yes  |  Yes  |  Yes  |  Yes  | quarth   |
+| Aliens (World set 1)             |  Yes  |  Yes  |  Yes  |  Yes  | aliens   |
+| Aliens (World set 2)             |  Yes  |  Yes  |  Yes  |  Yes  | aliens2  |
+| Aliens (US)                      |  Yes  |  Yes  |  Yes  |  Yes  | aliensu  |
+| Aliens (Japan)                   |  Yes  |  Yes  |  Yes  |  Yes  | aliensj  |
+| Surprise Attack (Japan)          |  Yes  |  Yes  |  Yes  |  Yes  | surpratk |
+| Parodius DA! (Japan)             |  Yes  |  Yes  |  Yes  |  Yes  | parodius |
+| Rollergames (US)                 |  Yes  |  Yes  |  Yes  |  Yes  | rollerg  |
+| Rollergames (Japan)              |  Yes  |  Yes  |  Yes  |  Yes  | rollergj |
+| Simpsons, The (4 Players)        |  Yes  |  Yes  |  Yes  |  Yes  | simpsons |
+| Simpsons, The (2 Players)        |  Yes  |  Yes  |  Yes  |  Yes  | simpsn2p |
+| Simpsons, The (2 Players Japan)  |  Yes  |  Yes  |  Yes  |  Yes  | simps2pj |
+| Vendetta (Asia set 1)            |  Yes  |  Yes  |  Yes  |  Yes  | vendetta |
+| Vendetta (Asia set 2)            |  Yes  |  Yes  |  Yes  |  Yes  | vendett2 |
+| Crime Fighters 2 (Japan)         |  Yes  |  Yes  |  Yes  |  Yes  | vendettj |
+| WEC Le Mans 24                   |  Yes  |   No  |  Yes  |  Yes  | wecleman |
+| Hot Chase                        |  Yes  |  Yes  |  Yes  |  Yes  | hotchase |
+| Chequered Flag                   |  Yes  |  Yes  |  Yes  |  Yes  | chqflag  |
+| Chequered Flag (Japan)           |  Yes  |  Yes  |  Yes  |  Yes  | chqflagj |
+| Ultraman (Japan)                 |  Yes  |  Yes  |  Yes  |  Yes  | ultraman |
+| Nemesis (hacked?)                |  Yes  |  Yes  |  Yes  |  Yes  | nemesis  |
+| Nemesis (World?)                 |  Yes  |  Yes  |  Yes  |  Yes  | nemesuk  |
+| Konami GT                        |  Yes  |  Yes  |  Yes  |  Yes  | konamigt |
+| Salamander                       |  Yes  |  Yes  |  Yes  |  Yes  | salamand |
+| Lifeforce (US)                   |  Yes  |  Yes  |  Yes  |  Yes  | lifefrce |
+| Lifeforce (Japan)                |  Yes  |  Yes  |  Yes  |  Yes  | lifefrcj |
+| Konami RF2 - Red Fighter         |  Yes  |  Yes  |  Yes  |  Yes  | rf2      |
+| TwinBee                          |  Yes  |  Yes  |  Yes  |  Yes  | twinbee  |
+| Gradius                          |  Yes  |  Yes  |  Yes  |  Yes  | gradius  |
+| Galactic Warriors                |  Yes  |  Yes  |  Yes  |  Yes  | gwarrior |
+| Devil World                      |  Yes  |  Yes  |  Yes  |  Yes  | devilw   |
+| Dark Adventure                   |  Yes  |  Yes  |  Yes  |  Yes  | darkadv  |
+| Majuu no Ohkoku                  |  Yes  |  Yes  |  Yes  |  Yes  | majuu    |
+| Vulcan Venture                   |  Yes  |  Yes  |  Yes  |  Yes  | vulcan   |
+| Gradius II - Gofer no Yabou (Japa|  Yes  |  Yes  |  Yes  |  Yes  | gradius2 |
+| Gradius II - Gofer no Yabou (Japa|  Yes  |  Yes  |  Yes  |  Yes  | grdius2a |
+| Gradius II - Gofer no Yabou (Japa|  Yes  |  Yes  |  Yes  |  Yes  | grdius2b |
+| Cuebrick                         |  Yes  |  Yes  |  Yes  |  Yes  | cuebrick |
+| Final Round                      |  Yes  |  Yes  |  Yes  |  Yes  | fround   |
+| Hard Puncher (Japan)             |  Yes  |  Yes  |  Yes  |  Yes  | hpuncher |
+| Missing in Action (Japan)        |  Yes  |  Yes  |  Yes  |  Yes  | miaj     |
+| Gradius III (Japan)              |  Yes  |  Yes  |  Yes  |  Yes  | gradius3 |
+| Gradius III (Asia)               |  Yes  |  Yes  |  Yes  |  Yes  | grdius3a |
+| Missing in Action (version T)    |  Yes  |  Yes  |  Yes  |  Yes  | mia      |
+| Missing in Action (version S)    |  Yes  |  Yes  |  Yes  |  Yes  | mia2     |
+| Teenage Mutant Ninja Turtles (4 P|  Yes  |  Yes  |  Yes  |  Yes  | tmnt     |
+| Teenage Mutant Hero Turtles (4 Pl|  Yes  |  Yes  |  Yes  |  Yes  | tmht     |
+| Teenage Mutant Ninja Turtles (4 P|  Yes  |  Yes  |  Yes  |  Yes  | tmntj    |
+| Teenage Mutant Hero Turtles (2 Pl|  Yes  |  Yes  |  Yes  |  Yes  | tmht2p   |
+| Teenage Mutant Ninja Turtles (2 P|  Yes  |  Yes  |  Yes  |  Yes  | tmnt2pj  |
+| Teenage Mutant Ninja Turtles (2 P|  Yes  |  Yes  |  Yes  |  Yes  | tmnt2po  |
+| Punk Shot (4 Players)            |  Yes  |  Yes  |  Yes  |  Yes  | punkshot |
+| Punk Shot (2 Players)            |  Yes  |  Yes  |  Yes  |  Yes  | punksht2 |
+| Lightning Fighters (US)          |  Yes  |  Yes  |  Yes  |  Yes  | lgtnfght |
+| Trigon (Japan)                   |  Yes  |  Yes  |  Yes  |  Yes  | trigon   |
+| Bells & Whistles                 |  Yes  |  Yes  |  Yes  |  Yes  | blswhstl |
+| Detana!! Twin Bee (Japan)        |  Yes  |  Yes  |  Yes  |  Yes  | detatwin |
+| Teenage Mutant Ninja Turtles - Tu|  Yes  | Close |  Yes  |  Yes  | tmnt2    |
+| Teenage Mutant Ninja Turtles - Tu|  Yes  | Close |  Yes  |  Yes  | tmnt22p  |
+| Teenage Mutant Ninja Turtles - Tu|  Yes  | Close |  Yes  |  Yes  | tmnt2a   |
+| Sunset Riders (World 4 Players ve|  Yes  |  Yes  |  Yes  |  Yes  | ssriders |
+| Sunset Riders (World 2 Players ve|  Yes  |  Yes  |  Yes  |  Yes  | ssrdrebd |
+| Sunset Riders (World 2 Players ve|  Yes  |  Yes  |  Yes  |  Yes  | ssrdrebc |
+| Sunset Riders (US 4 Players ver. |  Yes  |  Yes  |  Yes  |  Yes  | ssrdruda |
+| Sunset Riders (US 4 Players ver. |  Yes  |  Yes  |  Yes  |  Yes  | ssrdruac |
+| Sunset Riders (US 2 Players ver. |  Yes  |  Yes  |  Yes  |  Yes  | ssrdrubc |
+| Sunset Riders (Asia 2 Players ver|  Yes  |  Yes  |  Yes  |  Yes  | ssrdrabd |
+| Sunset Riders (Japan 2 Players ve|  Yes  |  Yes  |  Yes  |  Yes  | ssrdrjbd |
+| X-Men (4 Players)                |  Yes  |  Yes  |  Yes  |  Yes  | xmen     |
+| X-Men (6 Players)                | No(1) |  Yes  |Partial|  Yes  | xmen6p   |
+| X-Men (2 Players Japan)          |  Yes  |  Yes  |  Yes  |  Yes  | xmen2pj  |
+| Thunder Cross II (Japan)         |  Yes  |  Yes  |  Yes  |  Yes  | thndrx2  |
+| Side Track                       |  Yes  |  Yes  | Yes(2)|  Yes  | sidetrac |
+| Targ                             |  Yes  |  Yes  | Yes(2)|  Yes  | targ     |
+| Spectar (revision 3)             |  Yes  |  Yes  | Yes(2)|  Yes  | spectar  |
+| Spectar (revision 1?)            |  Yes  |  Yes  | Yes(2)|  Yes  | spectar1 |
+| Venture (version 5 set 1)        |  Yes  |  Yes  |  Yes  |  Yes  | venture  |
+| Venture (version 5 set 2)        |  Yes  |  Yes  |  Yes  |  Yes  | venture2 |
+| Venture (version 4)              |  Yes  |  Yes  |  Yes  |  Yes  | venture4 |
+| Mouse Trap (version 5)           |  Yes  |  Yes  |  Yes  |  Yes  | mtrap    |
+| Mouse Trap (version 3)           |  Yes  |  Yes  |  Yes  |  Yes  | mtrap3   |
+| Mouse Trap (version 4)           |  Yes  |  Yes  |  Yes  |  Yes  | mtrap4   |
+| Pepper II                        |  Yes  |  Yes  |  Yes  |  Yes  | pepper2  |
+| Hard Hat                         |  Yes  |  Yes  |  Yes  |  Yes  | hardhat  |
+| Fax                              |  Yes  |  Yes  |  Yes  |  Yes  | fax      |
+| Circus                           |  Yes  |  Yes  |Partial|  Yes  | circus   |
+| Robot Bowl                       |  Yes  |  Yes  |Partial|  Yes  | robotbwl |
+| Crash                            |  Yes  |  Yes  |Partial|  Yes  | crash    |
+| Rip Cord                         |   No  |  Yes  |  Yes  |  Yes  | ripcord  |
+| Star Fire                        |  Yes  |  Yes  |   No  |  Yes  | starfire |
+| Fire One                         |  Yes  |  Yes  |   No  |  Yes  | fireone  |
+| Victory                          |  Yes  |  Yes  |  Yes  |  Yes  | victory  |
+| Victor Banana                    |  Yes  |  Yes  |  Yes  |  Yes  | victorba |
+| Crossbow (version 2.0)           |  Yes  |  Yes  |  Yes  |  Yes  | crossbow |
+| Cheyenne (version 1.0)           |  Yes  |  Yes  |  Yes  |  Yes  | cheyenne |
+| Combat (version 3.0)             |  Yes  |  Yes  |  Yes  |  Yes  | combat   |
+| Crackshot (version 2.0)          |  Yes  |  Yes  |  Yes  |  Yes  | cracksht |
+| Clay Pigeon (version 2.0)        |  Yes  |  Yes  |  Yes  |  Yes  | claypign |
+| Chiller (version 3.0)            |  Yes  |  Yes  |  Yes  |  Yes  | chiller  |
+| Top Secret (Exidy) (version 1.0) |  Yes  |  Yes  |  Yes  |  Yes  | topsecex |
+| Hit 'n Miss (version 3.0)        |  Yes  |  Yes  |  Yes  |  Yes  | hitnmiss |
+| Hit 'n Miss (version 2.0)        |  Yes  |  Yes  |  Yes  |  Yes  | hitnmis2 |
+| Who Dunit (version 8.0)          |  Yes  |  Yes  |  Yes  |  Yes  | whodunit |
+| Showdown (version 5.0)           |  Yes  |  Yes  |  Yes  |  Yes  | showdown |
+| Asteroids (rev 2)                |  Yes  |  Yes  |  Yes  |  Yes  | asteroid |
+| Asteroids (rev 1)                |  Yes  |  Yes  |  Yes  |  Yes  | asteroi1 |
+| Asteroids (bootleg on Lunar Lande|  Yes  |  Yes  |  Yes  |  Yes  | asteroib |
+| Asteroids Deluxe (rev 2)         |  Yes  |  Yes  |  Yes  |  Yes  | astdelux |
+| Asteroids Deluxe (rev 1)         |  Yes  |  Yes  |  Yes  |  Yes  | astdelu1 |
+| Black Widow                      |  Yes  |  Yes  |  Yes  |  Yes  | bwidow   |
+| Battle Zone (set 1)              |  Yes  |  Yes  |  Yes  |  Yes  | bzone    |
+| Battle Zone (set 2)              |  Yes  |  Yes  |  Yes  |  Yes  | bzone2   |
+| Gravitar (version 3)             |  Yes  |  Yes  |  Yes  |  Yes  | gravitar |
+| Gravitar (version 2)             |  Yes  |  Yes  |  Yes  |  Yes  | gravitr2 |
+| Lunar Lander (rev 2)             |  Yes  |  Yes  |  Yes  |  Yes  | llander  |
+| Lunar Lander (rev 1)             |  Yes  |  Yes  |  Yes  |  Yes  | llander1 |
+| Red Baron                        |  Yes  |  Yes  |  Yes  |  Yes  | redbaron |
+| Space Duel                       |  Yes  |  Yes  |  Yes  |  Yes  | spacduel |
+| Tempest (rev 3)                  |  Yes  |  Yes  |  Yes  |  Yes  | tempest  |
+| Tempest (rev 1)                  |  Yes  |  Yes  |  Yes  |  Yes  | tempest1 |
+| Tempest (rev 2)                  |  Yes  |  Yes  |  Yes  |  Yes  | tempest2 |
+| Tempest Tubes                    |  Yes  |  Yes  |  Yes  |  Yes  | temptube |
+| Star Wars (rev 2)                |  Yes  |  Yes  |  Yes  |  Yes  | starwars |
+| Star Wars (rev 1)                |  Yes  |  Yes  |  Yes  |  Yes  | starwar1 |
+| Empire Strikes Back, The         |  Yes  |  Yes  |  Yes  |  Yes  | esb      |
+| Major Havoc (rev 3)              |  Yes  |  Yes  |  Yes  |  Yes  | mhavoc   |
+| Major Havoc (rev 2)              |  Yes  |  Yes  |  Yes  |  Yes  | mhavoc2  |
+| Major Havoc (prototype)          |  Yes  |  Yes  |  Yes  |  Yes  | mhavocp  |
+| Major Havoc (Return to Vax)      |  Yes  |  Yes  |  Yes  |  Yes  | mhavocrv |
+| Quantum (rev 2)                  |  Yes  |   No  |  Yes  |  Yes  | quantum  |
+| Quantum (rev 1)                  |  Yes  |   No  |  Yes  |  Yes  | quantum1 |
+| Quantum (prototype)              |  Yes  |   No  |  Yes  |  Yes  | quantump |
+| Sprint 1                         |  Yes  |  Yes  |   No  |  Yes  | sprint1  |
+| Sprint 2                         |  Yes  |  Yes  |   No  |  Yes  | sprint2  |
+| Super Breakout                   |  Yes  |  Yes  |  Yes  |  Yes  | sbrkout  |
+| Dominos                          |  Yes  |  Yes  |   No  |  Yes  | dominos  |
+| Night Driver                     |  Yes  |  Yes  |   No  |  Yes  | nitedrvr |
+| Basketball                       |  Yes  |  Yes  |  Yes  |  Yes  | bsktball |
+| Cops'n Robbers                   |  Yes  |  Yes  |   No  |  Yes  | copsnrob |
+| Avalanche                        |  Yes  |  Yes  |  Yes  |  Yes  | avalnche |
+| Subs                             |  Yes  |  Yes  |   No  |  Yes  | subs     |
+| Atari Football (revision 2)      |  Yes  |  Yes  |  Yes  |  Yes  | atarifb  |
+| Atari Football (revision 1)      |  Yes  |  Yes  |  Yes  |  Yes  | atarifb1 |
+| Atari Football (4 players)       |  Yes  |  Yes  |  Yes  |  Yes  | atarifb4 |
+| Atari Baseball (set 1)           |  Yes  |  Yes  |  Yes  |  Yes  | abaseb   |
+| Atari Baseball (set 2)           |  Yes  |  Yes  |  Yes  |  Yes  | abaseb2  |
+| Atari Soccer                     |  Yes  |  Yes  |  Yes  |  Yes  | soccer   |
+| Canyon Bomber                    |  Yes  |  Yes  |  Yes  |  Yes  | canyon   |
+| Canyon Bomber (prototype)        |  Yes  |  Yes  |  Yes  |  Yes  | canbprot |
+| Sky Diver                        |  Yes  |  Yes  |  Yes  |  Yes  | skydiver |
+| Warlords                         |  Yes  |  Yes  |  Yes  |  Yes  | warlord  |
+| Centipede (revision 3)           |  Yes  |  Yes  |  Yes  |  Yes  | centiped |
+| Centipede (revision 2)           |  Yes  |  Yes  |  Yes  |  Yes  | centipd2 |
+| Centipede (bootleg set 1)        |  Yes  |  Yes  |  Yes  |  Yes  | centipdb |
+| Centipede (bootleg set 2)        |  Yes  |  Yes  |  Yes  |  Yes  | centipb2 |
+| Millipede                        |  Yes  |  Yes  |  Yes  |  Yes  | milliped |
+| Qwak (prototype)                 |  Yes  |  Yes  |  Yes  |   No  | qwakprot |
+| Funky Fish                       |  Yes  |  Yes  |  Yes  |  Yes  | fnkyfish |
+| Kangaroo                         |  Yes  |  Yes  |  Yes  |  Yes  | kangaroo |
+| Kangaroo (Atari)                 |  Yes  |  Yes  |  Yes  |  Yes  | kangaroa |
+| Kangaroo (bootleg)               |  Yes  |  Yes  |  Yes  |  Yes  | kangarob |
+| Arabian                          |  Yes  |  Yes  |  Yes  |  Yes  | arabian  |
+| Arabian (Atari)                  |  Yes  |  Yes  |  Yes  |  Yes  | arabiana |
+| Missile Command (set 1)          |  Yes  |  Yes  |  Yes  |  Yes  | missile  |
+| Missile Command (set 2)          |  Yes  |  Yes  |  Yes  |  Yes  | missile2 |
+| Super Missile Attack             |  Yes  |  Yes  |  Yes  |  Yes  | suprmatk |
+| Food Fight                       |  Yes  |  Yes  |  Yes  |   No  | foodf    |
+| Liberator (set 1)                |  Yes  |  Yes  |  Yes  |   No  | liberatr |
+| Crystal Castles (set 1)          |  Yes  |  Yes  |  Yes  |  Yes  | ccastles |
+| Crystal Castles (set 2)          |  Yes  |  Yes  |  Yes  |  Yes  | ccastle2 |
+| Cloak & Dagger                   |  Yes  |  Yes  |  Yes  |   No  | cloak    |
+| Cloud 9 (prototype)              |  Yes  |  Yes  |  Yes  |   No  | cloud9   |
+| Return of the Jedi               |  Yes  |  Yes  |  Yes  |   No  | jedi     |
+| Marble Madness (set 1)           |  Yes  |  Yes  |  Yes  |  Yes  | marble   |
+| Marble Madness (set 2)           |  Yes  |  Yes  |  Yes  |  Yes  | marble2  |
+| Marble Madness (set 3)           |  Yes  |  Yes  |  Yes  |  Yes  | marblea  |
+| Peter Pack-Rat                   |  Yes  |  Yes  |  Yes  |  Yes  | peterpak |
+| Indiana Jones and the Temple of D|  Yes  |  Yes  |  Yes  |  Yes  | indytemp |
+| Indiana Jones and the Temple of D|  Yes  |  Yes  |  Yes  |  Yes  | indytem2 |
+| Indiana Jones and the Temple of D|  Yes  |  Yes  |  Yes  |  Yes  | indytem3 |
+| Indiana Jones and the Temple of D|  Yes  |  Yes  |  Yes  |  Yes  | indytem4 |
+| Road Runner                      |  Yes  |  Yes  |  Yes  |  Yes  | roadrunn |
+| Road Blasters                    |  Yes  |  Yes  |  Yes  |  Yes  | roadblst |
+| Paperboy                         |  Yes  |  Yes  |  Yes  |  Yes  | paperboy |
+| Super Sprint                     |  Yes  |  Yes  |  Yes  |  Yes  | ssprint  |
+| Championship Sprint              |  Yes  |  Yes  |  Yes  |  Yes  | csprint  |
+| 720 Degrees (set 1)              |  Yes  |  Yes  |  Yes  |  Yes  | 720      |
+| 720 Degrees (set 2)              |  Yes  |  Yes  |  Yes  |  Yes  | 720b     |
+| APB - All Points Bulletin (set 1)|  Yes  |  Yes  |  Yes  |  Yes  | apb      |
+| APB - All Points Bulletin (set 2)|  Yes  |  Yes  |  Yes  |  Yes  | apb2     |
+| Gauntlet                         |  Yes  |  Yes  |  Yes  |  Yes  | gauntlet |
+| Gauntlet (Intermediate Release 1)|  Yes  |  Yes  |  Yes  |  Yes  | gauntir1 |
+| Gauntlet (Intermediate Release 2)|  Yes  |  Yes  |  Yes  |  Yes  | gauntir2 |
+| Gauntlet (2 Players)             |  Yes  |  Yes  |  Yes  |  Yes  | gaunt2p  |
+| Gauntlet II                      |  Yes  |  Yes  |  Yes  |  Yes  | gaunt2   |
+| Vindicators Part II              |  Yes  |  Yes  |  Yes  |  Yes  | vindctr2 |
+| Tetris (set 1)                   |  Yes  |  Yes  |  Yes  |  Yes  | atetris  |
+| Tetris (set 2)                   |  Yes  |  Yes  |  Yes  |  Yes  | atetrisa |
+| Tetris (bootleg)                 |  Yes  |  Yes  |  Yes  |  Yes  | atetrisb |
+| Tetris (Cocktail set 1)          |  Yes  |  Yes  |  Yes  |  Yes  | atetcktl |
+| Tetris (Cocktail set 2)          |  Yes  |  Yes  |  Yes  |  Yes  | atetckt2 |
+| Toobin' (version 3)              |  Yes  |  Yes  |  Yes  |  Yes  | toobin   |
+| Toobin' (version 2)              |  Yes  |  Yes  |  Yes  |  Yes  | toobin2  |
+| Toobin' (Prototype)              |  Yes  |  Yes  |  Yes  |  Yes  | toobinp  |
+| Vindicators                      |  Yes  |  Yes  |  Yes  |  Yes  | vindictr |
+| Klax (set 1)                     |  Yes  |  Yes  |  Yes  |  Yes  | klax     |
+| Klax (set 2)                     |  Yes  |  Yes  |  Yes  |  Yes  | klax2    |
+| Klax (set 3)                     |  Yes  |  Yes  |  Yes  |  Yes  | klax3    |
+| Klax (Japan)                     |  Yes  |  Yes  |  Yes  |  Yes  | klaxj    |
+| Blasteroids (version 4)          |  Yes  |  Yes  |  Yes  |  Yes  | blstroid |
+| Blasteroids (version 2)          |  Yes  |  Yes  |  Yes  |  Yes  | blstroi2 |
+| Blasteroids (with heads)         |  Yes  |  Yes  |  Yes  |  Yes  | blsthead |
+| Xybots                           |  Yes  |  Yes  |  Yes  |  Yes  | xybots   |
+| Escape from the Planet of the Rob|  Yes  |  Yes  |  Yes  |  Yes  | eprom    |
+| Escape from the Planet of the Rob|  Yes  |  Yes  |  Yes  |  Yes  | eprom2   |
+| Skull & Crossbones (set 1)       |  Yes  |  Yes  |  Yes  |  Yes  | skullxbo |
+| Skull & Crossbones (set 2)       |  Yes  |  Yes  |  Yes  |  Yes  | skullxb2 |
+| Bad Lands                        |  Yes  |  Yes  |  Yes  |  Yes  | badlands |
+| Cyberball (Version 4)            |  Yes  |  Yes  |  Yes  |  Yes  | cyberbal |
+| Cyberball (Version 2)            |  Yes  |  Yes  |  Yes  |  Yes  | cyberba2 |
+| Tournament Cyberball 2072        |  Yes  |  Yes  |  Yes  |  Yes  | cyberbt  |
+| Cyberball 2072 (2 player)        |  Yes  |  Yes  |  Yes  |  Yes  | cyberb2p |
+| Rampart (3-player Trackball)     |  Yes  |  Yes  |  Yes  |  Yes  | rampart  |
+| Rampart (2-player Joystick)      |  Yes  |  Yes  |  Yes  |  Yes  | ramprt2p |
+| Rampart (Japan, 2-player Joystick|  Yes  |  Yes  |  Yes  |  Yes  | rampartj |
+| Shuuz (version 8.0)              |  Yes  |  Yes  |  Yes  |  Yes  | shuuz    |
+| Shuuz (version 7.1)              |  Yes  |  Yes  |  Yes  |  Yes  | shuuz2   |
+| Hydra                            |  Yes  |  Yes  |  Yes  |  Yes  | hydra    |
+| Hydra (prototype)                |  Yes  |  Yes  |  Yes  |  Yes  | hydrap   |
+| Pit Fighter (version 4)          |  Yes  |  Yes  |  Yes  |  Yes  | pitfight |
+| Pit Fighter (version 3)          |  Yes  |  Yes  |  Yes  |  Yes  | pitfigh3 |
+| ThunderJaws                      |  Yes  |  Yes  |  Yes  |  Yes  | thunderj |
+| Batman                           |  Yes  |  Yes  |  Yes  |  Yes  | batman   |
+| Relief Pitcher (set 1)           |  Yes  |  Yes  |  Yes  |  Yes  | relief   |
+| Relief Pitcher (set 2)           |  Yes  |  Yes  |  Yes  |  Yes  | relief2  |
+| Off the Wall (2/3-player upright)|  Yes  |  Yes  |  Yes  |  Yes  | offtwall |
+| Off the Wall (2-player cocktail) |  Yes  |  Yes  |  Yes  |  Yes  | offtwalc |
+| Arcade Classics (prototype)      |  Yes  |  Yes  |  Yes  |  Yes  | arcadecl |
+| Sparkz (prototype)               |  Yes  |  Yes  |  Yes  |  Yes  | sparkz   |
+| Fire Truck                       |  Yes  |  Yes  |  Yes  |  Yes  | firetrk  |
+| Sasuke vs. Commander             |  Yes  |  Yes  |   No  |  Yes  | sasuke   |
+| Satan of Saturn                  |  Yes  |  Yes  |Partial|  Yes  | satansat |
+| Zarzon                           |  Yes  |  Yes  |Partial|  Yes  | zarzon   |
+| Vanguard (SNK)                   |  Yes  |  Yes  |Partial|  Yes  | vanguard |
+| Vanguard (Centuri)               |  Yes  |  Yes  |Partial|  Yes  | vangrdce |
+| Fantasy (US)                     |  Yes  |  Yes  |Partial|  Yes  | fantasy  |
+| Fantasy (Japan)                  |  Yes  |  Yes  |Partial|  Yes  | fantasyj |
+| Pioneer Balloon                  |  Yes  |  Yes  |Partial|  Yes  | pballoon |
+| Nibbler (set 1)                  |  Yes  |  Yes  |Partial|  Yes  | nibbler  |
+| Nibbler (set 2)                  |  Yes  |  Yes  |Partial|  Yes  | nibblera |
+| Lasso                            |  Yes  |  Yes  |  Yes  |  Yes  | lasso    |
+| Joyful Road (US)                 |  Yes  |  Yes  |  Yes  |  Yes  | joyfulr  |
+| Munch Mobile (Japan)             |  Yes  |  Yes  |  Yes  |  Yes  | mnchmobl |
+| Marvin's Maze                    |  Yes  |  Yes  |  Yes  |  Yes  | marvins  |
+| Mad Crasher                      |  Yes  |  Yes  |Partial|  Yes  | madcrash |
+| Vanguard II                      |  Yes  |  Yes  |  Yes  |  Yes  | vangrd2  |
+| HAL21                            |  Yes  |   No  |   No  |  Yes  | hal21    |
+| HAL21 (Japan)                    |  Yes  |   No  |   No  |  Yes  | hal21j   |
+| ASO - Armored Scrum Object       |  Yes  |  Yes  |Partial|  Yes  | aso      |
+| TNK III (US?)                    |  Yes  |  Yes  |  Yes  |   No  | tnk3     |
+| Tank (Japan)                     |  Yes  |  Yes  |  Yes  |   No  | tnk3j    |
+| Athena                           |  Yes  |  Yes  |  Yes  |   No  | athena   |
+| Fighting Golf                    |  Yes  |  Yes  |  Yes  |   No  | fitegolf |
+| Ikari Warriors (US)              |  Yes  |  Yes  |  Yes  |   No  | ikari    |
+| Ikari Warriors (Japan)           |  Yes  |  Yes  |  Yes  |   No  | ikarijp  |
+| Ikari Warriors (Japan bootleg)   |  Yes  |  Yes  |  Yes  |   No  | ikarijpb |
+| Victory Road                     |  Yes  |  Yes  |  Yes  |   No  | victroad |
+| Dogou Souken                     |  Yes  |  Yes  |  Yes  |   No  | dogosoke |
+| Guerrilla War (US)               |  Yes  |  Yes  |  Yes  |   No  | gwar     |
+| Guevara (Japan)                  |  Yes  |  Yes  |  Yes  |   No  | gwarj    |
+| Guerrilla War (Version 1)        | No(1) |  Yes  |  Yes  |   No  | gwara    |
+| Guerrilla War (bootleg)          |  Yes  |  Yes  |  Yes  |   No  | gwarb    |
+| Bermuda Triangle (US)            |  Yes  |  Yes  |  Yes  |   No  | bermudat |
+| Bermuda Triangle (Japan)         |  Yes  |  Yes  |  Yes  |   No  | bermudaj |
+| Bermuda Triangle (US early versio|  Yes  |  Yes  |  Yes  |   No  | bermudaa |
+| World Wars (Japan)               |  Yes  |  Yes  |  Yes  |   No  | worldwar |
+| Psycho Soldier (US)              |  Yes  |  Yes  |Partial|   No  | psychos  |
+| Psycho Soldier (Japan)           |  Yes  |  Yes  |Partial|   No  | psychosj |
+| Chopper I                        |  Yes  |  Yes  |Partial|   No  | chopper  |
+| Koukuu Kihei Monogatari - The Leg|  Yes  |  Yes  |Partial|   No  | legofair |
+| Fighting Soccer                  |  Yes  |  Yes  |  Yes  |   No  | ftsoccer |
+| TouchDown Fever                  |  Yes  |  Yes  |  Yes  |   No  | tdfever  |
+| TouchDown Fever (Japan)          |  Yes  |  Yes  |  Yes  |   No  | tdfeverj |
+| Ikari III - The Rescue           |  Yes  |  Yes  |  Yes  |  Yes  | ikari3   |
+| P.O.W. - Prisoners of War (US)   |  Yes  |  Yes  |  Yes  |  Yes  | pow      |
+| Datsugoku - Prisoners of War (Jap|  Yes  |  Yes  |  Yes  |  Yes  | powj     |
+| SAR - Search And Rescue (World)  |  Yes  |  Yes  |  Yes  |  Yes  | searchar |
+| SAR - Search And Rescue (US)     |  Yes  |  Yes  |  Yes  |  Yes  | sercharu |
+| Street Smart (US version 2)      |  Yes  |  Yes  |  Yes  |  Yes  | streetsm |
+| Street Smart (US version 1)      |  Yes  |  Yes  |  Yes  |  Yes  | streets1 |
+| Street Smart (Japan version 1)   |  Yes  |  Yes  |  Yes  |  Yes  | streetsj |
+| Prehistoric Isle in 1930 (World) |  Yes  |  Yes  |  Yes  |   No  | prehisle |
+| Prehistoric Isle in 1930 (US)    |  Yes  |  Yes  |  Yes  |   No  | prehislu |
+| Genshi-Tou 1930's                |  Yes  |  Yes  |  Yes  |   No  | gensitou |
+| Super Stingray                   |  Yes  |   No  |   No  |  Yes  | sstingry |
+| Kyros                            |  Yes  |   No  |   No  |  Yes  | kyros    |
+| Time Soldiers (US Rev 3)         |  Yes  |  Yes  |  Yes  |  Yes  | timesold |
+| Time Soldiers (US Rev 1)         |  Yes  |  Yes  |  Yes  |  Yes  | timesol1 |
+| Battle Field (Japan)             |  Yes  |  Yes  |  Yes  |  Yes  | btlfield |
+| Sky Soldiers (US)                |  Yes  |  Yes  |  Yes  |  Yes  | skysoldr |
+| Gold Medalist                    |   No  |  Yes  |  Yes  |   No  | goldmedl |
+| Sky Adventure (US)               |  Yes  |  Yes  |  Yes  |   No  | skyadvnt |
+| Gang Wars (US)                   |  Yes  |  Yes  |  Yes  |  Yes  | gangwars |
+| Gang Wars (bootleg)              |  Yes  |  Yes  |  Yes  |  Yes  | gangwarb |
+| Super Champion Baseball          |  Yes  |  Yes  |  Yes  |   No  | sbasebal |
+| Champion Baseball                |  Yes  |  Yes  |  Yes  |  Yes  | champbas |
+| Champion Baseball (Japan)        | No(1) |  Yes  |  Yes  |  Yes  | champbbj |
+| Champion Baseball II             |   No  |  Yes  |  Yes  |  Yes  | champbb2 |
+| Exciting Soccer                  |  Yes  |  Yes  |  Yes  |   No  | exctsccr |
+| Exciting Soccer (alternate music)|  Yes  |  Yes  |  Yes  |   No  | exctscca |
+| Exciting Soccer (bootleg)        |  Yes  |  Yes  |  Yes  |   No  | exctsccb |
+| Exciting Soccer II               | No(1) |  Yes  |  Yes  |   No  | exctscc2 |
+| Scrambled Egg                    |  Yes  |  Yes  |  Yes  |  Yes  | scregg   |
+| Eggs                             |  Yes  |  Yes  |  Yes  |  Yes  | eggs     |
+| Big Pro Wrestling!, The          |  Yes  |  Yes  |  Yes  |  Yes  | bigprowr |
+| Tag Team Wrestling               |  Yes  |  Yes  |  Yes  |  Yes  | tagteam  |
+| Syusse Oozumou (Japan)           |  Yes  |  Yes  |  Yes  |   No  | ssozumo  |
+| Mysterious Stones                |  Yes  |  Yes  |  Yes  |  Yes  | mystston |
+| Bogey Manor                      |  Yes  | Close |  Yes  |   No  | bogeyman |
+| Mat Mania                        |  Yes  |  Yes  |  Yes  |  Yes  | matmania |
+| Exciting Hour                    |  Yes  |  Yes  |  Yes  |  Yes  | excthour |
+| Mania Challenge (set 1)          |  Yes  |  Yes  |  Yes  |  Yes  | maniach  |
+| Mania Challenge (set 2)          |  Yes  |  Yes  |  Yes  |  Yes  | maniach2 |
+| Renegade (US)                    |  Yes  |  Yes  |  Yes  |   No  | renegade |
+| Nekketsu Kouha Kunio-kun (Japan) |  Yes  |  Yes  |  Yes  |   No  | kuniokun |
+| Nekketsu Kouha Kunio-kun (Japan b|  Yes  |  Yes  |  Yes  |   No  | kuniokub |
+| Xain'd Sleena                    |  Yes  |  Yes  |  Yes  |  Yes  | xsleena  |
+| Xain'd Sleena (bootleg)          |  Yes  |  Yes  |  Yes  |  Yes  | xsleenab |
+| Solar Warrior                    |  Yes  |  Yes  |  Yes  |  Yes  | solarwar |
+| Battle Lane Vol. 5 (set 1)       |  Yes  |  Yes  |  Yes  |   No  | battlane |
+| Battle Lane Vol. 5 (set 2)       |  Yes  |  Yes  |  Yes  |   No  | battlan2 |
+| Battle Lane Vol. 5 (set 3)       |  Yes  |  Yes  |  Yes  |   No  | battlan3 |
+| Double Dragon (Japan)            |  Yes  |  Yes  |  Yes  |  Yes  | ddragon  |
+| Double Dragon (US)               |  Yes  |  Yes  |  Yes  |  Yes  | ddragonu |
+| Double Dragon (bootleg)          |  Yes  |  Yes  |  Yes  |  Yes  | ddragonb |
+| Double Dragon II - The Revenge   |  Yes  |  Yes  |  Yes  |  Yes  | ddragon2 |
+| Combatribes, The (US)            |  Yes  |  Yes  |  Yes  |   No  | ctribe   |
+| Combatribes, The (bootleg)       |  Yes  |  Yes  |  Yes  |   No  | ctribeb  |
+| Block Out (set 1)                |  Yes  |  Yes  |  Yes  |  Yes  | blockout |
+| Block Out (set 2)                |  Yes  |  Yes  |  Yes  |  Yes  | blckout2 |
+| Double Dragon 3 - The Rosetta Sto|  Yes  |  Yes  |  Yes  |   No  | ddragon3 |
+| Double Dragon 3 - The Rosetta Sto|  Yes  |  Yes  |  Yes  |   No  | ddrago3b |
+| Berzerk (set 1)                  |  Yes  |  Yes  | Yes(2)|  Yes  | berzerk  |
+| Berzerk (set 2)                  |  Yes  |  Yes  | Yes(2)|  Yes  | berzerk1 |
+| Frenzy                           |  Yes  |  Yes  | Yes(2)|  Yes  | frenzy   |
+| MegaTack                         |  Yes  |  Yes  |  Yes  |  Yes  | megatack |
+| Killer Comet                     |  Yes  |  Yes  |  Yes  |  Yes  | killcom  |
+| Challenger                       |  Yes  |  Yes  |  Yes  |  Yes  | challeng |
+| Kaos                             |  Yes  |  Yes  |  Yes  |  Yes  | kaos     |
+| Route 16                         |  Yes  |  Yes  |  Yes  |  Yes  | route16  |
+| Route 16 (bootleg)               |  Yes  |  Yes  |  Yes  |  Yes  | route16b |
+| Stratovox                        |  Yes  |  Yes  |  Yes  |  Yes  | stratvox |
+| Stratovox (bootleg)              |  Yes  |  Yes  |  Yes  |  Yes  | stratvxb |
+| Speak & Rescue                   |  Yes  |  Yes  |  Yes  |  Yes  | speakres |
+| T.T. Mahjong                     |  Yes  |  Yes  |  Yes  |  Yes  | ttmahjng |
+| Money Money                      |  Yes  |  Yes  |Partial|  Yes  | monymony |
+| Jack Rabbit (set 1)              |  Yes  |  Yes  |Partial|  Yes  | jackrabt |
+| Jack Rabbit (set 2)              |  Yes  |  Yes  |Partial|  Yes  | jackrab2 |
+| Jack Rabbit (special)            |  Yes  |  Yes  |Partial|  Yes  | jackrabs |
+| Nova 2001 (Japan)                |  Yes  |  Yes  |  Yes  |  Yes  | nova2001 |
+| Nova 2001 (US)                   |  Yes  |  Yes  |  Yes  |  Yes  | nov2001u |
+| Penguin-Kun Wars (US)            |  Yes  |  Yes  |  Yes  |  Yes  | pkunwar  |
+| Penguin-Kun Wars (Japan)         |  Yes  |  Yes  |  Yes  |  Yes  | pkunwarj |
+| Ninja Kid II (set 1)             |  Yes  |  Yes  |   No  |  Yes  | ninjakd2 |
+| Ninja Kid II (set 2)             |  Yes  |  Yes  |  Yes  |  Yes  | ninjak2a |
+| Ninja Kid II (set 3)             |  Yes  |  Yes  |  Yes  |  Yes  | ninjak2b |
+| Rad Action                       |  Yes  |  Yes  |  Yes  |  Yes  | rdaction |
+| Mutant Night                     |  Yes  |  Yes  |  Yes  |  Yes  | mnight   |
+| Ark Area                         |  Yes  |  Yes  |  Yes  |  Yes  | arkarea  |
+| Narc (rev 7.00)                  |  Yes  |  Yes  |  Yes  |  Yes  | narc     |
+| Narc (rev 3.20)                  |  Yes  |  Yes  |  Yes  |  Yes  | narc3    |
+| Trog (rev LA4 03/11/91)          |  Yes  |  Yes  |  Yes  |  Yes  | trog     |
+| Trog (rev LA3 02/14/91)          |  Yes  |  Yes  |  Yes  |  Yes  | trog3    |
+| Trog (prototype, rev 4.00 07/27/9|  Yes  |  Yes  |  Yes  |  Yes  | trogp    |
+| Smash T.V. (rev 8.00)            |  Yes  |  Yes  |  Yes  |  Yes  | smashtv  |
+| Smash T.V. (rev 6.00)            |  Yes  |  Yes  |  Yes  |  Yes  | smashtv6 |
+| Smash T.V. (rev 5.00)            |  Yes  |  Yes  |  Yes  |  Yes  | smashtv5 |
+| Smash T.V. (rev 4.00)            |  Yes  |  Yes  |  Yes  |  Yes  | smashtv4 |
+| High Impact Football (rev LA3 12/|  Yes  |  Yes  |  Yes  |  Yes  | hiimpact |
+| Super High Impact (rev LA1 09/30/|   No  |  Yes  |  Yes  |  Yes  | shimpact |
+| Strike Force (rev 1 02/25/91)    |  Yes  |  Yes  |  Yes  |  Yes  | strkforc |
+| Mortal Kombat (rev 5.0 T-Unit 03/|  Yes  |  Yes  |  Yes  |  Yes  | mk       |
+| Mortal Kombat (rev 1.0 08/08/92) |  Yes  |  Yes  |  Yes  |  Yes  | mkla1    |
+| Mortal Kombat (rev 2.0 08/18/92) |  Yes  |  Yes  |  Yes  |  Yes  | mkla2    |
+| Mortal Kombat (rev 3.0 08/31/92) |  Yes  |  Yes  |  Yes  |  Yes  | mkla3    |
+| Mortal Kombat (rev 4.0 09/28/92) |  Yes  |  Yes  |  Yes  |  Yes  | mkla4    |
+| Terminator 2 - Judgment Day (rev |  Yes  |  Yes  |  Yes  |  Yes  | term2    |
+| Total Carnage (rev LA1 03/10/92) |  Yes  |  Yes  |  Yes  |  Yes  | totcarn  |
+| Total Carnage (prototype, rev 1.0|  Yes  |  Yes  |  Yes  |  Yes  | totcarnp |
+| Mortal Kombat II (rev L3.1)      |  Yes  |  Yes  |  Yes  |  Yes  | mk2      |
+| Mortal Kombat II (rev L3.2 (Europ|  Yes  |  Yes  |  Yes  |  Yes  | mk2r32   |
+| Mortal Kombat II (rev L1.4)      |  Yes  |  Yes  |  Yes  |  Yes  | mk2r14   |
+| NBA Jam (rev 3.01 04/07/93)      |  Yes  |  Yes  |  Yes  |  Yes  | nbajam   |
+| NBA Jam (rev 2.00 02/10/93)      |  Yes  |  Yes  |  Yes  |  Yes  | nbajamr2 |
+| NBA Jam TE (rev 4.0 03/23/94)    |  Yes  |  Yes  |  Yes  |  Yes  | nbajamte |
+| NBA Jam TE (rev 1.0 01/17/94)    |  Yes  |  Yes  |  Yes  |  Yes  | nbajamt1 |
+| NBA Jam TE (rev 2.0 01/28/94)    |  Yes  |  Yes  |  Yes  |  Yes  | nbajamt2 |
+| NBA Jam TE (rev 3.0 03/04/94)    |  Yes  |  Yes  |  Yes  |  Yes  | nbajamt3 |
+| Mortal Kombat 3 (rev 2.1)        |  Yes  |  Yes  |  Yes  |  Yes  | mk3      |
+| Mortal Kombat 3 (rev 2.0)        |  Yes  |  Yes  |  Yes  |  Yes  | mk3r20   |
+| Mortal Kombat 3 (rev 1.0)        |  Yes  |  Yes  |  Yes  |  Yes  | mk3r10   |
+| Ultimate Mortal Kombat 3 (rev 1.2|  Yes  |  Yes  |  Yes  |  Yes  | umk3     |
+| Ultimate Mortal Kombat 3 (rev 1.1|  Yes  |  Yes  |  Yes  |  Yes  | umk3r11  |
+| WWF: Wrestlemania (rev 1.30)     |  Yes  |  Yes  |  Yes  |  Yes  | wwfmania |
+| 2 On 2 Open Ice Challenge (rev 1.|  Yes  |  Yes  |  Yes  |  Yes  | openice  |
+| NBA Maximum Hangtime (rev 1.0)   |  Yes  |  Yes  |  Yes  |  Yes  | nbamaxht |
+| Rampage: World Tour (rev 1.3)    |  Yes  |  Yes  |  Yes  |  Yes  | rmpgwt   |
+| Rampage: World Tour (rev 1.1)    |  Yes  |  Yes  |  Yes  |  Yes  | rmpgwt11 |
+| Jack the Giantkiller (set 1)     |  Yes  |  Yes  |  Yes  |  Yes  | jack     |
+| Jack the Giantkiller (set 2)     |  Yes  |  Yes  |  Yes  |  Yes  | jack2    |
+| Jack the Giantkiller (set 3)     |  Yes  |  Yes  |  Yes  |  Yes  | jack3    |
+| Treasure Hunt (Japan?)           |  Yes  |  Yes  |  Yes  |  Yes  | treahunt |
+| Zzyzzyxx (set 1)                 |  Yes  |  Yes  |  Yes  |  Yes  | zzyzzyxx |
+| Zzyzzyxx (set 2)                 |  Yes  |  Yes  |  Yes  |  Yes  | zzyzzyx2 |
+| Brix                             |  Yes  |  Yes  |  Yes  |  Yes  | brix     |
+| Freeze                           |  Yes  |  Yes  |  Yes  |  Yes  | freeze   |
+| Super Casino                     |  Yes  |  Yes  |  Yes  |  Yes  | sucasino |
+| Space Wars                       |  Yes  |  Yes  | Yes(2)|  Yes  | spacewar |
+| Barrier                          |  Yes  |  Yes  |  Yes  |  Yes  | barrier  |
+| Star Castle (version 3)          |  Yes  |  Yes  | Yes(2)|  Yes  | starcas  |
+| Star Castle (older)              |  Yes  |  Yes  | Yes(2)|  Yes  | starcas1 |
+| Tailgunner                       |  Yes  |  Yes  |  Yes  |  Yes  | tailg    |
+| Rip Off                          |  Yes  |  Yes  | Yes(2)|  Yes  | ripoff   |
+| Armor Attack                     |  Yes  |  Yes  |  Yes  |  Yes  | armora   |
+| War of the Worlds                |  Yes  | Close |  Yes  |  Yes  | wotw     |
+| Warrior                          |  Yes  |  Yes  | Yes(2)|  Yes  | warrior  |
+| Star Hawk                        |  Yes  |  Yes  |  Yes  |  Yes  | starhawk |
+| Solar Quest                      |  Yes  |  Yes  | Yes(2)|  Yes  | solarq   |
+| Boxing Bugs                      |  Yes  | Close |  Yes  |  Yes  | boxingb  |
+| Speed Freak                      |  Yes  |  Yes  |  Yes  |  Yes  | speedfrk |
+| Sundance                         |   No  |  Yes  |  Yes  |  Yes  | sundance |
+| Demon                            |  Yes  |  Yes  |  Yes  |  Yes  | demon    |
+| Cosmic Chasm (set 1)             |  Yes  |  Yes  |  Yes  |  Yes  | cchasm   |
+| Cosmic Chasm (set 2)             |  Yes  |  Yes  |  Yes  |  Yes  | cchasm1  |
+| Round-Up                         |  Yes  |  Yes  |  Yes  |  Yes  | roundup  |
+| Fitter                           |  Yes  |  Yes  |  Yes  |  Yes  | fitter   |
+| Pit, The                         |  Yes  |  Yes  |  Yes  |  Yes  | thepit   |
+| Intrepid (set 1)                 |  Yes  |  Yes  |  Yes  |  Yes  | intrepid |
+| Intrepid (set 2)                 |  Yes  |  Yes  |  Yes  |  Yes  | intrepi2 |
+| Port Man                         |  Yes  |  Yes  |  Yes  |  Yes  | portman  |
+| Super Mouse                      |  Yes  |   No  |  Yes  |  Yes  | suprmous |
+| Funny Mouse (bootleg?)           |  Yes  |   No  |  Yes  |  Yes  | suprmou2 |
+| Macho Mouse                      |  Yes  |   No  |  Yes  |  Yes  | machomou |
+| Bagman                           |  Yes  |  Yes  |Partial|  Yes  | bagman   |
+| Le Bagnard                       |  Yes  |  Yes  |Partial|  Yes  | bagnard  |
+| Bagman (Stern set 1)             |  Yes  |  Yes  |Partial|  Yes  | bagmans  |
+| Bagman (Stern set 2)             |  Yes  |  Yes  |Partial|  Yes  | bagmans2 |
+| Super Bagman                     |  Yes  |  Yes  |Partial|  Yes  | sbagman  |
+| Super Bagman (Stern)             |  Yes  |  Yes  |Partial|  Yes  | sbagmans |
+| Pickin'                          |  Yes  |  Yes  |  Yes  |  Yes  | pickin   |
+| Stinger                          |  Yes  |  Yes  |  Yes  |  Yes  | stinger  |
+| Scion                            |  Yes  |  Yes  |  Yes  |  Yes  | scion    |
+| Scion (Cinematronics)            |  Yes  |  Yes  |  Yes  |  Yes  | scionc   |
+| Wiz                              |  Yes  |  Yes  |  Yes  |  Yes  | wiz      |
+| Wiz (Taito)                      |  Yes  |  Yes  |  Yes  |  Yes  | wizt     |
+| Empire City: 1931 (bootleg?)     |  Yes  |  Yes  |  Yes  |  Yes  | empcity  |
+| Empire City: 1931 (Japan)        |  Yes  |  Yes  |  Yes  |  Yes  | empcityj |
+| Street Fight (Germany)           |  Yes  |  Yes  |  Yes  |  Yes  | stfight  |
+| Dynamite Duke                    |  Yes  |  Yes  |   No  |  Yes  | dynduke  |
+| Double Dynamites, The            |  Yes  |  Yes  |   No  |  Yes  | dbldyn   |
+| Raiden                           |  Yes  |  Yes  |  Yes  |  Yes  | raiden   |
+| Raiden (Alternate Hardware)      |  Yes  |  Yes  |  Yes  |  Yes  | raidena  |
+| Raiden (Korea)                   |  Yes  |  Yes  |  Yes  |  Yes  | raidenk  |
+| D-Con                            |  Yes  |  Yes  |  Yes  |   No  | dcon     |
+| Knuckle Joe (set 1)              |  Yes  |  Yes  |  Yes  |  Yes  | kncljoe  |
+| Knuckle Joe (set 2)              |  Yes  |  Yes  |  Yes  |  Yes  | kncljoea |
+| Cabal (US set 1)                 | No(1) |  Yes  |Partial|   No  | cabal    |
+| Cabal (US set 2)                 | No(1) |  Yes  |Partial|   No  | cabal2   |
+| Cabal (bootleg)                  |  Yes  |  Yes  |Partial|   No  | cabalbl  |
+| Toki (World set 1)               |  Yes  |  Yes  |  Yes  |  Yes  | toki     |
+| Toki (World set 2)               |  Yes  |  Yes  |  Yes  |  Yes  | tokia    |
+| JuJu Densetsu (Japan)            |  Yes  |  Yes  |  Yes  |  Yes  | tokij    |
+| Toki (US)                        |  Yes  |  Yes  |  Yes  |  Yes  | tokiu    |
+| Toki (bootleg)                   |  Yes  |  Yes  |  Yes  |  Yes  | tokib    |
+| Blood Bros.                      |  Yes  |  Yes  |  Yes  |  Yes  | bloodbro |
+| West Story                       |  Yes  |  Yes  |  Yes  |  Yes  | weststry |
+| Exerion                          |  Yes  | Close |  Yes  |  Yes  | exerion  |
+| Exerion (Taito)                  |  Yes  | Close |  Yes  |  Yes  | exeriont |
+| Exerion (bootleg)                |  Yes  | Close |  Yes  |  Yes  | exerionb |
+| Formation Z                      |  Yes  | Close |  Yes  |  Yes  | formatz  |
+| Aeroboto                         |  Yes  | Close |  Yes  |  Yes  | aeroboto |
+| City Connection (set 1)          |  Yes  |  Yes  |  Yes  |  Yes  | citycon  |
+| City Connection (set 2)          |  Yes  |  Yes  |  Yes  |  Yes  | citycona |
+| Cruisin                          |  Yes  |  Yes  |  Yes  |  Yes  | cruisin  |
+| Pinbo                            |  Yes  |  Yes  |  Yes  |  Yes  | pinbo    |
+| Pinbo (Strike)                   |  Yes  |  Yes  |  Yes  |  Yes  | pinbos   |
+| Psychic 5                        |  Yes  |  Yes  |  Yes  |   No  | psychic5 |
+| Ginga NinkyouDen                 |  Yes  |  Yes  |  Yes  |  Yes  | ginganin |
+| Cisco Heat                       |  Yes  |  Yes  |  Yes  |  Yes  | cischeat |
+| F1 Grand Prix Star               |  Yes  |  Yes  |  Yes  |  Yes  | f1gpstar |
+| Sky Fox                          |  Yes  |  Yes  |  Yes  |  Yes  | skyfox   |
+| Exerizer (Japan) (bootleg)       |  Yes  |  Yes  |  Yes  |  Yes  | exerizrb |
+| Argus                            |  Yes  |  Yes  |  Yes  |  Yes  | argus    |
+| Valtric                          |  Yes  |  Yes  |  Yes  |  Yes  | valtric  |
+| Butasan (Japan)                  |  Yes  |  Yes  |  Yes  |  Yes  | butasan  |
+| Momoko 120%                      |  Yes  |  Yes  |  Yes  |  Yes  | momoko   |
+| Legend of Makai (World)          |  Yes  |  Yes  |  Yes  |  Yes  | lomakai  |
+| Makai Densetsu (Japan)           |  Yes  |  Yes  |  Yes  |  Yes  | makaiden |
+| P-47 - The Phantom Fighter (World|  Yes  |  Yes  |  Yes  |  Yes  | p47      |
+| P-47 - The Freedom Fighter (Japan|  Yes  |  Yes  |  Yes  |  Yes  | p47j     |
+| Kick Off (Japan)                 |  Yes  |  Yes  |  Yes  |  Yes  | kickoff  |
+| Takeda Shingen (Japan)           |  Yes  |  Yes  |  Yes  |  Yes  | tshingen |
+| Astyanax, The                    |  Yes  |  Yes  |  Yes  |  Yes  | astyanax |
+| Lord of King, The (Japan)        |  Yes  |  Yes  |  Yes  |  Yes  | lordofk  |
+| Hachoo!                          |  Yes  |  Yes  |  Yes  |  Yes  | hachoo   |
+| Plus Alpha                       |  Yes  |  Yes  |  Yes  |  Yes  | plusalph |
+| Saint Dragon                     |  Yes  |  Yes  |  Yes  |  Yes  | stdragon |
+| Iga Ninjyutsuden (Japan)         |  Yes  |  Yes  |  Yes  |  Yes  | iganinju |
+| RodLand (World)                  |  Yes  |  Yes  |  Yes  |  Yes  | rodland  |
+| RodLand (Japan)                  |  Yes  |  Yes  |  Yes  |  Yes  | rodlandj |
+| 64th. Street - A Detective Story |  Yes  |  Yes  |  Yes  |  Yes  | 64street |
+| 64th. Street - A Detective Story |  Yes  |  Yes  |  Yes  |  Yes  | 64streej |
+| Earth Defense Force              |  Yes  |  Yes  |  Yes  |  Yes  | edf      |
+| Avenging Spirit                  |  Yes  |  Yes  |  Yes  |  Yes  | avspirit |
+| Phantasm (Japan)                 |  Yes  |  Yes  |  Yes  |  Yes  | phantasm |
+| Big Striker                      |  Yes  |  Yes  |  Yes  |  Yes  | bigstrik |
+| Chimera Beast                    |  Yes  |  Yes  |  Yes  |  Yes  | chimerab |
+| Cybattler                        |  Yes  |  Yes  |  Yes  |  Yes  | cybattlr |
+| Peek-a-Boo!                      |  Yes  |  Yes  |  Yes  |  Yes  | peekaboo |
+| Soldam (Japan)                   |  Yes  |  Yes  |  Yes  |  Yes  | soldamj  |
+| Rabio Lepus (Japan)              |  Yes  |  Yes  |  Yes  |  Yes  | rabiolep |
+| Rabbit Punch (US)                |  Yes  |  Yes  |  Yes  |  Yes  | rpunch   |
+| Super Volleyball (Japan)         |  Yes  |  Yes  |  Yes  |  Yes  | svolley  |
+| Super Volleyball (Korea)         |  Yes  |  Yes  |  Yes  |  Yes  | svolleyk |
+| Tail to Nose - Great Championship|  Yes  |  Yes  |  Yes  |   No  | tail2nos |
+| Super Formula (Japan)            |  Yes  |  Yes  |  Yes  |   No  | sformula |
+| Pipe Dream (Japan)               |  Yes  |  Yes  |  Yes  |  Yes  | pipedrm  |
+| Hatris (Japan)                   |  Yes  |  Yes  |  Yes  |  Yes  | hatris   |
+| Power Spikes (Korea)             |  Yes  |  Yes  |  Yes  |   No  | pspikes  |
+| Super Volley '91 (Japan)         |  Yes  |  Yes  |  Yes  |   No  | svolly91 |
+| Karate Blazers (World?)          |  Yes  |  Yes  |  Yes  |   No  | karatblz |
+| Karate Blazers (US)              |  Yes  |  Yes  |  Yes  |   No  | karatblu |
+| Spinal Breakers (World)          |  Yes  |  Yes  |Partial|   No  | spinlbrk |
+| Spinal Breakers (US)             |  Yes  |  Yes  |Partial|   No  | spinlbru |
+| Spinal Breakers (Japan)          |  Yes  |  Yes  |Partial|   No  | spinlbrj |
+| Turbo Force                      |  Yes  |  Yes  |  Yes  |   No  | turbofrc |
+| Aero Fighters                    |  Yes  |  Yes  |  Yes  |   No  | aerofgt  |
+| Aero Fighters (Turbo Force hardwa|  Yes  |  Yes  |  Yes  |   No  | aerofgtb |
+| Aero Fighters (Turbo Force hardwa|  Yes  |  Yes  |  Yes  |   No  | aerofgtc |
+| Sonic Wings (Japan)              |  Yes  |  Yes  |  Yes  |   No  | sonicwi  |
+| Sengoku Ace (Japan)              |  Yes  |  Yes  |  Yes  |   No  | sngkace  |
+| Gun Bird (Japan)                 |  Yes  |  Yes  |  Yes  |   No  | gunbird  |
+| Marine Boy                       |  Yes  |  Yes  |  Yes  |  Yes  | marineb  |
+| Changes                          |  Yes  |  Yes  |  Yes  |  Yes  | changes  |
+| Looper                           |  Yes  |  Yes  |  Yes  |  Yes  | looper   |
+| Springer                         |  Yes  |  Yes  |  Yes  |  Yes  | springer |
+| Hoccer (set 1)                   |  Yes  |  Yes  |  Yes  |  Yes  | hoccer   |
+| Hoccer (set 2)                   |  Yes  |  Yes  |  Yes  |  Yes  | hoccer2  |
+| Hopper Robo                      |  Yes  |  Yes  |  Yes  |  Yes  | hopprobo |
+| Wanted                           |  Yes  |  Yes  |  Yes  |  Yes  | wanted   |
+| Funky Bee                        |  Yes  |  Yes  |  Yes  |   No  | funkybee |
+| Sky Lancer                       |  Yes  |  Yes  |  Yes  |   No  | skylancr |
+| Zodiack                          |  Yes  | Close |  Yes  |  Yes  | zodiack  |
+| Dog Fight                        |  Yes  | Close |  Yes  |  Yes  | dogfight |
+| Moguchan                         |  Yes  |   No  |  Yes  |  Yes  | moguchan |
+| Percussor, The                   |  Yes  |  Yes  |  Yes  |  Yes  | percuss  |
+| Bounty, The                      |  Yes  |  Yes  |  Yes  |  Yes  | bounty   |
+| Espial (US?)                     |  Yes  |  Yes  |  Yes  |   No  | espial   |
+| Espial (Europe)                  |  Yes  |  Yes  |  Yes  |   No  | espiale  |
+| Vastar (set 1)                   |  Yes  |  Yes  |  Yes  |   No  | vastar   |
+| Vastar (set 2)                   |  Yes  |  Yes  |  Yes  |   No  | vastar2  |
+| Big Karnak                       |  Yes  |  Yes  |  Yes  |  Yes  | bigkarnk |
+| Splash!                          |  Yes  |  Yes  |  Yes  |  Yes  | splash   |
+| Biomechanical Toy (Unprotected)  |  Yes  |  Yes  |  Yes  |  Yes  | biomtoy  |
+| Berlin Wall, The (set 1)         |  Yes  |   No  |  Yes  |  Yes  | berlwall |
+| Berlin Wall, The (set 2)         |  Yes  |   No  |  Yes  |  Yes  | berlwalt |
+| Great 1000 Miles Rally           |  Yes  |  Yes  |  Yes  |  Yes  | gtmr     |
+| Great 1000 Miles Rally (Evolution|  Yes  |  Yes  |  Yes  |  Yes  | gtmre    |
+| Gals Panic                       |  Yes  |  Yes  |  Yes  |  Yes  | galpanic |
+| Air Buster (Japan)               |  Yes  |  Yes  |  Yes  |  Yes  | airbustr |
+| Hana Awase (Flower Matching)     |  Yes  |  Yes  |  Yes  |  Yes  | hanaawas |
+| Thundercade / Twin Formation     |  Yes  |  Yes  |Partial|  Yes  | tndrcade |
+| Tokusyu Butai UAG (Japan)        |  Yes  |  Yes  |Partial|  Yes  | tndrcadj |
+| Twin Eagle (Japan)               |  Yes  |  Yes  |Partial|  Yes  | twineagl |
+| DownTown                         |  Yes  |  Yes  |Partial|  Yes  | downtown |
+| U.S. Classic                     |  Yes  |   No  |Partial|  Yes  | usclssic |
+| Caliber 50                       |  Yes  |  Yes  |Partial|  Yes  | calibr50 |
+| Dragon Unit / Castle of Dragon   |  Yes  |  Yes  |Partial|  Yes  | drgnunit |
+| Arbalester                       |  Yes  |  Yes  |Partial|  Yes  | arbalest |
+| Meta Fox                         |  Yes  |  Yes  |Partial|  Yes  | metafox  |
+| Blandia [Prototype]              |  Yes  |  Yes  |Partial|  Yes  | blandia  |
+| Zing Zing Zip                    |  Yes  |  Yes  |Partial|  Yes  | zingzip  |
+| War of Aero - Project MEIOU      |  Yes  |  Yes  |Partial|  Yes  | wrofaero |
+| Oh My God! (Japan)               |  Yes  |  Yes  |  Yes  |  Yes  | ohmygod  |
+| Power Instinct (USA) [bootleg]   |  Yes  |  Yes  |  Yes  |  Yes  | powerins |
+| Shanghai                         |   No  |  Yes  |  Yes  |  Yes  | shanghai |
+| Shanghai III (Japan)             |  Yes  |  Yes  |  Yes  |  Yes  | shangha3 |
+| Hebereke no Popoon (Japan)       |  Yes  |  Yes  |  Yes  |  Yes  | heberpop |
+| Blocken (Japan)                  |  Yes  |  Yes  |  Yes  |  Yes  | blocken  |
+| Rough Ranger (v2.0, Sharp Image l|  Yes  |  Yes  |Partial|  Yes  | rranger  |
+| Hard Head                        |  Yes  |  Yes  |Partial|  Yes  | hardhead |
+| Hard Head (Bootleg)              |  Yes  |  Yes  |Partial|  Yes  | hardhedb |
+| Gun Dealer (set 1)               |  Yes  |  Yes  |  Yes  |  Yes  | gundealr |
+| Gun Dealer (set 2)               |  Yes  |  Yes  |  Yes  |  Yes  | gundeala |
+| Yam! Yam!?                       |  Yes  |  Yes  |  Yes  |  Yes  | yamyam   |
+| Wise Guy                         |  Yes  |  Yes  |  Yes  |  Yes  | wiseguy  |
+| Bombjack Twin                    |  Yes  |  Yes  |  Yes  |  Yes  | bjtwin   |
+| Space Firebird (Nintendo)        |  Yes  | Close |Partial|  Yes  | spacefb  |
+| Space Firebird (Gremlin)         |  Yes  | Close |Partial|  Yes  | spacefbg |
+| Space Firebird (bootleg)         |  Yes  | Close |Partial|  Yes  | spacefbb |
+| Space Bird (bootleg)             |  Yes  | Close |Partial|  Yes  | spacebrd |
+| Space Demon                      |  Yes  | Close |Partial|  Yes  | spacedem |
+| Blue Print (Midway)              |  Yes  |  Yes  |  Yes  |  Yes  | blueprnt |
+| Blue Print (Jaleco)              |  Yes  |  Yes  |  Yes  |  Yes  | blueprnj |
+| Saturn                           |  Yes  |  Yes  |  Yes  |  Yes  | saturn   |
+| Omega Race                       |  Yes  |  Yes  |  Yes  |  Yes  | omegrace |
+| D-Day                            |  Yes  | Close |  Yes  |  Yes  | dday     |
+| D-Day (Centuri)                  |  Yes  | Close |  Yes  |  Yes  | ddayc    |
+| Leprechaun                       |  Yes  |  Yes  |  Yes  |  Yes  | leprechn |
+| Pot of Gold                      |  Yes  |  Yes  |  Yes  |  Yes  | potogold |
+| Hexa                             |  Yes  |  Yes  |  Yes  |  Yes  | hexa     |
+| I, Robot                         |  Yes  |  Yes  |  Yes  |   No  | irobot   |
+| Spiders (set 1)                  |  Yes  |  Yes  |   No  |   No  | spiders  |
+| Spiders (set 2)                  |  Yes  |  Yes  |   No  |   No  | spiders2 |
+| Space Tactics                    |  Yes  |  Yes  |   No  |  Yes  | stactics |
+| Exterminator                     |  Yes  |  Yes  |  Yes  |  Yes  | exterm   |
+| Shark Attack                     |  Yes  |  Yes  |  Yes  |  Yes  | sharkatt |
+| King of Boxer (English)          |  Yes  |  Yes  |  Yes  |  Yes  | kingofb  |
+| Ring King (set 1)                |  Yes  |  Yes  |  Yes  |  Yes  | ringking |
+| Ring King (set 2)                | No(1) |  Yes  |  Yes  |  Yes  | ringkin2 |
+| Ring King (set 3)                |  Yes  |  Yes  |  Yes  |  Yes  | ringkin3 |
+| Zero Zone                        |  Yes  |  Yes  |  Yes  |  Yes  | zerozone |
+| Speed Ball                       |  Yes  |  Yes  |  Yes  |  Yes  | speedbal |
+| Sauro                            |  Yes  | Close |  Yes  |  Yes  | sauro    |
+| Ambush                           |  Yes  |  Yes  |  Yes  |  Yes  | ambush   |
+| Star Cruiser                     |  Yes  |  Yes  | Yes(2)|  Yes  | starcrus |
+| Goindol                          |  Yes  |  Yes  |  Yes  |  Yes  | goindol  |
+| Homo                             |  Yes  |  Yes  |  Yes  |  Yes  | homo     |
+| Meteoroids                       |  Yes  |  Yes  |  Yes  |  Yes  | meteor   |
+| Aztarac                          |  Yes  |  Yes  |  Yes  |  Yes  | aztarac  |
+| Mole Attack                      |  Yes  |  Yes  |  Yes  |  Yes  | mole     |
+| Got-Ya (12/24/1981, prototype?)  |  Yes  |  Yes  | Yes(2)|  Yes  | gotya    |
+| Mr. Jong (Japan)                 |  Yes  |  Yes  |  Yes  |  Yes  | mrjong   |
+| Crazy Blocks                     |  Yes  |  Yes  |  Yes  |  Yes  | crazyblk |
+| Poly-Play                        |  Yes  |  Yes  |  Yes  |  Yes  | polyplay |
+| Mermaid                          |  Yes  |  Yes  |  Yes  |  Yes  | mermaid  |
+| Rougien                          |  Yes  |  Yes  |  Yes  |  Yes  | rougien  |
+| Magix                            |  Yes  |  Yes  |Partial|  Yes  | magix    |
+| Royal Mahjong                    |  Yes  |  Yes  |  Yes  |  Yes  | royalmah |
+| Hang-On Jr.                      |  Yes  |  Yes  |  Yes  |  Yes  | hangonjr |
+| Transformer                      |  Yes  |  Yes  |  Yes  |  Yes  | transfrm |
+| Riddle of Pythagoras (Japan)     |  Yes  |  Yes  |  Yes  |  Yes  | ridleofp |
++----------------------------------+-------+-------+-------+-------+----------+
+
+(1) There are variants of the game (usually bootlegs) that work correctly
+(2) Needs samples provided separately
+

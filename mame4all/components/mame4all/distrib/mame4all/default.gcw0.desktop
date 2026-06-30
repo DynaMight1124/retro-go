@@ -1,0 +1,7 @@
+[Desktop Entry]
+Name=mame4all
+Comment=Multiple Arcade Machine Emulator
+Exec=mame.dge
+Icon=icon
+Categories=emulators;
+X-OD-Manual=readme.txt

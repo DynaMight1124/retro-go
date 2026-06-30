@@ -1,0 +1,13 @@
+[sections:mame_extra]
+entries:
+    .sbss+
+
+[scheme:mame_psram]
+entries:
+    bss -> extern_ram
+    mame_extra -> extern_ram
+
+[mapping:mame4all]
+archive: libmame4all.a
+entries:
+    * (mame_psram)

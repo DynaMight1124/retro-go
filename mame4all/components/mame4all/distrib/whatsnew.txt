@@ -1,0 +1,324 @@
+MAME4ALL GCW0 1.2 (04/01/2014)
+------------------------------
+	Added: little hero in m62.cpp driver (from Mame095).
+	Added: Snapshot key with L+B.
+	Fixed: directory problem due to arg passsed to mame (now static variables are used).
+	Fixed: region1 rom added for Toki(JP) in toki.cpp driver and also fix sound.
+	Fixed: graphics glitches for Ghosts'n Goblins in tilemap.cpp (certainly fix others games).
+	Fixed: Various fixes and add Ken-Go,Cosmic Cop in m72.cpp driver, but sound is still bad and games are slow :(.
+
+	Added: history.dat  (from A380 Slaanesh Native version).
+	Fixed: Avengers in in lwings.cpp driver (from A320 Slaanesh Native version).
+	Updated: Change Jackal cpu frequency (from A380 Slaanesh Native version).
+
+MAME4ALL GCW0 1.1 (25/12/2013)
+------------------------------
+	Added: video depth option
+	Added: Fame core for 68000 CPU (just choose it as option, thanks Slaanesh for help to add it in my OD version)
+	Added: neomame executable
+	Added: Analog joystick management for gcw0
+	Added: Pirate Pete and Jungle Hunt (Brazil) from Mame 0.68
+	Added: Metal Slug X, Garou, King Of Fighter 99, Captain Tomaday because they were not in the neogeo list
+	Added: m90 driver, added games Bomber Man World, BomberMan, Dynablaster, Hasamu (from Mame 037b8 et 078)
+	Added: Space Cruiser in taitosj from Mame 0.82
+	Fixed: bug of SDL_Init after video mode set
+	Fixed: Optimize some functions
+	Fixed: Fix bug (seg fault) when leaving game to return to menu (L+R+START)
+	Fixed: bug (seg fault) for mk3 game
+	Fixed: z80 speed for neogeo driver according to last Mame version
+	Fixed : Boscodian speed according to last Mame version
+	Fixed : Bakutotsu Kijuutei is now working (namcos1 driver)
+	Updated: Change L & R to Left/Right for game browsing
+	Updated: Change LockAudio for mutex management
+	Updated: button configuration (B/A/Y/X for #1..4 now)
+	Updated: Change video blitting, now, just using a direct video surface, no more layer
+	updated: Thunder Cross & Thunder Cross (Japan) now work correctly
+	updated: FireTrap now works correctly (from Mame 0.64 8751 protection simulation)
+	updated: Kick Start Wheelie King now works correctly (from Mame 0.68)
+	updated: port settings in taitosj driver (from Mame 0.68)
+	updated: The Bounty now works correctly (from Mame 0.68)
+	updated: Change galaga cpu frequency to 3.072 Mhz
+	updated: Add sound to zaccaria driver (from Mame 0.56)
+	updated: Aeroboto and FormationZ now works correctly (from Mame 0.68) but you need last rom set (prom roms are needed).
+	updated: Fixed colors and other things in Arabian (from Mame 0.37b16)
+	updated: Fixed colors in World Tennis (from Mame 0.37b16)
+	updated: Fixed colors in battle Lane (from Mame 0.37b16)
+	Updated: Change L & R to Left/Right for game options
+	Updated: Only one OPK file instead of multiple dge files
+	Updated: Add samples for some games in opk file
+	Updated: Add artwork for some games in opk file
+	Updated: remove unused flags in driver structure
+	
+	Added: Combat Hawk from Mame 0.115 (same drivers as 'Bank Panic' and similar kind of game) (from A320 Slaanesh Native version).
+	Added: Mermaid collision detection from Mame 0.125 to make game fully playable. Also added Rougien, a neat very 80's space game (from A320 Slaanesh Native version).
+	Added: Hang-On Jr, Transformer and Riddle of Pythagoras to VectSega from Mame 0.37b16 (from A320 Slaanesh Native version).
+	Added: M92 module. The following games now work: Gunforce, Blade Master, Lethal Thunder, Undercover Cops, Mystic Riders, Major Title 2, Hook, R-Type Leo, In the Hunt, Ninja Baseball Batman and associated clones. (from A320 Slaanesh Native version).
+	Fixed: Jumpshot (and add ShoottheBull) in pacman driver (from A320 Slaanesh Native version).
+	Fixed: KiKi KaiKai in mexico86 driver (from A320 Slaanesh Native version).
+	Updated: sn76496 noise feedback chaned to 0x14002 (from A320 Slaanesh Native version)
+	Updated: Ali Baba colors, will make use of later versions of the ROM (>= Mame 0.79) to display the correct colors (from A320 Slaanesh Native version)
+	Updated: Green Beret and Mr Goemon graphics rendering. Should be perfect now (from A320 Slaanesh Native version)
+	Updated: Time Pilot graphics rendering. Perfect emulation now (from A320 Slaanesh Native version)
+	Updated: Popeye (set 1 & 2). Decrypted from Mame 0.53 (from A320 Slaanesh Native version)
+	Updated: Yie Ar Kung Fu speech is now correct (from A320 Slaanesh Native version)
+	Updated: Wiz for the correct background color (from A320 Slaanesh Native version)
+	Updated: Bank Panic CPU and sound frequencies (from A320 Slaanesh Native version)
+	Updated: vlm5030 speech generator from Mame 0.66. Fixes speech/effects in many games (from A320 Slaanesh Native version)
+	Updated: Crazy Balloon. Imrpoved sound (from A320 Slaanesh Native version)
+	Updated: Improved handling of AY8910 for FM sound chips that use it (ie. ym2203, ym2608 and ym2610) (from A320 Slaanesh Native version)
+	Updated: World Cup 90 now has correct sound (ie. ym2203, ym2608 and ym2610) (from A320 Slaanesh Native version)
+	updated: Sunset Riders protection issues from Mame 0.81. Should be more playable now (from A320 Slaanesh Native version)
+	updated: Nintendo 8080 games: Sheriff, Bandido, Space Fever and Helifire now have sound (from A320 Slaanesh Native version)
+	updated: DISCRETE SOUND from MAME 0.81 which allows many more games to have DISCRETE sound now (from A320 Slaanesh Native version)
+	updated: Night Driver. Now with sound and flashing screen on crash from Mame 0.89 (from A320 Slaanesh Native version)
+	Updated: chqflag.cpp driver. Chequered Flag now working (from A320 Slaanesh Native version).
+	Updated: toki.cpp driver from Mame 0.37b16. Toki now working  (from A320 Slaanesh Native version).
+
+MAME4ALL OD 1.0 (21/10/2012)
+----------------------------
+	Initiale release
+
+MAME4ALL 2.7 (30/04/2012)
+-------------------------
+- Some assembly optimizations.
+- WIZ: Sometimes MMU-HACK was not activated. Solved with wARM v2.
+- CAANOO: No more lock-ups when exiting.
+- CAANOO: Added wARM v2. Thanks to Notaz.
+
+MAME4ALL 2.6 (09/04/2011)
+-------------------------
+- Added WIZ TV-Out support.
+- Added CAANOO port (based on Simon port).
+
+MAME4ALL 2.5 (09/03/2010)
+-------------------------
+- Added volume control to the frontend. Also the default volume is lowered down.
+- Fixed memory bug with games containing multiple FM sound systems. This stops some games crashing on exit.
+- New option to enable DRZ80 only for the sound CPUs. Improves the compatibility of DRZ80.
+  It is automatically enabled to gain speed in several games (e.g. several Capcom, Sega and Midway games).
+- Several other fixes taken from Slaanesh code (GP32 and Dingoo ports).
+- Added new skins from GP32 and Dingoo ports (by Antiriad and Slaanesh).
+- Added script to use 64 MB of additional virtual memory (swap file on the SD card).
+  It will reduce the life of the SD card. Use at your own risk!.
+- GP2X: Upper memory is used as primary memory for all memory allocations to avoid lock-ups due to
+  memory management bugs. Not used for the Neo·Geo executable (to be able to run the heaviest games).
+- WIZ: Added support for hardware timer. Not enabled yet (it seems to slow down the emulator a bit).
+- Source code clean-up to avoid port definitions in the common part. Also improved makefiles are created.
+- Preliminary integration of the ARMNEC core (created by Oopsware).
+  Some games start to run but nothing playable yet. Disabled for now.
+
+MAME4ALL 2.4 (05/08/2009)
+-------------------------
+GP2X WIZ version improvements:
+- Added full image scaling (Rampage, Popeye, Super Sprint, etc).
+  Horizontal scaling with linear filtering is still used internally when applicable.
+- More Neo·Geo games are playable, e.g. Art of Fighting 3, Fatal Fury and Pulstar.
+  Still some games run in the GP2X and not in the WIZ due to lack of memory.
+  (blazstar, kof96, mslug2, ninjamas, ragnagrd, rbff1 and shocktro)
+- Upper memory is used as primary memory for all memory allocations. If the upper memory 
+  is full, the Linux memory is used instead. Strangely the emulator is faster using this
+  approach and it avoids lock-ups.
+- No more lock-ups when exiting from games to the frontend (e.g. Out Run, Shinobi, etc).
+
+MAME4ALL 2.3 (11/07/2009)
+-------------------------
+Changes by Franxis:
+- WIZ: Added VSync option. Thanks to Exophase.
+- WIZ: 120 Hz video mode is used to solve issues with latest firmware 1.1.0 and to improve the performance with VSync
+  option enabled. Also the diagonal line is less noticeable. Thanks Exophase and Notaz for the pollux_set library.
+- WIZ: Replaced MMUHack by wARM kernel module. Thanks to Notaz.
+- WIZ: Added option to enable RAM tweaks to gain more speed. Thanks to Notaz for the pollux_set library.
+- WIZ: The option to fix completely the diagonal line is now accesible in the "Video Aspect" menu.
+- WIZ: More upper memory is available because the video frame-buffers are placed in the kernel part of the upper memory
+  (located at 0x2A00000).
+- Improved controls: Defender, Stargate, Vindicators, Battle Zone, Sarge, Assault, TNK III, Ikari Warriors,
+  Victory Road, Guerrilla War, Bermuda Triangle, Heavy Barrel, Midnight Resistance, Robotron, Inferno, Splat!,
+  Forgotten Worlds, Gondomania, Mad Planets, Top Gunner, Tron, Kozmik Kroozr, Discs of Tron, Crater Raider,
+  Zwackery, Search and Rescue, Ikari III, Time Soldiers, Battle Field, Aztarac, Black Widow, Rescue Rider,
+  Crazy Climber 2, Bandido, Sheriff, Smash T.V., Total Carnage, Wild Western, Front Line, The Tin Star, Mars,
+  Rescue, Minefield, Lost Tomb, Space Dungeon, The Return of Ishtar, Crazy Climber, Cloak & Dagger, Fire Trap,
+  Krull, Screw Loose, Karate Champ.
+- Fixed crashes in Midway games using TMS34010 CPU (caused by unaligned memory accesses). Also the CPU frequencies have
+  been tweaked to gain speed.
+- Added access to the profiler (L+MENU) and the FPS counter (R+SELECT).
+
+Changes by Slaanesh:
+- New romsets added: Momoko 120% (momoko), Fire Truck (firetrk), Fairyland Story (flstory), Fairyland Story (Japan) (flstoryj),
+  Kuri Kinton (World) (kurikint), Kuri Kinton (prototype) (kurikina), Play Girls (plgirls), Play Girls 2 (plgirls2),
+  Cuby Bop (cubybop), Tube-It (tubeit), Raimais (Japan) (raimais).
+- Improved sound in Taito L-System drivers. This adds sounds to some games where it was previously missing (ie. Fighting Hawk).
+- Sound improved in X-Men. Added K05439 sound CPU support.
+
+MAME4ALL 2.2 (13/06/2009)
+-------------------------
+Changes by Franxis:
+- New timers system based on integers instead of floats. This gives more performance (10% to 25% depending on the game)!.
+  I have been working on it for months and finally it works. Please report any posible bug.
+- Removed M72 sound hack, it is not needed now, M72 games run full-speed with the new timers system.
+- Optimizations in the sound cores (mixing and clipping).
+- Neo·Geo drivers are not compiled in the main executable, they are only compiled in the 'neomame' executable.
+- Some other tweaks to decrease the size of the executables.
+- Fixed the icon to be correctly shown in GP2X and WIZ latest firmwares.
+- WIZ: Added option to use 11 KHz and 15 KHz sound. The WIZ Linux port doesn't support such frequencies yet.
+  They are really converted to 22 KHz during sound playback. Anyway more performance is gained.
+
+Changes by Slaanesh:
+- Added new romsets from MAME 0.37b16:
+  Knuckle Joe (set 1) (kncljoe)
+  Knuckle Joe (set 2) (kncljoea)
+- Updated Taito F2 driver. Sprite scaling for Dead Connection and others.
+- Improved sound in Rygar. Still not perfect.
+- Updated Blockout driver. Still crashes at bonus round.
+
+MAME4ALL 2.1 (31/05/2009)
+-------------------------
+- GP2X WIZ version improvements:
+  Added MMU Hack kernel module by Notaz. It gives more performance.
+  Added more CPU frequencies selectable in the frontend.
+  MENU button is fire button in rotated video mode.
+  Option to draw the screen rotated to fix the diagonal line but with impact in the performance.
+- Some optimizations and bug-fixes in the timers.
+- Less frame-skip is applied (changed the threshold to consider full speed in the auto-frameskip code, from 99% to 92%).
+- Slaanesh added discrete sound system. So far only Canyon Bomber has been updated. It now has sound but it is slow.
+
+MAME4ALL 2.0 (16/05/2009)
+-------------------------
+- GP2X WIZ version added:
+  + Faster than the GP2X version.
+  + It contains some specific features, such as horizontal scaling with linear filtering in 16 bit color mode.
+  Thanks to EvilDragon for sending me the development unit from GPH.
+  Thanks to Puck2099 for all the information and his Pico library.
+  Thanks to Orkie for all the help and his Castor library.
+  Thanks to Exophase for the MMU hack library.
+  Thanks to Pickle and KungPhoo for all the information about the sound.
+  Thanks to Rlyeh for the GP2X minimal library, taken as a base for the WIZ code.
+  Thanks to Zenzuke for the WIZ artwork.
+- All source code files related to each of the drivers are compiled together to allow the compiler
+  to improve the code location and to have better cache usage. Some games run faster now.
+- Fixed a bug in the auto-frameskip code. In some games the auto frame-skip was incremented without
+  reason due to rounding issues (99% - 100%).
+- Double precision float is replaced by single precision in several parts of the code. Nice speed increase.
+- Better compiler options. Everything is a little faster now.
+- Several internal changes and source code clean-up. Smaller binaries.
+- Hack in the CPU frequency clock in Mortal Kombat. Running a lot faster now.
+- Hack in the M72 games sound (Hammerin' Harry, etc). Digitized sound disabled with the fast sound option.
+  Running a lot faster now.
+- Slaanesh added support for some Argus games (MAME 0.37b11): 
+  Argus (argus)
+  Butasan (Japan) (butasan)
+  Valtric (valtric)
+
+MAME4ALL 1.6 (28/12/2008)
+-------------------------
+- ASM cores are selected automatically (according to an internal compatibility list).
+- Several optimizations and hacks have been implemented in the sound cores (selectable with the fast sound option).
+- Changes in the Neo·Geo memory management to be able to play more games with the limited GP2X RAM (64 MB).
+  Also a separated executable is internally called to play the Neo·Games (to gain more RAM).
+  New playable games: aof3,blazstar,fatfury3,kizuna,kof95,kof96,mslug2,ninjamas,pulstar,ragnagrd,rbff1,samsho3,shocktro,whp.
+- Raster effects are disabled in some of the Neo·Geo games to gain speed.
+- Optimizations in M72 games (R-Type, Hammerin' Harry, Ninja Spirit, etc).
+- Several optimizations in memory handlers, sprites, tilemaps, timers and CPU interfaces.
+- Sound fixed in some games (e.g. Frogger). Also some hang ups are solved.
+- Psycho Nicks Oscar fixed.
+
+MAME4ALL 1.5 (15/11/2008)
+-------------------------
+Changes by Franxis:
+- Several optimizations in the FM cores and the sound mixer.
+- Jarek YM2151 core replaced by Tatsuyuki's one (less accurate but faster).
+- Maximum frameskip in auto mode set to 7 (to be able to play correctly the heaviest games).
+- Fixed crashes using Sync Off option (manual frameskip without speed limiter).
+
+Changes by Slaanesh:
+- New Deniam games added (MAME 0.37b6):
+  + Logic Pro (logicpro)
+  + Logic Pro 2 (Japan) (logicpr2)
+  + Karian Cross (karianx)
+
+MAME4ALL 1.4 (04/09/2008)
+-------------------------
+Changes by Headoverheels:
+- Fixed graphic priority in Xain'd Sleena.
+- Added 7 new romset from MAME 0.37b7:
+  + Batsugun Special Ver. (batugnsp)
+  + Exerizer (Japan) (bootleg) (exerizrb)
+  + Mahou Daisakusen (Japan) (mahoudai)
+  + Pipi & Bibis / Whoopee (Japan) [bootleg ?] (pipibibi)
+  + Shippu Mahou Daisakusen (Japan) (shippumd)
+  + Sky Fox (skyfox)
+  + Truxton II / Tatsujin II / Tatsujin Oh (Japan) (tatsujn2)
+
+Changes by Slaanesh:
+Use Cyclone for M68010 as well as M68000 CPUs.
+This gives a good speed up for games such as Gauntlet, Marble Madness and other Atari games.
+
+Changes by Franxis:
+Raiden CPU frequency fixed (reduced from 20 to 10 MHz). Still very slow.
+
+MAME4ALL 1.3 (05/04/2008)
+-------------------------
+Changes by Headoverheels:
+- New Gaelco games added (MAME 0.37b7): Big Karnak (bigkarnk) and Biomechanical Toy (biomtoy).
+- New SunA 8 bit games added (MAME 0.37b15): Hard Head (hardhead), Hard Head (Bootleg) (hardhedb) and Rough Ranger (rranger).
+- Optimizations in Xain'd Sleena.
+- Fixed the NEC cpu bug that caused slowdowns in Raiden (MAME 0.37b15).
+- Fixed some bugs in the I86/NEC cpu emulation. This includes raster effects problems in Geostorm and the 99 credits bug in Lethal Thunder (MAME 0.66).
+
+Changes by Franxis:
+- Cheats support added.
+- Auto-fire support. Thanks to the code by AGAWA Koji.
+- Jackal has been corrected.
+
+Changes by Slaanesh:
+- Optimizations in Commando (now it uses tilemaps).
+
+MAME4ALL 1.2 (18/03/2008)
+-------------------------
+Another bug fix version:
+- The random games launching problem has been corrected.
+- Random problems with USB joypads should be gone.
+- The four players can be controlled with the GP2X joypad.
+- The coinage and start buttons of the four players can be controlled with the GP2X joypad (see readme.txt).
+- Problem with Namco System 1 games has been solved.
+- The vector games visualization is improved using antialias and translucency.
+- Fixed screen orientation in Dodonpachi and Dangun Feveron.
+
+MAME4ALL 1.1 (16/03/2008)
+-------------------------
+Bug fix version:
+- Improved the DrZ80 compatibility. A lot of new games are compatible (Neo·Geo games, Bubble Bobble, Tokio, etc).
+- High Scores support. Thanks to PalMAME for the hiscore.dat file.
+- Fixed the video output in the vector games.
+- Fixed the video orientation in the Bubble Bobble bootleg version (Bobble Bobble).
+- Bubble Bobble can be played fullspeed now thanks to the DrZ80 core. I recommend to use the bootleg versions
+  (Bobble Bobble and Super Bubble Bobble) because the emulation is faster.
+- New great skins for the menu by Pedator.
+
+MAME4ALL 1.0 (11/03/2008)
+-------------------------
+The following things have been changed to the version shown on the RetroMadrid 2008 fair:
+- No more lock-ups.
+- Configuration files per game.
+- The sound volume can be changed in rotated modes (VolUp or VolDown + START).
+- The sound volume is not reset after a pause.
+- Documentation added.
+
+MAME4ALL Private Beta (08/03/2008)
+----------------------------------
+This port has been first shown in the RetroMadrid 2008 fair on 8th of march in Madrid (Spain) (www.retromadrid.es):
+- Based on MAME 0.37b5.
+- Support for 2240 romsets.
+- Compatible with GP2X F100 and F200.
+- Support for up to 4 USB joypads.
+- Full 64 MB RAM support.
+- GP2X clock: 66 to 300 MHz.
+- Video depth: auto, 8 bit and 16 bit.
+- Video modes: standard, scaled, 4:3, rotated, border and TATE.
+- Sound options: 11 to 44 KHz (mono and stereo).
+- Underclock and overclock supported.
+- Selectable Cyclone and DRZ80 ASM cores.
+- Compatible with TV-Out (PAL and NTSC).
+- RAM tweaks integrated.
+- Only one executable (console based) with a separate frontend to select the games.
+- Access to the original MAME GUI.
+- Better performance than the previous port in a lot of games.

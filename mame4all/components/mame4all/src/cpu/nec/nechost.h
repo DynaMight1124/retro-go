@@ -1,0 +1,18 @@
+#ifdef __cplusplus
+extern "C" {
+#endif
+/*****************************************************************************/
+/* host dependent types                                                      */
+
+#define BIGCASE
+
+#include "osd_cpu.h"
+
+typedef char BOOLEAN;
+
+typedef UINT8 BYTE;
+typedef UINT16 WORD;
+typedef UINT32 DWORD;
+#ifdef __cplusplus
+}
+#endif

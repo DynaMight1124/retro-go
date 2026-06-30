@@ -1,0 +1,139 @@
+# Define compilation type
+#OSTYPE=msys
+#OSTYPE=oda320
+OSTYPE=gcw0
+
+ifeq ($(TARGET),)
+TARGET = mame
+# TARGET = neomame
+endif
+
+# set this the operating system you're building for
+# (actually you'll probably need your own main makefile anyways)
+# MAMEOS = msdos
+MAMEOS = odx
+
+# extension for executables
+# EXE = .exe
+EXE =
+
+# CPU core include paths
+VPATH=src $(wildcard src/cpu/*)
+
+# define regarding OS, which compiler, linker and utilities to use
+ifeq "$(OSTYPE)" "msys"	
+TOOLCHAIN = /c/MinGW32
+CC          = $(TOOLCHAIN)/bin/gcc
+CPP         = $(TOOLCHAIN)/bin/gcc
+LD          = $(TOOLCHAIN)/bin/gcc
+else
+
+ifeq "$(OSTYPE)" "gcw0"	
+TOOLCHAIN = /opt/retrogame-toolchain/usr
+else
+TOOLCHAIN = /opt/opendingux-toolchain/usr
+endif
+
+CC = $(TOOLCHAIN)/bin/mipsel-linux-gcc
+CPP = $(TOOLCHAIN)/bin/mipsel-linux-gcc
+LD = $(TOOLCHAIN)/bin/mipsel-linux-gcc
+endif
+
+MD = @mkdir
+RM = @rm -f
+CP = @cp
+MV = @mv
+DEVLIBS =
+
+EMULATOR = $(TARGET)$(EXE)
+
+DEFS = -D__ODX__ -DLSB_FIRST -DALIGN_INTS -DALIGN_SHORTS -DINLINE="static inline" -Dasm="__asm__ __volatile__" -DMAME_UNDERCLOCK -DMAME_FASTSOUND -DENABLE_AUTOFIRE -DBIGCASE
+
+W_OPTS = -Wall -Wno-write-strings -Wno-sign-compare
+
+ifeq "$(OSTYPE)" "msys"
+F_OPTS = -fomit-frame-pointer -ffunction-sections -ffast-math -fsingle-precision-constant -fsigned-char -fpermissive
+CFLAGS = -O2 -Isrc -Isrc/$(MAMEOS) -Isrc/zlib $(W_OPTS) $(F_OPTS)
+CFLAGS += -g
+
+LIB_PATH  = $(TOOLCHAIN)/lib
+LIBS      = -lSDLmain -lSDL -lm -lmingw32 -mwindows
+LDFLAGS = $(CFLAGS) -L$(LIB_PATH) $(LIBS) 
+else
+#F_OPTS =  -funroll-loops -fomit-frame-pointer -ffast-math -fsingle-precision-constant -fpermissive -fsigned-char -fno-exceptions -fno-rtti
+
+F_OPTS = -fpermissive -falign-functions -falign-loops -falign-labels -falign-jumps \
+	-ffast-math -fsingle-precision-constant -funsafe-math-optimizations \
+	-fomit-frame-pointer -fno-builtin -fno-exceptions -fno-common \
+	-fstrict-aliasing  -fexpensive-optimizations -fno-pic \
+	-finline -finline-functions -fmerge-all-constants \
+	-ftree-vectorize -fweb -frename-registers
+
+ifeq "$(OSTYPE)" "gcw0"	
+CFLAGS = -D_GCW0_ -G0 -O3 -march=mips32 -mtune=mips32r2 -Isrc -Isrc/$(MAMEOS) -Isrc/zlib -mhard-float -mbranch-likely -mno-mips16 $(W_OPTS) $(F_OPTS)
+else
+CFLAGS = -D_GCW0_ -G0 -O3 -march=mips32 -mtune=mips32 -Isrc -Isrc/$(MAMEOS) -Isrc/zlib -msoft-float --mbranch-likely -mno-mips16 $(W_OPTS) $(F_OPTS)
+endif
+#CFLAGS += -g
+
+LIB_PATH  = $(TOOLCHAIN)/lib
+#LIBS      = -lSDL -lpthread -lm -lgcc -lstdc++
+LIBS      = -lSDL  -lpthread -lm -lgcc 
+LDFLAGS = $(CFLAGS) -L$(LIB_PATH) $(LIBS) -s
+#LDFLAGS = -Wl,--gc-sections -Wl,-s
+endif
+
+OBJ = obj_$(TARGET)_$(MAMEOS)
+OBJDIRS = $(OBJ) $(OBJ)/cpu $(OBJ)/sound $(OBJ)/$(MAMEOS) \
+	$(OBJ)/drivers $(OBJ)/machine $(OBJ)/vidhrdw $(OBJ)/sndhrdw \
+	$(OBJ)/zlib
+
+all:	maketree $(EMULATOR)
+
+# include the various .mak files
+include src/core.mak
+include src/$(TARGET).mak
+include src/rules.mak
+include src/sound.mak
+include src/$(MAMEOS)/$(MAMEOS).mak
+
+# combine the various definitions to one
+CDEFS = $(DEFS) $(COREDEFS) $(CPUDEFS) $(SOUNDDEFS)
+
+$(EMULATOR): $(COREOBJS) $(OSOBJS) $(DRVOBJS)
+	$(LD) $(LDFLAGS) $(COREOBJS) $(OSOBJS) $(LIBS) $(DRVOBJS) -o $@
+	$(MV) $(EMULATOR) distrib/mame4all/mame4all.dge
+
+$(EMULATOR).dge: $(FEOBJS)
+	@echo Linking $@ ...
+	$(LD) $(LDFLAGS) $(FEOBJS) $(LIBS) -o $@
+ifeq "$(OSTYPE)" "msys"
+	$(MV) $(EMULATOR).dge distrib/mame4all/$(EMULATOR).dge.exe
+else
+	$(MV) $(EMULATOR).dge distrib/mame4all/$(EMULATOR).dge
+endif
+
+$(OBJ)/%.o: src/%.c
+	@echo Compiling $<...
+	$(CC) $(CDEFS) $(CFLAGS) -c $< -o $@
+
+$(OBJ)/%.o: src/%.cpp
+	@echo Compiling $<...
+	$(CPP) $(CDEFS) $(CFLAGS) -fno-rtti -c $< -o $@
+
+$(OBJ)/%.o: src/%.s
+	@echo Compiling $<...
+	$(CPP) $(CDEFS) $(CFLAGS) -c $< -o $@
+
+$(OBJ)/%.o: src/%.S
+	@echo Compiling $<...
+	$(CPP) $(CDEFS) $(CFLAGS) -c $< -o $@
+
+$(sort $(OBJDIRS)):
+	$(MD) $@
+
+maketree: $(sort $(OBJDIRS))
+
+clean:
+	$(RM) -r $(OBJ)
+	$(RM) $(EMULATOR)
