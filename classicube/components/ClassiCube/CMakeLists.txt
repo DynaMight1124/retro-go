@@ -84,5 +84,5 @@ target_compile_definitions(${COMPONENT_LIB} PRIVATE
     CC_DISABLE_NETWORKING
 )
 
-rg_setup_compile_options(-O3 -ffast-math)
+rg_setup_compile_options(-O3 -ffast-math -Wno-missing-field-initializers)
 
