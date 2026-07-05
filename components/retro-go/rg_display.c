@@ -46,6 +46,8 @@ static inline uint16_t *lcd_get_buffer_ptr(int left, int top);
 #include "drivers/display/ili9341.h"
 #elif RG_SCREEN_DRIVER == 2 /* ESP_LCD */
 #include "drivers/display/esp_lcd.h"
+#elif RG_SCREEN_DRIVER == 3 /* TVOUT */
+#include "drivers/display/tvout.h"
 #elif RG_SCREEN_DRIVER == 98 /* DO NOT USE, DEMO */
 #include "drivers/display/ili9341_buffered.h"
 #elif RG_SCREEN_DRIVER == 99

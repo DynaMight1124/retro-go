@@ -34,6 +34,8 @@
 #include "targets/t-deck-plus/config.h"
 #elif defined(RG_TARGET_VMU_S3)
 #include "targets/vmu-s3/config.h"
+#elif defined(RG_TARGET_TVOUT_ESP32)
+#include "targets/tvout-esp32/config.h"
 #else
 #warning "No target defined. Defaulting to ODROID-GO."
 #include "targets/odroid-go/config.h"

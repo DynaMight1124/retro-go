@@ -275,7 +275,20 @@ rg_surface_t *rg_surface_load_image(const uint8_t *data, size_t data_len, uint32
         unsigned error, width, height;
         uint8_t *image = NULL;
 
-        error = lodepng_decode24(&image, &width, &height, data, data_len);
+        // Optimize PNG decoding: skip Adler32 checksums and discard metadata to save CPU cycles and DRAM (helps prevent OOM on memory-constrained boards).
+        LodePNGState state;
+        lodepng_state_init(&state);
+        state.info_raw.colortype = LCT_RGB;
+        state.info_raw.bitdepth = 8;
+        state.decoder.zlibsettings.ignore_adler32 = 1;
+#ifdef LODEPNG_COMPILE_ANCILLARY_CHUNKS
+        state.decoder.read_text_chunks = 0;
+        state.decoder.remember_unknown_chunks = 0;
+#endif
+
+        error = lodepng_decode(&image, &width, &height, &state, data, data_len);
+        lodepng_state_cleanup(&state);
+
         if (error)
         {
             RG_LOGE("PNG decoding failed: %d\n", error);
