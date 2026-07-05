@@ -277,10 +277,7 @@ uint8_t  loadsound(uint16_t num)
     fp = TCkopen4load(sounds[num],0);
     if(fp == -1)
     {
-        // console printf is enough; on-screen FTA just annoys the player
         printf("Sound %s(#%d) not found.\n",sounds[num],num);
-        // sprintf(&fta_quotes[113][0],"Sound %s(#%d) not found.",sounds[num],num);
-        // FTA(113,&ps[myconnectindex],1);
         return 0;
     }
 
