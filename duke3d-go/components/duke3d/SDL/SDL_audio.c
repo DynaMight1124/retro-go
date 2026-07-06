@@ -71,18 +71,28 @@ void SDL_AudioInit()
 
 void set_overclock_safe(int level)
 {
+    static int last_level = -1;
+
+    // Skip if level hasn't changed — avoids redundant PLL I2C manipulation
+    if (level == last_level)
+        return;
+
 #ifndef CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ
 #define CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ 240
 #endif
     int default_cpu_speed = CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ;
 
-    // Temporarily raise app.sampleRate baseline to 25000 Hz. This ensures
-    // that Retro-Go's internal overclock sample-rate scaling calculations
-    // (app.sampleRate * default_cpu_speed / real_mhz) never request a rate below 20000 Hz.
-    rg_system_reinit(25000, NULL, NULL);
+    // Only touch PLL when actually overclocking. At level 0 the default clock
+    // is already correct and cpu_speed falls back to CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ (240).
+    if (level != 0) {
+        // Temporarily raise app.sampleRate baseline to 25000 Hz. This ensures
+        // that Retro-Go's internal overclock sample-rate scaling calculations
+        // (app.sampleRate * default_cpu_speed / real_mhz) never request a rate below 20000 Hz.
+        rg_system_reinit(25000, NULL, NULL);
 
-    // Set the overclock level. Retro-Go will configure a safe internal rate.
-    rg_system_set_overclock(level);
+        // Set the overclock level. Retro-Go will configure a safe internal rate.
+        rg_system_set_overclock(level);
+    }
 
     // Retrieve actual CPU clock speed for this level.
     int cpu_speed = rg_system_get_cpu_speed();
@@ -122,6 +132,8 @@ void set_overclock_safe(int level)
 #endif
     double multiplier = expected_rate / (double)target_rate;
     I_OPL_SetTempoMultiplier(multiplier);
+
+    last_level = level;
 }
 
 int SDL_OpenAudio(SDL_AudioSpec *desired, SDL_AudioSpec *obtained)
