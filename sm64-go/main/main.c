@@ -410,6 +410,7 @@ void app_main(void)
     };
 
     app = rg_system_init(&config);
+    rg_display_set_scaling(RG_DISPLAY_SCALING_FULL);
     app->frameskip = -1;
 
     RG_LOGI("Initializing SM64-Go Memory Pools... build=%s render=%dx%d display=%dx%d",
