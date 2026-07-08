@@ -1,0 +1,9 @@
+[Desktop Entry]
+Name=sm64-port
+Comment=Bing Bing Wahoos with the most iconic plumber
+Exec=sm64.us.f3dex2e
+Terminal=false
+Type=Application
+StartupNotify=true
+Icon=icon
+Categories=games;

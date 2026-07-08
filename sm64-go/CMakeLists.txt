@@ -1,0 +1,5 @@
+cmake_minimum_required(VERSION 3.5)
+set(COMPONENTS "main retro-go sm64-funkey")
+set(RG_ENABLE_NETWORKING 0)
+include(../base.cmake)
+project(sm64-go)

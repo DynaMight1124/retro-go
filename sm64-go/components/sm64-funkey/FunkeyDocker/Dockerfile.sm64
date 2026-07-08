@@ -1,0 +1,53 @@
+# Containerfile to build SM64 in the FunKey-S v2.3.0 dev environment
+FROM debian:bookworm-slim
+
+# 1. Install basics and dependencies
+# SM64 specifically needs python3 for assets and bsdmainutils for hexdump
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+      ca-certificates wget rsync tar file build-essential \
+      git pkg-config patch \
+      python3 python3-dev \
+      bsdmainutils \
+      libaudiofile-dev \
+      squashfs-tools zip imagemagick curl && \
+    rm -rf /var/lib/apt/lists/*
+
+# 2. Download and extract the FunKey-S toolchain release
+ARG TOOLCHAIN_URL="https://github.com/FunKey-Project/FunKey-OS/releases/download/FunKey-OS-2.3.0/FunKey-sdk-2.3.0.tar.gz"
+RUN mkdir -p /opt && \
+    wget -qO /opt/toolchain.tar.gz ${TOOLCHAIN_URL} && \
+    echo "Toolchain downloaded, extracting..." && \
+    tar zxvf /opt/toolchain.tar.gz -C /opt && \
+    rm /opt/toolchain.tar.gz
+
+# 3. Relocate the SDK and Create Symlink
+# The SM64 build scripts often look for /opt/FunKey-sdk specifically
+WORKDIR /opt/FunKey-sdk-2.3.0
+RUN chmod +x relocate-sdk.sh && ./relocate-sdk.sh && \
+    ln -s /opt/FunKey-sdk-2.3.0 /opt/FunKey-sdk
+
+# 4. Export FunKey-S cross-compile environment permanently
+ENV SDK_ROOT="/opt/FunKey-sdk-2.3.0"
+ENV TOOLCHAIN_PREFIX="arm-funkey-linux-musleabihf"
+ENV TOOLBIN="${SDK_ROOT}/bin/${TOOLCHAIN_PREFIX}-"
+ENV SYSROOT="${SDK_ROOT}/${TOOLCHAIN_PREFIX}/sysroot"
+ENV CROSS_COMPILE="${TOOLBIN}"
+ENV CC="${TOOLBIN}gcc"
+ENV CXX="${TOOLBIN}g++"
+ENV LD="${TOOLBIN}ld"
+ENV AS="${TOOLBIN}as"
+ENV AR="${TOOLBIN}ar"
+ENV RANLIB="${TOOLBIN}ranlib"
+ENV STRIP="${TOOLBIN}strip"
+ENV PKG_CONFIG_PATH="${SYSROOT}/usr/lib/pkgconfig"
+ENV PKG_CONFIG_LIBDIR="${SYSROOT}/usr/lib/pkgconfig"
+ENV PKG_CONFIG_SYSROOT_DIR="${SYSROOT}"
+ENV PATH="${SDK_ROOT}/bin:${PATH}"
+
+# 5. Switch to a workspace directory (mounted from host)
+WORKDIR /workspace
+VOLUME /workspace
+
+# 6. Default to an interactive shell
+CMD ["bash"]
