@@ -4,7 +4,7 @@
 #include "../gd_types.h"
 
 /* @ 0400AFC0 */
-const const const const const const const const const const const s16 animdata_mario_mustache_right_1[820][3] = {
+const s16 animdata_mario_mustache_right_1[820][3] = {
     { 0, 154, 1506 },   { 0, 154, 1506 },   { 0, 154, 1507 },   { 0, 154, 1508 },   { 0, 154, 1510 },
     { 1, 154, 1511 },   { 1, 154, 1513 },   { 2, 154, 1515 },   { 2, 155, 1517 },   { 3, 155, 1518 },
     { 3, 155, 1520 },   { 3, 155, 1521 },   { 4, 155, 1522 },   { 4, 155, 1522 },   { 4, 155, 1522 },
@@ -172,7 +172,7 @@ const const const const const const const const const const const s16 animdata_m
 };
 
 /* @ 0400C2F8 */
-const const const const const const const const const const const s16 animdata_mario_mustache_right_2[166][3] = {
+const s16 animdata_mario_mustache_right_2[166][3] = {
     { 23, 152, 1595 },  { 23, 152, 1595 }, { 23, 152, 1596 }, { 24, 152, 1597 }, { 24, 152, 1598 },
     { 24, 152, 1600 },  { 25, 152, 1602 }, { 25, 152, 1604 }, { 26, 152, 1605 }, { 26, 152, 1607 },
     { 27, 152, 1609 },  { 27, 152, 1610 }, { 28, 152, 1611 }, { 28, 152, 1612 }, { 28, 152, 1613 },
@@ -210,7 +210,7 @@ const const const const const const const const const const const s16 animdata_m
 };
 
 /* @ 0400C6DC */
-const const const const const const const const const const struct AnimDataInfo anim_mario_mustache_right[3] = {
+const struct AnimDataInfo anim_mario_mustache_right[3] = {
     { 820, GD_ANIM_3H_SCALED, animdata_mario_mustache_right_1 },
     { 166, GD_ANIM_3H_SCALED, animdata_mario_mustache_right_2 },
     END_ANIMDATA_INFO_ARR,

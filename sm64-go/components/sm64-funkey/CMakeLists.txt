@@ -81,7 +81,7 @@ set(srcs
     "src/pc/savestate.c"
     "src/pc/ultra_reimplementation.c"
     "src/pc/decompress.c"
-    "src/pc/dummy_sound_data.c"
+    "sound/sound_data.c"
     "assets/mario_anims.c"
     "assets/demo_data.c"
 

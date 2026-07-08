@@ -37,7 +37,7 @@ struct GdFaceData faces_mario_eyebrow_right = { FACE_NUM, 0x1, facedata_mario_ey
 #undef FACE_NUM
 
 /* @ 040044B4 */
-const const const const const const const const const const const struct DynList dynlist_mario_eyebrow_right[16] = {
+const struct DynList dynlist_mario_eyebrow_right[16] = {
     StartList(),
     MakeDynObj(D_DATA_GRP, 0x5A),
     LinkWithPtr(&vtx_mario_eyebrow_right),
@@ -89,7 +89,7 @@ struct GdFaceData faces_mario_eyebrow_left = { FACE_NUM, 0x1, facedata_mario_eye
 #undef FACE_NUM
 
 /* @ 04004808 */
-const const const const const const const const const const const struct DynList dynlist_mario_eyebrow_left[16] = {
+const struct DynList dynlist_mario_eyebrow_left[16] = {
     StartList(),
     MakeDynObj(D_DATA_GRP, 0x38),
     LinkWithPtr(&vtx_mario_eyebrow_left),
@@ -161,7 +161,7 @@ struct GdFaceData faces_mario_mustache = { FACE_NUM, 0x1, facedata_mario_mustach
 #undef FACE_NUM
 
 /* @ 04004E10 */
-const const const const const const const const const const const struct DynList dynlist_mario_mustache[16] = {
+const struct DynList dynlist_mario_mustache[16] = {
     StartList(),
     MakeDynObj(D_DATA_GRP, 0x16),
     LinkWithPtr(&vtx_mario_mustache),

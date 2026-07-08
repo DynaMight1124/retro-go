@@ -351,7 +351,7 @@ static u16 mario_Face_FaceData[FACE_NUM][4] = {
 static struct GdFaceData mario_Face_FaceInfo = { FACE_NUM, 0x1, mario_Face_FaceData };
 
 /* @ 040031F0 */
-const const const const const const const const const const const struct DynList dynlist_mario_face[44] = {
+const struct DynList dynlist_mario_face[44] = {
     StartList(),
     MakeDynObj(D_DATA_GRP, 0xDE),
     LinkWithPtr(&mario_Face_VtxInfo),

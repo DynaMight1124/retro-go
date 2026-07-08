@@ -4,7 +4,7 @@
 #include "../gd_types.h"
 
 /* @ 0400C700 */
-const const const const const const const const const const const s16 animdata_mario_mustache_left_1[820][3] = {
+const s16 animdata_mario_mustache_left_1[820][3] = {
     { -1799, -1645, -293 }, { -1799, -1645, -293 }, { -1800, -1645, -292 }, { -1800, -1645, -291 },
     { -1800, -1645, -290 }, { -1800, -1645, -289 }, { -1801, -1645, -287 }, { -1801, -1645, -286 },
     { -1802, -1645, -284 }, { -1802, -1645, -283 }, { -1802, -1644, -281 }, { -1803, -1644, -280 },
@@ -213,7 +213,7 @@ const const const const const const const const const const const s16 animdata_m
 };
 
 /* @ 0400DA38 */
-const const const const const const const const const const const s16 animdata_mario_mustache_left_2[166][3] = {
+const s16 animdata_mario_mustache_left_2[166][3] = {
     { -1756, -1651, -459 }, { -1756, -1651, -459 }, { -1756, -1651, -459 }, { -1756, -1651, -459 },
     { -1756, -1651, -459 }, { -1756, -1651, -459 }, { -1756, -1651, -459 }, { -1756, -1651, -459 },
     { -1756, -1651, -459 }, { -1756, -1651, -459 }, { -1756, -1651, -459 }, { -1756, -1651, -459 },
@@ -259,7 +259,7 @@ const const const const const const const const const const const s16 animdata_m
 };
 
 /* @ 0400DE1C */
-const const const const const const const const const const struct AnimDataInfo anim_mario_mustache_left[3] = {
+const struct AnimDataInfo anim_mario_mustache_left[3] = {
     { 820, GD_ANIM_3H_SCALED, animdata_mario_mustache_left_1 },
     { 166, GD_ANIM_3H_SCALED, animdata_mario_mustache_left_2 },
     END_ANIMDATA_INFO_ARR,

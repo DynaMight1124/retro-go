@@ -7,7 +7,7 @@
 #include "../shape_helper.h"
 
 /* @ 04004F90 */
-const const const const const const const const const const const struct DynList dynlist_mario_master[1026] = {
+const struct DynList dynlist_mario_master[1026] = {
     StartList(),
     UseIntId(TRUE),
     StartGroup(0x3E8),

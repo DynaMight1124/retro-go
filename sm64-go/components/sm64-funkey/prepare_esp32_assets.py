@@ -57,6 +57,23 @@ def main():
     run_command(["xtensa-esp-elf-gcc", "-E", "-Wno-trigraphs", "-I", "text/us/", "-DVERSION_US", "text/define_text.inc.c", "-o", "text/us/define_text.pre.c"])
     run_command([sys.executable, 'tools/textconv.py', 'charmap.txt', 'text/us/define_text.pre.c', 'text/us/define_text.inc.c'])
 
+    print("\n=== Step 9: Copying Sound Assets ===")
+    import shutil
+    sound_files = [
+        "sound_data.ctl.inc.c",
+        "sound_data.tbl.inc.c",
+        "sequences.bin.inc.c",
+        "bank_sets.inc.c"
+    ]
+    for sf in sound_files:
+        src = f"build/us/sound/{sf}"
+        dst = f"sound/{sf}"
+        if os.path.exists(src):
+            print(f"Copying {sf} to sound/")
+            shutil.copy2(src, dst)
+        else:
+            print(f"Warning: {src} not found. Did you run generate_sound.sh inside Docker?")
+
     print("\n=== Asset Preparation Complete! ===")
     print("You can now build the project using:")
     print("python rg_tool.py --target <your_target> release launcher sm64-go")

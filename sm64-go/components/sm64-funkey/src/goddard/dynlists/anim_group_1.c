@@ -4,7 +4,7 @@
 #include "../gd_types.h"
 
 /* @ 04012400 */
-const const const const const const const const const const const s16 animdata_mario_eyebrows_equalizer_1[820][3] = {
+const s16 animdata_mario_eyebrows_equalizer_1[820][3] = {
     { 0, 0, 0 },    { 0, 0, 0 },    { 0, 0, 0 },    { 0, 0, 0 },    { 0, 0, 0 },    { 0, 0, 0 },
     { 0, 0, 0 },    { 0, 0, 0 },    { 0, 0, 0 },    { 0, 0, 0 },    { 0, 0, 0 },    { 0, 0, 0 },
     { 0, 0, 0 },    { 0, 0, 0 },    { 0, 0, 0 },    { 0, 0, 0 },    { 0, 0, 0 },    { 0, 0, 0 },
@@ -145,14 +145,14 @@ const const const const const const const const const const const s16 animdata_m
 };
 
 /* @ 04013738 */
-const const const const const const const const const const struct AnimDataInfo anim_mario_eyebrows_equalizer[3] = {
+const struct AnimDataInfo anim_mario_eyebrows_equalizer[3] = {
     { 820, GD_ANIM_3H_SCALED, animdata_mario_eyebrows_equalizer_1 },
     { 0, GD_ANIM_EMPTY, NULL },
     END_ANIMDATA_INFO_ARR,
 };
 
 /* @ 0401375C */
-const const const const const const const const const const const s16 animdata_mario_eyebrows_2_1[820][3] = {
+const s16 animdata_mario_eyebrows_2_1[820][3] = {
     { 28, 0, 1823 },    { 28, 0, 1823 },    { 28, 0, 1823 },    { 27, 0, 1822 },    { 26, 0, 1821 },
     { 26, 0, 1819 },    { 25, 0, 1818 },    { 24, 0, 1816 },    { 23, 0, 1815 },    { 22, 0, 1814 },
     { 21, 0, 1812 },    { 21, 0, 1811 },    { 20, 0, 1810 },    { 20, 0, 1810 },    { 20, 0, 1810 },
@@ -320,7 +320,7 @@ const const const const const const const const const const const s16 animdata_m
 };
 
 /* @ 04014A94 */
-const const const const const const const const const const const s16 animdata_mario_eyebrows_2_2[166][3] = {
+const s16 animdata_mario_eyebrows_2_2[166][3] = {
     { 28, -5, 1943 },  { 28, -5, 1943 },  { 28, -5, 1943 },  { 28, -5, 1943 },  { 28, -5, 1943 },
     { 28, -5, 1943 },  { 28, -5, 1943 },  { 28, -5, 1943 },  { 28, -5, 1943 },  { 28, -5, 1943 },
     { 28, -5, 1943 },  { 28, -5, 1943 },  { 28, -5, 1943 },  { 28, -5, 1943 },  { 28, -5, 1943 },
@@ -358,7 +358,7 @@ const const const const const const const const const const const s16 animdata_m
 };
 
 /* @ 04014E78 */
-const const const const const const const const const const struct AnimDataInfo anim_mario_eyebrows_2[3] = {
+const struct AnimDataInfo anim_mario_eyebrows_2[3] = {
     { 820, GD_ANIM_3H_SCALED, animdata_mario_eyebrows_2_1 },
     { 166, GD_ANIM_3H_SCALED, animdata_mario_eyebrows_2_2 },
     END_ANIMDATA_INFO_ARR,
@@ -506,14 +506,14 @@ s16 anim_mario_eyebrows_3_1[820][3] = {
 };
 
 /* @ 040161D4 */
-const const const const const const const const const const struct AnimDataInfo anim_mario_eyebrows_3[3] = {
+const struct AnimDataInfo anim_mario_eyebrows_3[3] = {
     { 820, GD_ANIM_3H_SCALED, anim_mario_eyebrows_3_1 },
     { 0, GD_ANIM_EMPTY, NULL },
     END_ANIMDATA_INFO_ARR,
 };
 
 /* @ 040161F8 */
-const const const const const const const const const const const s16 animdata_mario_eyebrows_4_1[820][3] = {
+const s16 animdata_mario_eyebrows_4_1[820][3] = {
     { -34, 0, -1777 },  { -34, 0, -1777 },  { -34, 0, -1778 },  { -35, 0, -1780 },  { -36, 0, -1781 },
     { -36, 0, -1784 },  { -37, 0, -1786 },  { -38, -1, -1788 }, { -39, -1, -1790 }, { -40, -1, -1793 },
     { -41, -1, -1795 }, { -42, -1, -1797 }, { -42, -1, -1798 }, { -42, -1, -1799 }, { -43, -1, -1799 },
@@ -681,7 +681,7 @@ const const const const const const const const const const const s16 animdata_m
 };
 
 /* @ 04017530 */
-const const const const const const const const const const const s16 animdata_mario_eyebrows_4_2[166][3] = {
+const s16 animdata_mario_eyebrows_4_2[166][3] = {
     { -34, 0, -1754 }, { -34, 0, -1754 }, { -34, 0, -1754 }, { -34, 0, -1754 }, { -34, 0, -1754 },
     { -34, 0, -1754 }, { -34, 0, -1754 }, { -34, 0, -1754 }, { -34, 0, -1754 }, { -34, 0, -1754 },
     { -34, 0, -1754 }, { -34, 0, -1754 }, { -34, 0, -1754 }, { -34, 0, -1754 }, { -34, 0, -1754 },
@@ -719,14 +719,14 @@ const const const const const const const const const const const s16 animdata_m
 };
 
 /* @ 04017914 */
-const const const const const const const const const const struct AnimDataInfo anim_mario_eyebrows_4[3] = {
+const struct AnimDataInfo anim_mario_eyebrows_4[3] = {
     { 820, GD_ANIM_3H_SCALED, animdata_mario_eyebrows_4_1 },
     { 166, GD_ANIM_3H_SCALED, animdata_mario_eyebrows_4_2 },
     END_ANIMDATA_INFO_ARR,
 };
 
 /* @ 04017938 */
-const const const const const const const const const const const s16 animdata_mario_eyebrows_5_1[820][3] = {
+const s16 animdata_mario_eyebrows_5_1[820][3] = {
     { 108, 0, 1775 },   { 108, 0, 1774 },   { 108, 0, 1774 },   { 107, 0, 1773 },   { 107, 0, 1771 },
     { 106, 0, 1770 },   { 105, 1, 1768 },   { 104, 1, 1766 },   { 103, 1, 1764 },   { 103, 2, 1763 },
     { 102, 2, 1761 },   { 101, 2, 1760 },   { 101, 3, 1759 },   { 100, 3, 1758 },   { 100, 3, 1758 },
@@ -894,14 +894,14 @@ const const const const const const const const const const const s16 animdata_m
 };
 
 /* @ 04018C70 */
-const const const const const const const const const const struct AnimDataInfo anim_mario_eyebrows_5[3] = {
+const struct AnimDataInfo anim_mario_eyebrows_5[3] = {
     { 820, GD_ANIM_3H_SCALED, animdata_mario_eyebrows_5_1 },
     { 0, GD_ANIM_EMPTY, NULL },
     END_ANIMDATA_INFO_ARR,
 };
 
 /* @ 04018C94 */
-const const const const const const const const const const const s16 animdata_mario_eye_left_1[820][3] = {
+const s16 animdata_mario_eye_left_1[820][3] = {
     { -68, 2, -974 },     { -68, 1, -974 },     { -68, 0, -974 },     { -68, -2, -974 },
     { -68, -6, -973 },    { -68, -10, -973 },   { -68, -15, -972 },   { -68, -20, -972 },
     { -68, -26, -971 },   { -69, -32, -970 },   { -69, -38, -970 },   { -69, -44, -969 },
@@ -1110,7 +1110,7 @@ const const const const const const const const const const const s16 animdata_m
 };
 
 /* @ 04019FCC */
-const const const const const const const const const const const s16 animdata_mario_eye_left_2[166][3] = {
+const s16 animdata_mario_eye_left_2[166][3] = {
     { -69, -86, -946 }, { -69, -86, -946 }, { -69, -83, -946 }, { -69, -79, -947 }, { -69, -73, -948 },
     { -69, -67, -949 }, { -69, -59, -950 }, { -69, -50, -951 }, { -69, -41, -952 }, { -69, -31, -953 },
     { -69, -20, -955 }, { -69, -9, -956 },  { -69, 1, -958 },   { -69, 12, -959 },  { -69, 24, -961 },
@@ -1148,14 +1148,14 @@ const const const const const const const const const const const s16 animdata_m
 };
 
 /* @ 0401A3B0 */
-const const const const const const const const const const struct AnimDataInfo anim_mario_eye_left[3] = {
+const struct AnimDataInfo anim_mario_eye_left[3] = {
     { 820, GD_ANIM_3H_SCALED, animdata_mario_eye_left_1 },
     { 166, GD_ANIM_3H_SCALED, animdata_mario_eye_left_2 },
     END_ANIMDATA_INFO_ARR,
 };
 
 /* @ 0401A3D4 */
-const const const const const const const const const const const s16 animdata_mario_eye_right_1[820][3] = {
+const s16 animdata_mario_eye_right_1[820][3] = {
     { 1844, -1788, 824 }, { 1844, -1789, 824 }, { 1844, -1791, 825 }, { 1844, -1794, 825 },
     { 1844, -1797, 826 }, { 1844, -1802, 826 }, { 1844, -1807, 827 }, { 1844, -1813, 828 },
     { 1844, -1819, 829 }, { 1845, -1826, 829 }, { 1845, -1832, 830 }, { 1845, -1839, 831 },
@@ -1364,7 +1364,7 @@ const const const const const const const const const const const s16 animdata_m
 };
 
 /* @ 0401B70C */
-const const const const const const const const const const const s16 animdata_mario_eye_right_2[166][3] = {
+const s16 animdata_mario_eye_right_2[166][3] = {
     { 1841, -1711, 853 }, { 1841, -1711, 853 }, { 1841, -1711, 853 }, { 1841, -1711, 853 },
     { 1841, -1710, 853 }, { 1841, -1710, 853 }, { 1841, -1709, 853 }, { 1841, -1708, 853 },
     { 1841, -1707, 853 }, { 1841, -1706, 853 }, { 1841, -1705, 853 }, { 1841, -1705, 853 },
@@ -1410,14 +1410,14 @@ const const const const const const const const const const const s16 animdata_m
 };
 
 /* @ 0401BAF0 */
-const const const const const const const const const const struct AnimDataInfo anim_mario_eye_right[3] = {
+const struct AnimDataInfo anim_mario_eye_right[3] = {
     { 820, GD_ANIM_3H_SCALED, animdata_mario_eye_right_1 },
     { 166, GD_ANIM_3H_SCALED, animdata_mario_eye_right_2 },
     END_ANIMDATA_INFO_ARR,
 };
 
 /* @ 0401BB14 */
-const const const const const const const const const const const s16 animdata_mario_hat_1[820][3] = {
+const s16 animdata_mario_hat_1[820][3] = {
     { 0, 0, 1539 },     { 0, 0, 1539 },     { 0, 0, 1539 },     { 0, 0, 1538 },     { 0, 0, 1538 },
     { 0, 0, 1537 },     { 0, 0, 1537 },     { 0, 0, 1536 },     { 0, 0, 1536 },     { 0, 0, 1535 },
     { 0, 0, 1535 },     { 0, 0, 1534 },     { 0, 0, 1534 },     { 0, 0, 1534 },     { 0, 0, 1534 },
@@ -1585,7 +1585,7 @@ const const const const const const const const const const const s16 animdata_m
 };
 
 /* @ 0401CE4C */
-const const const const const const const const const const const s16 animdata_mario_hat_2[166][3] = {
+const s16 animdata_mario_hat_2[166][3] = {
     { 0, 0, 1539 }, { 0, 0, 1539 }, { 0, 0, 1539 }, { 0, 0, 1538 }, { 0, 0, 1538 }, { 0, 0, 1538 },
     { 0, 0, 1537 }, { 0, 0, 1537 }, { 0, 0, 1536 }, { 0, 0, 1536 }, { 0, 0, 1535 }, { 0, 0, 1535 },
     { 0, 0, 1535 }, { 0, 0, 1534 }, { 0, 0, 1534 }, { 0, 0, 1534 }, { 0, 0, 1534 }, { 0, 0, 1534 },
@@ -1617,14 +1617,14 @@ const const const const const const const const const const const s16 animdata_m
 };
 
 /* @ 0401D230 */
-const const const const const const const const const const struct AnimDataInfo anim_mario_hat[3] = {
+const struct AnimDataInfo anim_mario_hat[3] = {
     { 820, GD_ANIM_3H_SCALED, animdata_mario_hat_1 },
     { 166, GD_ANIM_3H_SCALED, animdata_mario_hat_2 },
     END_ANIMDATA_INFO_ARR,
 };
 
 /* @ 0401D254 */
-const const const const const const const const const const const s16 animdata_mario_lips_3_1[820][3] = {
+const s16 animdata_mario_lips_3_1[820][3] = {
     { 0, 0, -665 },       { 0, 0, -664 },       { 0, 0, -662 },       { 0, 0, -660 },
     { -1, 0, -656 },      { -1, 0, -652 },      { -2, 0, -648 },      { -3, 1, -643 },
     { -3, 1, -638 },      { -4, 1, -634 },      { -5, 2, -629 },      { -5, 2, -625 },
@@ -1833,7 +1833,7 @@ const const const const const const const const const const const s16 animdata_m
 };
 
 /* @ 0401E58C */
-const const const const const const const const const const const s16 animdata_mario_lips_3_2[166][3] = {
+const s16 animdata_mario_lips_3_2[166][3] = {
     { -269, -128, -669 }, { -269, -128, -669 }, { -269, -128, -669 }, { -269, -128, -669 },
     { -269, -128, -669 }, { -269, -128, -669 }, { -269, -128, -669 }, { -269, -128, -669 },
     { -269, -128, -669 }, { -269, -128, -669 }, { -269, -128, -669 }, { -269, -128, -669 },
@@ -1879,14 +1879,14 @@ const const const const const const const const const const const s16 animdata_m
 };
 
 /* @ 0401E970 */
-const const const const const const const const const const struct AnimDataInfo anim_mario_lips_3[3] = {
+const struct AnimDataInfo anim_mario_lips_3[3] = {
     { 820, GD_ANIM_3H_SCALED, animdata_mario_lips_3_1 },
     { 166, GD_ANIM_3H_SCALED, animdata_mario_lips_3_2 },
     END_ANIMDATA_INFO_ARR,
 };
 
 /* @ 0401E994 */
-const const const const const const const const const const const s16 animdata_mario_lips_4_1[820][3] = {
+const s16 animdata_mario_lips_4_1[820][3] = {
     { 0, 0, -665 },       { 0, 0, -664 },       { 0, 0, -663 },       { 0, 0, -661 },
     { 0, 0, -659 },       { 0, 0, -656 },       { 0, 0, -653 },       { 0, 0, -650 },
     { 0, 0, -647 },       { 0, 0, -644 },       { 0, 0, -641 },       { 0, 0, -638 },
@@ -2095,7 +2095,7 @@ const const const const const const const const const const const s16 animdata_m
 };
 
 /* @ 0401FCCC */
-const const const const const const const const const const const s16 animdata_mario_lips_4_2[166][3] = {
+const s16 animdata_mario_lips_4_2[166][3] = {
     { 51, 5, -623 },   { 51, 5, -623 },   { 51, 5, -623 },   { 51, 5, -623 },   { 51, 5, -623 },
     { 51, 5, -623 },   { 51, 5, -623 },   { 51, 5, -623 },   { 51, 5, -623 },   { 51, 5, -623 },
     { 51, 5, -623 },   { 51, 5, -623 },   { 51, 5, -623 },   { 51, 5, -623 },   { 51, 5, -623 },
@@ -2133,14 +2133,14 @@ const const const const const const const const const const const s16 animdata_m
 };
 
 /* @ 040200B0 */
-const const const const const const const const const const struct AnimDataInfo anim_mario_lips_4[3] = {
+const struct AnimDataInfo anim_mario_lips_4[3] = {
     { 820, GD_ANIM_3H_SCALED, animdata_mario_lips_4_1 },
     { 166, GD_ANIM_3H_SCALED, animdata_mario_lips_4_2 },
     END_ANIMDATA_INFO_ARR,
 };
 
 /* @ 040200D4 */
-const const const const const const const const const const const s16 animdata_mario_ear_left_1[820][3] = {
+const s16 animdata_mario_ear_left_1[820][3] = {
     { 1800, 1800, -1534 }, { 1800, 1800, -1534 }, { 1800, 1800, -1534 }, { 1800, 1800, -1534 },
     { 1800, 1800, -1534 }, { 1800, 1800, -1534 }, { 1800, 1800, -1534 }, { 1800, 1800, -1534 },
     { 1800, 1800, -1534 }, { 1800, 1800, -1534 }, { 1800, 1800, -1534 }, { 1800, 1800, -1534 },
@@ -2349,7 +2349,7 @@ const const const const const const const const const const const s16 animdata_m
 };
 
 /* @ 0402140C */
-const const const const const const const const const const struct AnimDataInfo anim_mario_ear_left[3] = {
+const struct AnimDataInfo anim_mario_ear_left[3] = {
     { 820, GD_ANIM_3H_SCALED, animdata_mario_ear_left_1 },
     { 0, GD_ANIM_EMPTY, NULL },
     END_ANIMDATA_INFO_ARR,

@@ -97,10 +97,10 @@ s8 gAudioUpdatesPerFrame;
 extern u64 gAudioGlobalsStartMarker;
 extern u64 gAudioGlobalsEndMarker;
 
-extern u8 gSoundDataADSR[]; // sound_data.ctl
-extern u8 gSoundDataRaw[];  // sound_data.tbl
-extern u8 gMusicData[];     // sequences.s
-extern u8 gBankSetsData[];  // bank_sets.s
+extern const u8 gSoundDataADSR[]; // sound_data.ctl
+extern const u8 gSoundDataRaw[];  // sound_data.tbl
+extern const u8 gMusicData[];     // sequences.s
+extern const u8 gBankSetsData[];  // bank_sets.s
 
 
 /**

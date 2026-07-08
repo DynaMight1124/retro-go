@@ -5,7 +5,7 @@
 #include "../dynlist_proc.h"
 
 // maybe move types into the dynlists.h file?
-const const const const const const const const const const const struct DynList dynlist_unused[62] = {
+const struct DynList dynlist_unused[62] = {
     StartList(),
     StartGroup("spotvg"),
     MakeVertex(0.0, 0.0, 0.0),

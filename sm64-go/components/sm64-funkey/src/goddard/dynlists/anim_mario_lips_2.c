@@ -4,7 +4,7 @@
 #include "../gd_types.h"
 
 /* @ 0400F580 */
-const const const const const const const const const const const s16 animdata_mario_lips_2_1[820][3] = {
+const s16 animdata_mario_lips_2_1[820][3] = {
     { -97, -3, -1771 },   { -97, -3, -1772 },   { -97, -3, -1772 },   { -97, -4, -1773 },
     { -97, -4, -1773 },   { -97, -4, -1774 },   { -97, -4, -1775 },   { -97, -4, -1776 },
     { -97, -4, -1777 },   { -97, -5, -1778 },   { -97, -5, -1779 },   { -97, -5, -1780 },
@@ -213,7 +213,7 @@ const const const const const const const const const const const s16 animdata_m
 };
 
 /* @ 040108B8 */
-const const const const const const const const const const const s16 animdata_mario_lips_2_2[166][3] = {
+const s16 animdata_mario_lips_2_2[166][3] = {
     { -96, -15, -1839 }, { -96, -15, -1839 }, { -96, -15, -1839 }, { -96, -15, -1839 },
     { -96, -15, -1839 }, { -96, -15, -1839 }, { -96, -15, -1839 }, { -96, -15, -1839 },
     { -96, -15, -1839 }, { -96, -15, -1839 }, { -96, -15, -1839 }, { -96, -15, -1839 },
@@ -259,7 +259,7 @@ const const const const const const const const const const const s16 animdata_m
 };
 
 /* @ 04010C9C */
-const const const const const const const const const const struct AnimDataInfo anim_mario_lips_2[3] = {
+const struct AnimDataInfo anim_mario_lips_2[3] = {
     { 820, GD_ANIM_3H_SCALED, animdata_mario_lips_2_1 },
     { 166, GD_ANIM_3H_SCALED, animdata_mario_lips_2_2 },
     END_ANIMDATA_INFO_ARR,

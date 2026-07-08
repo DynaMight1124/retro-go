@@ -50,7 +50,7 @@ static struct GdFaceData faces_mario_eye_right = { FACE_NUM, 0x1, facedata_mario
 #undef FACE_NUM
 
 /* @ 040039D8 */
-const const const const const const const const const const const struct DynList dynlist_mario_eye_right[28] = {
+const struct DynList dynlist_mario_eye_right[28] = {
     StartList(),
     MakeDynObj(D_DATA_GRP, 0x71),
     LinkWithPtr(&vtx_mario_eye_right),
@@ -127,7 +127,7 @@ static struct GdFaceData faces_mario_eye_left = { FACE_NUM, 0x1, facedata_mario_
 #undef FACE_NUM
 
 /* @ 04004040 */
-const const const const const const const const const const const struct DynList dynlist_mario_eye_left[28] = {
+const struct DynList dynlist_mario_eye_left[28] = {
     StartList(),
     MakeDynObj(D_DATA_GRP, 0x61),
     LinkWithPtr(&vtx_mario_eye_left),

@@ -22,16 +22,16 @@
 #include "pc/controller/controller_api.h"
 #include "pc/configfile.h"
 
-// Set to 1 to enable audio synthesis, 0 to bypass to save CPU
+// Set to 1 to enable audio, 0 to bypass to save CPU
 #define ENABLE_AUDIO 0
 
-#define AUDIO_SAMPLE_RATE 22050
+#define AUDIO_SAMPLE_RATE 16000
 
 #define RENDER_WIDTH  SM64_RENDER_WIDTH
 #define RENDER_HEIGHT SM64_RENDER_HEIGHT
 #define DISPLAY_WIDTH  SCREEN_WIDTH
 #define DISPLAY_HEIGHT SCREEN_HEIGHT
-#define SM64_GO_BUILD_MARKER "sm64-go-s3&p4-no-sound"
+#define SM64_GO_BUILD_MARKER "sm64-go-retro-go"
 
 /* SM64 task stack size.
  * ESP32-S3 has only ~64 KB free in the main task-stack heap at boot; 40 KB fails xTaskCreate.
@@ -226,11 +226,14 @@ static void wm_get_dimensions(uint32_t *width, uint32_t *height) {
     *height = RENDER_HEIGHT;
 }
 static void wm_handle_events(void) {}
-static bool wm_start_frame(void) { return true; }
+
 static void wm_swap_buffers_begin(void) {}
 static void wm_swap_buffers_end(void) {}
 static double wm_get_time(void) { return (double)rg_system_timer() / 1000000.0; }
 static void wm_shutdown(void) {}
+
+static bool s_wm_do_render = true;
+static bool wm_start_frame(void) { return s_wm_do_render; }
 
 static struct GfxWindowManagerAPI retrogo_wm_api = {
     .init = wm_init,
@@ -251,6 +254,7 @@ struct AudioAPI *audio_api = &retrogo_audio_api;
 struct GfxWindowManagerAPI *wm_api = &retrogo_wm_api;
 struct GfxRenderingAPI *rendering_api = &gfx_soft_api;
 
+
 void sm64_task(void *pvParameters) {
     sm64_task_handle = xTaskGetCurrentTaskHandle();
     RG_LOGI("SM64 Task Started. build=%s render=%dx%d display=%dx%d",
@@ -269,22 +273,63 @@ void sm64_task(void *pvParameters) {
     RG_LOGI("Starting main loop...");
 
     int frame_count = 0;
+    int64_t last_time = rg_system_timer();
+    const int target_us = 1000000 / 30; // 30 FPS target (33333 us)
+
     while (1) {
+        int64_t now = rg_system_timer();
+        int elapsed_us = now - last_time;
+        int audio_frames = 1;
+
+        if (elapsed_us >= target_us) {
+            audio_frames = elapsed_us / target_us;
+            if (audio_frames > 4) audio_frames = 4; // Max 4 frames of audio to prevent blocking death spiral
+            last_time += audio_frames * target_us;
+        } else {
+            vTaskDelay(1);
+            continue; // Wait until it's time for the next frame
+        }
+
         int64_t startTime = rg_system_timer();
         sm64_debug_frame = frame_count;
         sm64_debug_stage = SM64_STAGE_LOOP_BEGIN;
         sm64_debug_heartbeat++;
 
-        /* Switch surfaces for double buffering */
-        current_fb = (current_fb + 1) % 2;
-
-        /* Process one frame of SM64 */
+        /* Process ONE frame of SM64 game logic and rendering */
         sm64_debug_stage = SM64_STAGE_GFX_START;
         gfx_start_frame();
         sm64_debug_stage = SM64_STAGE_GAME_LOOP;
         game_loop_one_iteration();
         sm64_debug_stage = SM64_STAGE_GFX_END;
         gfx_end_frame();
+        
+        frame_count++;
+
+#if ENABLE_AUDIO
+        if (configEnableSound) {
+            /* Audio Catch-up Loop: Generate enough audio to cover the actual elapsed time */
+            for (int a = 0; a < audio_frames; a++) {
+                s16 engine_buffer[544 * 2 * 2]; // 1088 stereo samples
+                s16 out_buffer[544 * 2];        // 544 stereo samples output
+                
+                // Generate two 60Hz internal ticks of audio (32000Hz)
+                create_next_audio_buffer(engine_buffer, 544);
+                create_next_audio_buffer(engine_buffer + 544 * 2, 544);
+                
+                // Downsample to 16000Hz hardware rate
+                for (int i = 0; i < 544; i++) {
+                    out_buffer[i * 2 + 0] = engine_buffer[i * 4 + 0];
+                    out_buffer[i * 2 + 1] = engine_buffer[i * 4 + 1];
+                }
+                
+                // Submit to DMA. It will only block if we generate faster than real-time.
+                retrogo_audio_play((uint8_t *)out_buffer, 544 * 2 * sizeof(s16));
+            }
+        }
+#endif
+
+        /* Switch surfaces for double buffering */
+        current_fb = (current_fb + 1) % 2;
 
         sm64_debug_stage = SM64_STAGE_COPY_FB;
         if (gfx_output != NULL && fb_surfaces[current_fb]->data != NULL) {
@@ -345,24 +390,11 @@ void sm64_task(void *pvParameters) {
         sm64_debug_stage = SM64_STAGE_DISPLAY_SUBMIT;
         rg_display_submit(fb_surfaces[current_fb], RG_DISPLAY_WRITE_NOSYNC);
 
-        /* Process Audio */
-        sm64_debug_stage = SM64_STAGE_AUDIO;
-#if ENABLE_AUDIO
-        if (configEnableSound) {
-            s16 audio_buffer[544 * 2 * 2]; 
-            create_next_audio_buffer(audio_buffer, 544);
-            retrogo_audio_play((uint8_t *)audio_buffer, 544 * 4);
-        }
-#endif
-
         int64_t endTime = rg_system_timer();
         sm64_debug_stage = SM64_STAGE_TICK;
         rg_system_tick(endTime - startTime);
 
-        frame_count++;
-        
         sm64_debug_stage = SM64_STAGE_DELAY;
-        sm64_debug_heartbeat++;
         vTaskDelay(1);
     }
 }
@@ -413,6 +445,7 @@ void app_main(void)
 
     int last_sm64_frame = -1;
     uint32_t last_sm64_heartbeat = 0;
+    
     int stalled_seconds = 0;
     while (1) {
         vTaskDelay(pdMS_TO_TICKS(1000));

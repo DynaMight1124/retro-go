@@ -31,9 +31,9 @@ Because the asset extraction tools (`n64graphics`, `mio0`) require a Linux C-com
 Navigate to `components/sm64-funkey` and run the extraction docker image:
 ```bash
 cd components/sm64-funkey
-docker run --rm -v ${PWD}:/sm64 ubuntu:20.04 /bin/bash -c "apt-get update && apt-get install -y build-essential python3 && cd /sm64 && make -C tools && python3 extract_assets.py us"
+docker run --rm -v ${PWD}:/sm64 ubuntu:20.04 /bin/bash -c "apt-get update && apt-get install -y build-essential python3 bsdmainutils && cd /sm64 && make -C tools && python3 extract_assets.py us && chmod +x generate_sound.sh && ./generate_sound.sh"
 ```
-*(This will compile the extraction tools, rip the raw `.png` and `.aiff` files out of the ROM, and place them in the `textures/`, `levels/`, and `sound/` folders).*
+*(This will compile the extraction tools, rip the raw `.png` and `.aiff` files out of the ROM, and then synthesize the sound binaries into `build/us/sound/`).*
 
 ### Step 3: Convert Assets to ESP32 Format (Native)
 You do **not** need to compile the actual C code inside Docker.

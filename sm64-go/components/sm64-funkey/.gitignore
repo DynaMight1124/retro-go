@@ -102,3 +102,8 @@ baserom.*.z64
 levels/ending/cake.inc.c
 text/us/define_*.inc.c
 text/us/define_*.pre.c
+sound/*.inc.c
+sound/samples/
+
+sound/sound_data.ctl
+sound/sound_data.tbl

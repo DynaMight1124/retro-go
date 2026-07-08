@@ -6,7 +6,7 @@
 #include "../dynlist_proc.h"
 // maybe move types into the dynlists.h file?
 
-const const const const const const const const const const const struct DynList dynlist_test_cube[67] = {
+const struct DynList dynlist_test_cube[67] = {
     StartList(),
     StartGroup("ico1vg"),
     MakeVertex(-2.0, 0.0, -2.0),

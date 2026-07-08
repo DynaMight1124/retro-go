@@ -27,7 +27,7 @@ PROJECT_APPS = {
   'gwenesis':     [0, 16, 1048576],
   'fmsx':         [0, 16, 655360],
   'gbsp':         [0, 16, 851968],
-  'sm64-go':      [0, 16, 10485760],
+  'sm64-go':      [0, 16, 12582912],
 }
 # PROJECT_APPS = {}
 # for t in glob.glob("*/CMakeLists.txt"):
@@ -126,7 +126,7 @@ def build_app(app, device_type, with_profiling=False, no_networking=False, is_re
     args.append(f"-DRG_ENABLE_NETWORKING={0 if no_networking else 1}")
     with open("partitions.csv", "w") as f:
         f.write("# This table isn't used, it's just needed to avoid esp-idf build failures.\n")
-        f.write("dummy, app, ota_0, 65536, 3145728\n")
+        f.write("dummy, app, ota_0, 65536, 12582912\n")
     run(args, cwd=os.path.join(os.getcwd(), app))
     print("Done.\n")
 

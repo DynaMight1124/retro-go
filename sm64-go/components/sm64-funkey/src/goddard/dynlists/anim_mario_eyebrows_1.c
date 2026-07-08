@@ -4,7 +4,7 @@
 #include "../gd_types.h"
 
 /* @ 04010CC0 */
-const const const const const const const const const const const s16 animdata_mario_eyebrows_1_1[820][3] = {
+const s16 animdata_mario_eyebrows_1_1[820][3] = {
     { -68, 0, 1775 },   { -68, 0, 1774 },   { -68, 0, 1774 },   { -68, 0, 1773 },   { -68, 0, 1773 },
     { -68, 0, 1772 },   { -68, 0, 1771 },   { -68, 0, 1770 },   { -68, 0, 1768 },   { -68, 0, 1767 },
     { -68, 0, 1766 },   { -68, -1, 1766 },  { -68, -1, 1765 },  { -68, -1, 1765 },  { -68, -1, 1764 },
@@ -172,7 +172,7 @@ const const const const const const const const const const const s16 animdata_m
 };
 
 /* @ 04011FF8 */
-const const const const const const const const const const const s16 animdata_mario_eyebrows_1_2[166][3] = {
+const s16 animdata_mario_eyebrows_1_2[166][3] = {
     { -68, 5, 1820 }, { -68, 5, 1820 }, { -68, 5, 1820 }, { -68, 5, 1820 }, { -68, 5, 1820 },
     { -68, 5, 1820 }, { -68, 5, 1820 }, { -68, 5, 1820 }, { -68, 5, 1820 }, { -68, 5, 1820 },
     { -68, 5, 1820 }, { -68, 5, 1820 }, { -68, 5, 1820 }, { -68, 5, 1820 }, { -68, 5, 1820 },
@@ -210,7 +210,7 @@ const const const const const const const const const const const s16 animdata_m
 };
 
 /* @ 040123DC */
-const const const const const const const const const const struct AnimDataInfo anim_mario_eyebrows_1[3] = {
+const struct AnimDataInfo anim_mario_eyebrows_1[3] = {
     { 820, GD_ANIM_3H_SCALED, animdata_mario_eyebrows_1_1 },
     { 166, GD_ANIM_3H_SCALED, animdata_mario_eyebrows_1_2 },
     END_ANIMDATA_INFO_ARR,
