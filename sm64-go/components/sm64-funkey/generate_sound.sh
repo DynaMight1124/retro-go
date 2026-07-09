@@ -16,7 +16,21 @@ done
 echo "Assembling sound data..."
 mkdir -p build/us/sound/sound_banks
 python3 tools/assemble_sound.py build/us/sound/samples/ sound/sound_banks/ build/us/sound/sound_data.ctl build/us/sound/sound_data.tbl -DVERSION_US --endian little --bitwidth 32
-python3 tools/assemble_sound.py --sequences build/us/sound/sequences.bin build/us/sound/bank_sets sound/sound_banks/ sound/sequences.json sound/sequences/us/*.m64 -DVERSION_US --endian little --bitwidth 32
+
+SEQ_DIR="sound/sequences/us"
+if [ ! -d "$SEQ_DIR" ] && [ -d "sound/sequences/US" ]; then
+    SEQ_DIR="sound/sequences/US"
+fi
+
+echo "Using sequence directory: $SEQ_DIR"
+if [ ! -f "$SEQ_DIR/00_sound_player.m64" ]; then
+    echo "ERROR: $SEQ_DIR/00_sound_player.m64 not found!"
+    echo "Files currently in $SEQ_DIR:"
+    ls -la "$SEQ_DIR"
+    exit 1
+fi
+
+python3 tools/assemble_sound.py --sequences build/us/sound/sequences.bin build/us/sound/bank_sets sound/sound_banks/ sound/sequences.json "$SEQ_DIR"/*.m64 -DVERSION_US --endian little --bitwidth 32
 
 echo "Converting to inc.c..."
 hexdump -v -e '1/1 "0x%X,"' build/us/sound/sound_data.ctl > build/us/sound/sound_data.ctl.inc.c
