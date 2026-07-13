@@ -260,7 +260,7 @@ async function fetchTargets() {
       throw new Error(`Failed to list targets folder: ${res.statusText}`);
     }
 
-    const EXCLUDED_TARGETS = ['sdl2', 'cyd', 'gb300-p4', 'hdmi', 'vmu'];
+    const EXCLUDED_TARGETS = ['sdl2'];
     const items = await res.json();
     state.targets = items
       .filter(item => item.type === 'dir' && !EXCLUDED_TARGETS.includes(item.name.toLowerCase()))
@@ -280,13 +280,8 @@ async function fetchTargets() {
 
     const matchedChip = TARGET_CHIP_MAP[target] || 'ESP32';
     
-    // Choose icon
-    let iconHtml = TARGET_ICONS.generic;
-    if (target.includes('odroid')) iconHtml = TARGET_ICONS['odroid-go'];
-    else if (target.includes('cyd')) iconHtml = TARGET_ICONS.cyd;
-    else if (target.includes('s3-devkit')) iconHtml = TARGET_ICONS['esp32-s3-devkit'];
-    else if (target.includes('p4-devkit')) iconHtml = TARGET_ICONS['esp32-p4-devkit'];
-    else if (target.includes('deck')) iconHtml = TARGET_ICONS['t-deck-plus'];
+    // Choose icon (all targets use the console device icon style as Odroid-Go)
+    const iconHtml = TARGET_ICONS['odroid-go'];
 
     card.innerHTML = `
       <div class="target-icon">${iconHtml}</div>
@@ -383,69 +378,79 @@ function updateInstallButtonAndDetails() {
   detailSize.textContent = '-';
   buttonContainer.innerHTML = ''; // Clear flash button
 
-  if (!state.selectedRelease) {
-    detailFile.textContent = 'No version selected';
-    return;
-  }
-
   // Revoke old blob URL
   if (state.manifestBlobUrl) {
     URL.revokeObjectURL(state.manifestBlobUrl);
     state.manifestBlobUrl = null;
   }
 
-  const targetLower = state.selectedTarget.toLowerCase();
-  
-  // Find compiled .img asset in release
-  const matchedAsset = state.selectedRelease.assets.find(asset => {
-    const nameLower = asset.name.toLowerCase();
-    // Matches if name contains target name and ends with .img
-    return nameLower.includes(targetLower) && nameLower.endsWith('.img');
-  });
-
-  if (!matchedAsset) {
-    detailFile.innerHTML = `<span style="color:var(--error)">Not found in release assets</span>`;
-    showWarning(`The selected release (${state.selectedRelease.tag_name}) does not contain a compiled firmware .img file for target "${state.selectedTarget}". Check that you have built and uploaded a release asset containing "${targetLower}" and ending with ".img".`);
-    return;
-  }
-
-  // Found! Update details
-  hideWarning();
-  detailFile.textContent = matchedAsset.name;
-  detailSize.textContent = formatBytes(matchedAsset.size);
-
-  // Determine if the firmware file is hosted locally on GitHub Pages (CORS-safe)
-  let flashPath = '';
-  const isLocal = state.localFirmwares.includes(matchedAsset.name);
-  
+  // Get manual file section elements
   const manualFileSec = document.getElementById('manual-file-section');
   const manualDlBtn = document.getElementById('btn-manual-download');
 
-  if (isLocal) {
-    // Served directly from GitHub Pages (CORS-safe, fast, supports chunked streams!)
-    flashPath = `firmware/${matchedAsset.name}`;
-    hideWarning();
-    manualFileSec.style.display = 'none';
-  } else if (state.localFileBlobUrl) {
-    // Manually selected local file is present! (CORS-safe!)
+  const targetLower = state.selectedTarget ? state.selectedTarget.toLowerCase() : '';
+  
+  // Find compiled .img asset in release if a release is selected and we have a target
+  let matchedAsset = null;
+  if (state.selectedRelease && targetLower) {
+    matchedAsset = state.selectedRelease.assets.find(asset => {
+      const nameLower = asset.name.toLowerCase();
+      // Matches if name contains target name and ends with .img
+      return nameLower.includes(targetLower) && nameLower.endsWith('.img');
+    });
+  }
+
+  // Determine flash path and display details
+  let flashPath = '';
+
+  if (state.localFileBlobUrl) {
+    // Manually selected local file is present! (CORS-safe, works offline!)
     flashPath = state.localFileBlobUrl;
+    const fileInput = document.getElementById('input-local-file');
+    detailFile.textContent = (fileInput && fileInput.files[0]) ? fileInput.files[0].name : 'Local File';
+    detailSize.textContent = '-';
     hideWarning();
-    // Keep manual section visible but you can hide it or show success
+    // Keep manual section visible so they know a local file is loaded
+  } else if (matchedAsset) {
+    // Found in release! Update details
+    hideWarning();
+    detailFile.textContent = matchedAsset.name;
+    detailSize.textContent = formatBytes(matchedAsset.size);
+
+    const isLocal = state.localFirmwares.includes(matchedAsset.name);
+    if (isLocal) {
+      // Served directly from GitHub Pages (CORS-safe, fast, supports chunked streams!)
+      flashPath = `firmware/${matchedAsset.name}`;
+      manualFileSec.style.display = 'none';
+    } else {
+      // Loaded directly from GitHub Releases (Will fail with CORS error in browser)
+      flashPath = matchedAsset.browser_download_url;
+      showWarning(`⚠️ CORS Error: Direct download from GitHub Releases is blocked by browser security. Please download the firmware image manually using Step 1 below, then upload it in Step 2 to flash.`);
+      
+      // Update manual download link and show manual selection section
+      manualDlBtn.href = matchedAsset.browser_download_url;
+      manualDlBtn.download = matchedAsset.name;
+      manualDlBtn.style.display = 'inline-flex';
+      manualFileSec.style.display = 'block';
+    }
   } else {
-    // Loaded directly from GitHub Releases (Will fail with CORS error in browser)
-    flashPath = matchedAsset.browser_download_url;
-    showWarning(`⚠️ CORS Error: Direct download from GitHub Releases is blocked by browser security. Please download the firmware image manually using Step 1 below, then upload it in Step 2 to flash.`);
+    // No release asset found or offline/rate-limited
+    detailFile.textContent = 'No firmware selected (offline/rate-limited)';
+    detailSize.textContent = '-';
     
-    // Update manual download link and show manual selection section
-    manualDlBtn.href = matchedAsset.browser_download_url;
-    manualDlBtn.download = matchedAsset.name;
+    // We are offline or rate-limited. Let user flash a local file manually!
+    showWarning(`⚠️ Offline Mode / API Limit: Could not retrieve firmware releases. You can still select a device target above and flash a local firmware file from your computer using Step 2 below.`);
+    
+    // Hide Step 1 (Download) because we don't have a release link, but show Step 2 (Select file)
+    manualDlBtn.style.display = 'none';
     manualFileSec.style.display = 'block';
+    return; // Don't render install button until a local file is chosen
   }
 
   // Construct Manifest Object
   const manifest = {
     name: "Retro-Go",
-    version: state.selectedRelease.tag_name,
+    version: state.selectedRelease ? state.selectedRelease.tag_name : "Local",
     builds: [
       {
         chipFamily: state.selectedChip,
