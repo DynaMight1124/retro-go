@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Retro-Go Web Flasher</title>
+  <meta name="description" content="Flash Retro-Go firmware onto ESP32, ESP32-S3, and ESP32-P4 retro gaming devices directly from your web browser.">
+  <link rel="stylesheet" href="style.css">
+  
+  <!-- Load esp-web-tools v10 -->
+  <script type="module" src="https://unpkg.com/esp-web-tools@10/dist/web/install-button.js?module"></script>
+</head>
+<body>
+
+  <header>
+    <h1 id="main-title">Retro-Go Web Flasher</h1>
+    <p id="main-subtitle">Flash retro gaming firmware directly to your ESP32 device from the browser</p>
+  </header>
+
+  <main>
+    <!-- Web Serial Browser Support check -->
+    <div id="browser-support-alert" class="alert alert-danger" style="display: none;">
+      <span class="alert-icon">⚠️</span>
+      <div class="alert-text">
+        <strong>Browser Not Supported:</strong> Web Serial is not supported by your browser. Please open this page in a Chromium-based browser (Google Chrome, Microsoft Edge, Opera, or Brave) on a desktop computer. iOS and Android browsers are not supported.
+      </div>
+    </div>
+
+    <!-- General Warning Box (API rate limits, missing files, etc) -->
+    <div id="warning-box" class="alert alert-warning" style="display: none;">
+      <span class="alert-icon">💡</span>
+      <div class="alert-text"></div>
+    </div>
+
+    <div class="card" id="flasher-card">
+      
+      <!-- Repository Display / Scope -->
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; border-bottom: 1px solid rgba(255,255,255,0.06); padding-bottom: 1rem;">
+        <div>
+          <label style="margin-bottom: 0.25rem; display: block;">Source Repository</label>
+          <span id="repo-display-name" style="font-weight: 600; font-size: 1.1rem; color: var(--accent-cyan);">Loading repo...</span>
+        </div>
+        <button id="btn-advanced-toggle" class="accordion-toggle" style="width: auto; margin-top: 0; gap: 0.5rem;" aria-label="Toggle Advanced Repository Settings">
+          Settings <span class="arrow" style="display: inline-block; transition: transform 0.2s ease;">▼</span>
+        </button>
+      </div>
+
+      <!-- Advanced Repository Settings (Accordion) -->
+      <div id="advanced-panel" class="accordion-content">
+        <div class="config-grid">
+          <div class="form-group">
+            <label for="input-owner">GitHub Owner</label>
+            <input type="text" id="input-owner" placeholder="e.g. DynaMight1124">
+          </div>
+          <div class="form-group">
+            <label for="input-repo">GitHub Repository</label>
+            <input type="text" id="input-repo" placeholder="e.g. private-retro-go">
+          </div>
+        </div>
+        <div class="form-group" style="margin-bottom: 1rem;">
+          <label for="input-token">GitHub Token (Optional for Private Repos / Rate Limits)</label>
+          <input type="password" id="input-token" placeholder="ghp_xxxxxxxxxxxxxxxxxxxxxxxx">
+        </div>
+        <div style="display: flex; gap: 1rem; justify-content: flex-end;">
+          <button id="btn-reset-settings" style="background: transparent; border: 1px solid rgba(255,255,255,0.15); color: var(--text-secondary); padding: 0.6rem 1.2rem; border-radius: 0.5rem; cursor: pointer; transition: all 0.2s;" onmouseover="this.style.borderColor='rgba(255,255,255,0.3)'" onmouseout="this.style.borderColor='rgba(255,255,255,0.15)'">Reset Defaults</button>
+          <button id="btn-apply-settings" style="background: var(--accent-cyan); border: none; color: #0f172a; font-weight: 600; padding: 0.6rem 1.5rem; border-radius: 0.5rem; cursor: pointer; transition: all 0.2s;" onmouseover="this.style.opacity='0.9'" onmouseout="this.style.opacity='1'">Save & Fetch</button>
+        </div>
+      </div>
+
+      <!-- Release Selector -->
+      <div class="form-group" style="margin-bottom: 2rem;">
+        <label for="select-release">Firmware Version</label>
+        <div id="select-release-container">
+          <select id="select-release" aria-label="Select Firmware Release Version">
+            <option>Loading releases...</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Device Target Grid Selector -->
+      <div class="targets-section">
+        <label>Select Target Device</label>
+        <div class="targets-grid" id="targets-grid" role="radiogroup" aria-label="Target Device Selector">
+          <!-- Populated by Javascript -->
+        </div>
+      </div>
+
+      <!-- Flasher Selection Details Summary -->
+      <div class="info-section">
+        <div class="info-row">
+          <span class="info-label">Selected Target</span>
+          <span class="info-value badge" id="info-target-name">-</span>
+        </div>
+        <div class="info-row">
+          <span class="info-label">Device Chip Family</span>
+          <span class="info-value" id="info-target-chip">-</span>
+        </div>
+        <div class="info-row">
+          <span class="info-label">Flash Image File</span>
+          <span class="info-value" id="info-filename" style="word-break: break-all; text-align: right;">-</span>
+        </div>
+        <div class="info-row">
+          <span class="info-label">Firmware Size</span>
+          <span class="info-value" id="info-filesize">-</span>
+        </div>
+      </div>
+
+      <!-- Web Flasher Install Button Wrapper -->
+      <div class="action-center">
+        <div id="button-container">
+          <!-- Dynamic installation button will be appended here -->
+        </div>
+      </div>
+
+    </div>
+  </main>
+
+  <footer>
+    <p>⚡ Ensure your device is connected via USB and any open serial monitors (Arduino IDE, ESPTool, etc.) are closed.</p>
+    <p>Powered by <a href="https://github.com/espressif/esp-web-tools" target="_blank" rel="noopener">ESP Web Tools</a> &bull; Firmware project <a href="https://github.com/duganchen/retro-go" target="_blank" rel="noopener">Retro-Go</a></p>
+  </footer>
+
+  <script src="app.js"></script>
+  
+  <script>
+    // Show browser warning immediately if Web Serial is not supported
+    if (!navigator.serial) {
+      document.getElementById('browser-support-alert').style.display = 'flex';
+      document.getElementById('flasher-card').style.opacity = '0.5';
+      document.getElementById('flasher-card').style.pointerEvents = 'none';
+    }
+  </script>
+</body>
+</html>
