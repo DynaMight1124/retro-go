@@ -48,7 +48,8 @@ let state = {
   targets: [],
   selectedTarget: '',
   selectedChip: '',
-  manifestBlobUrl: null
+  localFirmwares: [],
+  localFileBlobUrl: null
 };
 
 // Initialize Application
@@ -148,8 +149,12 @@ function setupUIEventListeners() {
   document.getElementById('select-release').addEventListener('change', (e) => {
     const val = e.target.value;
     state.selectedRelease = state.releases.find(r => r.tag_name === val) || null;
+    resetLocalFileState();
     updateInstallButtonAndDetails();
   });
+
+  // Local file picker handler
+  document.getElementById('input-local-file').addEventListener('change', handleLocalFileSelect);
 }
 
 // Kick off data fetching
@@ -157,10 +162,11 @@ async function initializeAppState() {
   showReleaseLoader(true);
   showTargetsLoader(true);
 
-  // Fetch Releases and Targets in parallel
+  // Fetch Releases, Targets, and Local Firmwares in parallel
   await Promise.all([
     fetchReleases(),
-    fetchTargets()
+    fetchTargets(),
+    fetchLocalFirmwares()
   ]);
 
   showReleaseLoader(false);
@@ -293,9 +299,29 @@ async function fetchTargets() {
   });
 }
 
+// Fetch list of locally hosted firmwares in docs/firmware/ folder
+async function fetchLocalFirmwares() {
+  state.localFirmwares = [];
+  try {
+    const res = await fetch(`https://api.github.com/repos/${state.owner}/${state.repo}/contents/docs/firmware?ref=webflash`, {
+      headers: getFetchHeaders()
+    });
+
+    if (res.ok) {
+      const items = await res.json();
+      state.localFirmwares = items
+        .filter(item => item.type === 'file' && item.name.toLowerCase().endsWith('.img'))
+        .map(item => item.name);
+    }
+  } catch (err) {
+    console.warn('Unable to lookup docs/firmware/ folder. Falling back to external release URLs.', err);
+  }
+}
+
 // Select a device target
 async function selectTarget(target) {
   state.selectedTarget = target;
+  resetLocalFileState();
 
   // Visual selection styling
   document.querySelectorAll('.target-card').forEach(el => el.classList.remove('active'));
@@ -388,8 +414,33 @@ function updateInstallButtonAndDetails() {
   detailFile.textContent = matchedAsset.name;
   detailSize.textContent = formatBytes(matchedAsset.size);
 
-  // Prepend a CORS proxy to bypass GitHub Releases CORS restrictions in the browser
-  const proxiedPath = `https://corsproxy.io/?url=${encodeURIComponent(matchedAsset.browser_download_url)}`;
+  // Determine if the firmware file is hosted locally on GitHub Pages (CORS-safe)
+  let flashPath = '';
+  const isLocal = state.localFirmwares.includes(matchedAsset.name);
+  
+  const manualFileSec = document.getElementById('manual-file-section');
+  const manualDlBtn = document.getElementById('btn-manual-download');
+
+  if (isLocal) {
+    // Served directly from GitHub Pages (CORS-safe, fast, supports chunked streams!)
+    flashPath = `firmware/${matchedAsset.name}`;
+    hideWarning();
+    manualFileSec.style.display = 'none';
+  } else if (state.localFileBlobUrl) {
+    // Manually selected local file is present! (CORS-safe!)
+    flashPath = state.localFileBlobUrl;
+    hideWarning();
+    // Keep manual section visible but you can hide it or show success
+  } else {
+    // Loaded directly from GitHub Releases (Will fail with CORS error in browser)
+    flashPath = matchedAsset.browser_download_url;
+    showWarning(`⚠️ CORS Error: Direct download from GitHub Releases is blocked by browser security. Please download the firmware image manually using Step 1 below, then upload it in Step 2 to flash.`);
+    
+    // Update manual download link and show manual selection section
+    manualDlBtn.href = matchedAsset.browser_download_url;
+    manualDlBtn.download = matchedAsset.name;
+    manualFileSec.style.display = 'block';
+  }
 
   // Construct Manifest Object
   const manifest = {
@@ -399,7 +450,7 @@ function updateInstallButtonAndDetails() {
       {
         chipFamily: state.selectedChip,
         parts: [
-          { path: proxiedPath, offset: 0 }
+          { path: flashPath, offset: 0 }
         ]
       }
     ]
@@ -460,4 +511,40 @@ function showTargetsLoader(show) {
       <div class="target-card skeleton" style="height: 100px;"></div>
     `;
   }
+}
+
+// Local file helpers for CORS fallback
+function resetLocalFileState() {
+  if (state.localFileBlobUrl) {
+    URL.revokeObjectURL(state.localFileBlobUrl);
+    state.localFileBlobUrl = null;
+  }
+  const fileInput = document.getElementById('input-local-file');
+  if (fileInput) fileInput.value = '';
+  const statusEl = document.getElementById('local-file-status');
+  if (statusEl) {
+    statusEl.textContent = '';
+    statusEl.style.display = 'none';
+  }
+}
+
+function handleLocalFileSelect(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+
+  // Revoke old blob URL if it exists
+  if (state.localFileBlobUrl) {
+    URL.revokeObjectURL(state.localFileBlobUrl);
+  }
+
+  // Create new Blob URL
+  state.localFileBlobUrl = URL.createObjectURL(file);
+
+  // Update UI status
+  const statusEl = document.getElementById('local-file-status');
+  statusEl.innerHTML = `✓ Loaded: ${file.name} (${formatBytes(file.size)})`;
+  statusEl.style.display = 'block';
+
+  // Re-generate manifest and installer button
+  updateInstallButtonAndDetails();
 }

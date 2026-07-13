@@ -112,6 +112,23 @@
         </div>
       </div>
 
+      <!-- Manual File Upload Area (shown when CORS fallback is needed) -->
+      <div id="manual-file-section" style="display: none; margin-top: 1.5rem; border-top: 1px solid rgba(255,255,255,0.06); padding-top: 1.5rem; text-align: center;">
+        <p style="font-size: 0.9rem; color: var(--text-secondary); margin-bottom: 1rem;">
+          🔒 GitHub CORS policies block direct browser downloads. Follow these two quick steps to flash:
+        </p>
+        <div style="display: flex; gap: 1rem; align-items: center; justify-content: center; flex-wrap: wrap; margin-bottom: 0.75rem;">
+          <a id="btn-manual-download" class="btn" style="background: transparent; border: 1px solid var(--accent-cyan); color: var(--accent-cyan); text-decoration: none; padding: 0.6rem 1.2rem; border-radius: 0.5rem; font-weight: 600; display: inline-flex; align-items: center; gap: 0.5rem; transition: all 0.2s;" target="_blank">
+            <span>1. 📥 Download Firmware Image</span>
+          </a>
+          <label class="btn" style="background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); color: var(--text-primary); padding: 0.6rem 1.2rem; border-radius: 0.5rem; font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; gap: 0.5rem; transition: all 0.2s;" onmouseover="this.style.background='rgba(255,255,255,0.1)'" onmouseout="this.style.background='rgba(255,255,255,0.05)'">
+            <span>2. 📂 Select Downloaded File</span>
+            <input type="file" id="input-local-file" accept=".img,.bin" style="display: none;">
+          </label>
+        </div>
+        <div id="local-file-status" style="font-size: 0.85rem; color: var(--accent-cyan); font-weight: 600; margin-top: 0.75rem; display: none;"></div>
+      </div>
+
     </div>
   </main>
 
