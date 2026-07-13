@@ -238,17 +238,26 @@ async function fetchTargets() {
   container.innerHTML = '';
 
   try {
-    const res = await fetch(`https://api.github.com/repos/${state.owner}/${state.repo}/contents/components/retro-go/targets`, {
+    // Try to fetch targets from the 'webflash' branch first (where the webflasher is typically hosted)
+    let res = await fetch(`https://api.github.com/repos/${state.owner}/${state.repo}/contents/components/retro-go/targets?ref=webflash`, {
       headers: getFetchHeaders()
     });
+
+    // If webflash branch does not exist, fall back to the default branch
+    if (!res.ok) {
+      res = await fetch(`https://api.github.com/repos/${state.owner}/${state.repo}/contents/components/retro-go/targets`, {
+        headers: getFetchHeaders()
+      });
+    }
 
     if (!res.ok) {
       throw new Error(`Failed to list targets folder: ${res.statusText}`);
     }
 
+    const EXCLUDED_TARGETS = ['sdl2', 'cyd', 'gb300-p4', 'hdmi', 'vmu'];
     const items = await res.json();
     state.targets = items
-      .filter(item => item.type === 'dir' && item.name !== 'sdl2')
+      .filter(item => item.type === 'dir' && !EXCLUDED_TARGETS.includes(item.name.toLowerCase()))
       .map(item => item.name);
 
   } catch (err) {
