@@ -388,6 +388,9 @@ function updateInstallButtonAndDetails() {
   detailFile.textContent = matchedAsset.name;
   detailSize.textContent = formatBytes(matchedAsset.size);
 
+  // Prepend a CORS proxy to bypass GitHub Releases CORS restrictions in the browser
+  const proxiedPath = `https://corsproxy.io/?url=${encodeURIComponent(matchedAsset.browser_download_url)}`;
+
   // Construct Manifest Object
   const manifest = {
     name: "Retro-Go",
@@ -396,7 +399,7 @@ function updateInstallButtonAndDetails() {
       {
         chipFamily: state.selectedChip,
         parts: [
-          { path: matchedAsset.browser_download_url, offset: 0 }
+          { path: proxiedPath, offset: 0 }
         ]
       }
     ]
