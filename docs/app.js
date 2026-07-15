@@ -199,7 +199,19 @@ async function fetchReleases() {
     });
 
     if (!res.ok) {
-      throw new Error(`Failed to fetch releases: ${res.statusText}`);
+      if (res.status === 403) {
+        const remaining = res.headers.get('x-ratelimit-remaining');
+        if (remaining === '0') {
+          const resetVal = res.headers.get('x-ratelimit-reset');
+          const resetTime = resetVal ? new Date(parseInt(resetVal) * 1000).toLocaleTimeString() : 'later';
+          throw new Error(`Rate limit reached. Resets at ${resetTime}`);
+        }
+        throw new Error(`Forbidden (403). Check your token or repository permissions.`);
+      }
+      if (res.status === 404) {
+        throw new Error(`Repository not found (404). Check owner/repo or token (if private).`);
+      }
+      throw new Error(`HTTP Error ${res.status}: ${res.statusText || 'Unknown'}`);
     }
 
     const data = await res.json();
@@ -256,7 +268,7 @@ async function fetchTargets() {
     }
 
     if (!res.ok) {
-      throw new Error(`Failed to list targets folder: ${res.statusText}`);
+      throw new Error(`Failed to list targets folder: HTTP ${res.status} ${res.statusText || 'Error'}`);
     }
 
     const EXCLUDED_TARGETS = ['sdl2'];
