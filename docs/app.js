@@ -425,7 +425,6 @@ function updateInstallButtonAndDetails() {
     } else {
       // Loaded directly from GitHub Releases (Will fail with CORS error in browser)
       flashPath = matchedAsset.browser_download_url;
-      showWarning(`⚠️ CORS Error: Direct download from GitHub Releases is blocked by browser security. Please download the firmware image manually using Step 1 below, then upload it in Step 2 to flash.`);
       
       // Update manual download link and show manual selection section
       manualDlBtn.href = matchedAsset.browser_download_url;
