@@ -35,7 +35,7 @@ To host the WebFlasher on your fork's GitHub Pages:
 1. Go to your repository settings on GitHub.
 2. Under **Pages** (in the sidebar under Code and automation), set the Source to **Deploy from a branch**.
 3. Choose your main/master branch, and select the `/docs` folder or repository root if your site is set up there.
-4. If you only want to serve this specific subfolder, you can set up a GitHub Action workflow to publish the `webflash` folder to the `gh-pages` branch automatically.
+4. If you only want to serve this specific subfolder, you can set up a GitHub Action workflow to publish the `docs` folder to the `gh-pages` branch automatically.
 
 #### Example GitHub Action (`.github/workflows/deploy-pages.yml`)
 To deploy only this folder automatically on commits to the main branch:
@@ -46,7 +46,7 @@ on:
   push:
     branches: [main]
     paths:
-      - 'webflash/**'
+      - 'docs/**'
   workflow_dispatch:
 
 permissions:
@@ -72,7 +72,7 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: './webflash'
+          path: './docs'
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
@@ -80,10 +80,21 @@ jobs:
 
 ---
 
+## CORS Fallback Flashing
+Since GitHub Releases do not support CORS headers for direct script-initiated downloads (`fetch`), direct browser downloading of remote firmware images is blocked by standard security policies. 
+
+The WebFlasher includes a **CORS manual fallback workflow**:
+1. If the selected release is not stored locally in `/docs/firmware/`, the flasher reveals a two-step panel.
+2. **Step 1:** Download the `.img` file using a direct browser download link.
+3. **Step 2:** Select the downloaded local file.
+4. Once loaded, the WebFlasher reads it locally in-memory and executes the flash. This resolves all network CORS constraints without requiring the developer to duplicate release binaries inside their Git repository history.
+
+---
+
 ## Local Development & Testing
 
 To run the WebFlasher locally:
-1. Start a local HTTP server in the `webflash` folder:
+1. Start a local HTTP server in the `docs` folder:
    ```bash
    # Python 3
    python -m http.server 8000
