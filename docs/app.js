@@ -150,6 +150,7 @@ function setupUIEventListeners() {
     const val = e.target.value;
     state.selectedRelease = state.releases.find(r => r.tag_name === val) || null;
     resetLocalFileState();
+    renderTargetsGrid();
     updateInstallButtonAndDetails();
   });
 
@@ -172,10 +173,8 @@ async function initializeAppState() {
   showReleaseLoader(false);
   showTargetsLoader(false);
 
-  // Set default target
-  if (state.targets.length > 0) {
-    selectTarget(state.targets.includes('odroid-go') ? 'odroid-go' : state.targets[0]);
-  }
+  // Render targets grid dynamically based on the selected release
+  renderTargetsGrid();
 }
 
 // Generate Headers with Optional GitHub Token
@@ -271,27 +270,6 @@ async function fetchTargets() {
     state.targets = [...FALLBACK_TARGETS];
   }
 
-  // Populate Targets UI grid
-  state.targets.forEach(target => {
-    const card = document.createElement('div');
-    card.className = 'target-card';
-    card.id = `target-card-${target}`;
-    card.dataset.targetName = target;
-
-    const matchedChip = TARGET_CHIP_MAP[target] || 'ESP32';
-    
-    // Choose icon (all targets use the console device icon style as Odroid-Go)
-    const iconHtml = TARGET_ICONS['odroid-go'];
-
-    card.innerHTML = `
-      <div class="target-icon">${iconHtml}</div>
-      <div class="target-name">${target}</div>
-      <div class="target-chip">${matchedChip}</div>
-    `;
-
-    card.addEventListener('click', () => selectTarget(target));
-    container.appendChild(container.childElementCount === 0 ? card : card);
-  });
 }
 
 // Fetch list of locally hosted firmwares in docs/firmware/ folder
@@ -551,4 +529,97 @@ function handleLocalFileSelect(e) {
 
   // Re-generate manifest and installer button
   updateInstallButtonAndDetails();
+}
+
+// Parse list of targets dynamically from the selected release assets (.img files)
+function getTargetsFromRelease(release) {
+  if (!release || !release.assets) return [];
+  const releaseTargets = new Set();
+  release.assets.forEach(asset => {
+    const nameLower = asset.name.toLowerCase();
+    if (nameLower.endsWith('.img') && nameLower.startsWith('retro-go_')) {
+      const parts = nameLower.split('_');
+      if (parts.length >= 3) {
+        // Target is the part of the filename after the last underscore, before .img
+        const target = parts[parts.length - 1].replace(/\.img$/, '');
+        // Exclude generic or unwanted helper names
+        if (target !== 'sdl2') {
+          releaseTargets.add(target);
+        }
+      }
+    }
+  });
+  return Array.from(releaseTargets);
+}
+
+// Render targets dynamically based on the current selection
+function renderTargetsGrid() {
+  const container = document.getElementById('targets-grid');
+  container.innerHTML = '';
+
+  let targetsToRender = [];
+
+  if (state.selectedRelease) {
+    // Release is selected: parse targets from its assets
+    const releaseTargets = getTargetsFromRelease(state.selectedRelease);
+    
+    targetsToRender = releaseTargets.map(name => {
+      return {
+        name: name,
+        isPlaceholder: !state.targets.includes(name)
+      };
+    });
+  } else {
+    // Offline/Rate-limited: show all repo targets so user can upload local file
+    targetsToRender = state.targets.map(name => {
+      return {
+        name: name,
+        isPlaceholder: false
+      };
+    });
+  }
+
+  if (targetsToRender.length === 0) {
+    container.innerHTML = '<div style="color:var(--text-secondary); padding:2rem; text-align:center; grid-column:1/-1;">No compatible firmware targets found in this release.</div>';
+    return;
+  }
+
+  targetsToRender.forEach(item => {
+    const target = item.name;
+    const card = document.createElement('div');
+    card.className = 'target-card';
+    card.id = `target-card-${target}`;
+    card.dataset.targetName = target;
+
+    // Get chip family from hardcoded map or guess based on suffix
+    let matchedChip = TARGET_CHIP_MAP[target];
+    if (!matchedChip) {
+      if (target.endsWith('-s3') || target.includes('-s3-')) matchedChip = 'ESP32-S3';
+      else if (target.endsWith('-p4') || target.includes('-p4-')) matchedChip = 'ESP32-P4';
+      else if (target.endsWith('-s2') || target.includes('-s2-')) matchedChip = 'ESP32-S2';
+      else if (target.endsWith('-c3') || target.includes('-c3-')) matchedChip = 'ESP32-C3';
+      else matchedChip = 'ESP32'; // fallback for CYD etc.
+    }
+
+    const badgeHtml = item.isPlaceholder ? '<span class="badge" style="font-size:0.65rem; background:rgba(255,255,255,0.06); color:var(--accent-cyan); margin-left:0.25rem; padding:0.15rem 0.35rem; vertical-align:middle; border-radius:0.25rem;">Release Asset</span>' : '';
+
+    card.innerHTML = `
+      <div class="target-icon">${TARGET_ICONS['odroid-go']}</div>
+      <div class="target-name" style="display:flex; align-items:center; justify-content:center; gap:0.25rem;">${target}${badgeHtml}</div>
+      <div class="target-chip">${matchedChip}</div>
+    `;
+
+    card.addEventListener('click', () => selectTarget(target));
+    container.appendChild(card);
+  });
+
+  // Automatically select a target if the currently selected one is not valid for this release
+  const exists = targetsToRender.some(t => t.name === state.selectedTarget);
+  if (!exists && targetsToRender.length > 0) {
+    const hasOdroid = targetsToRender.some(t => t.name === 'odroid-go');
+    selectTarget(hasOdroid ? 'odroid-go' : targetsToRender[0].name);
+  } else if (state.selectedTarget) {
+    const activeCard = document.getElementById(`target-card-${state.selectedTarget}`);
+    if (activeCard) activeCard.classList.add('active');
+  }
 }
