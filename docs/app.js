@@ -363,7 +363,12 @@ function updateInstallButtonAndDetails() {
   const detailSize = document.getElementById('info-filesize');
   const buttonContainer = document.getElementById('button-container');
 
-  detailTarget.textContent = state.selectedTarget || 'None';
+  const isPlaceholder = state.selectedTarget && !state.targets.includes(state.selectedTarget);
+  if (isPlaceholder) {
+    detailTarget.innerHTML = `${state.selectedTarget} <span style="font-size:0.8rem; color:var(--accent-cyan); font-weight:normal; margin-left:0.5rem;">(non-target release)</span>`;
+  } else {
+    detailTarget.textContent = state.selectedTarget || 'None';
+  }
   detailFile.textContent = 'Searching release assets...';
   detailSize.textContent = '-';
   buttonContainer.innerHTML = ''; // Clear flash button
@@ -613,11 +618,9 @@ function renderTargetsGrid() {
       else matchedChip = 'ESP32'; // fallback for CYD etc.
     }
 
-    const badgeHtml = item.isPlaceholder ? '<span class="badge" style="font-size:0.65rem; background:rgba(255,255,255,0.06); color:var(--accent-cyan); margin-left:0.25rem; padding:0.15rem 0.35rem; vertical-align:middle; border-radius:0.25rem;">Release Asset</span>' : '';
-
     card.innerHTML = `
       <div class="target-icon">${TARGET_ICONS['odroid-go']}</div>
-      <div class="target-name" style="display:flex; align-items:center; justify-content:center; gap:0.25rem;">${target}${badgeHtml}</div>
+      <div class="target-name">${target}</div>
       <div class="target-chip">${matchedChip}</div>
     `;
 
