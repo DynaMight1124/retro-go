@@ -22,13 +22,15 @@
 #undef LCD_ACCESS_MODE
 #define LCD_ACCESS_MODE   0 
 #undef LCD_BUFFER_LENGTH
-#define LCD_BUFFER_LENGTH (RG_SCREEN_WIDTH * 2)
+#define LCD_BUFFER_LENGTH (RG_SCREEN_WIDTH * 8)
 
 #define CHUNK_LINES           8
 #define NUM_DMA_BUFFERS       16
 
 #define SAMPLES_PER_LINE (RG_TVOUT_STANDARD == 1 ? 1136 : 912)
 #define ACTIVE_START     (RG_TVOUT_STANDARD == 1 ? 184 : 144)
+#define ACTIVE_SAMPLES   (RG_TVOUT_STANDARD == 1 ? 896 : 720)
+#define ACTIVE_END       (ACTIVE_START + ACTIVE_SAMPLES)
 
 // EXACT BITLUNI IRE MATH (Scaled down to 8-bit for interleaving)
 #define SYNC_SIZE        40
@@ -39,6 +41,7 @@
 #define WHITE_8BIT       (IRE(100) >> 8)
 
 static uint8_t *screen_buffer = NULL;
+static bool screen_buffer_internal = false;
 static lldesc_t *dma_desc = NULL;
 static uint16_t *dma_buffers[NUM_DMA_BUFFERS] = {NULL};
 
@@ -61,7 +64,12 @@ static uint32_t color_lut_odd_s0[256];
 static uint32_t color_lut_odd_s1[256];
 static uint32_t color_lut_odd_s2[256];
 static uint32_t color_lut_odd_s3[256];
-static int16_t pixel_map[896];
+#if RG_SCREEN_WIDTH <= 256
+typedef uint8_t pixel_map_t;
+#else
+typedef uint16_t pixel_map_t;
+#endif
+static pixel_map_t pixel_map[896];
 
 static intr_handle_t isr_handle = NULL;
 static TaskHandle_t pump_task_handle = NULL;
@@ -87,7 +95,10 @@ static void IRAM_ATTR fill_chunk(int chunk_idx, int *line_counter) {
 
     for (int i = 0; i < CHUNK_LINES; i++) {
         int line = *line_counter;
-        *line_counter = (*line_counter + 1) % total_lines;
+        (*line_counter)++;
+        if (*line_counter >= total_lines) {
+            *line_counter = 0;
+        }
         if (*line_counter == 0) {
             if (vblank_sem) {
                 xSemaphoreGive(vblank_sem);
@@ -102,18 +113,31 @@ static void IRAM_ATTR fill_chunk(int chunk_idx, int *line_counter) {
             } else if (line >= 3 && line < 6) {
                 memcpy(buf, vsync_template, SAMPLES_PER_LINE * 2);
             } else {
-                memcpy(buf, normal_template, SAMPLES_PER_LINE * 2);
+                int video_y = line - active_line_start;
+                bool active = video_y >= 0 && video_y < RG_SCREEN_HEIGHT && screen_buffer;
+
+                if (active) {
+                    // The active region is replaced below, so only copy the
+                    // sync/burst prefix and the trailing blanking samples.
+                    memcpy(buf, normal_template, ACTIVE_START * sizeof(*buf));
+                    memcpy(buf + ACTIVE_END, normal_template + ACTIVE_END,
+                           (SAMPLES_PER_LINE - ACTIVE_END) * sizeof(*buf));
+                } else {
+                    memcpy(buf, normal_template, SAMPLES_PER_LINE * sizeof(*buf));
+                }
                 if (pal_burst0 && pal_burst1) {
                     const uint16_t *burst_src = (line & 1) ? pal_burst1 : pal_burst0;
                     memcpy(buf + burst_start, burst_src, burst_width * 2);
                 }
-                int video_y = line - active_line_start;
-                if (video_y >= 0 && video_y < RG_SCREEN_HEIGHT && screen_buffer) {
+                if (active) {
                     uint8_t line_temp[RG_SCREEN_WIDTH];
-                    memcpy(line_temp, screen_buffer + (video_y * RG_SCREEN_WIDTH), RG_SCREEN_WIDTH);
-                    uint8_t *src = line_temp;
+                    const uint8_t *src = screen_buffer + (video_y * RG_SCREEN_WIDTH);
+                    if (!screen_buffer_internal) {
+                        memcpy(line_temp, src, RG_SCREEN_WIDTH);
+                        src = line_temp;
+                    }
                     uint16_t *dst = buf + ACTIVE_START;
-                    const int16_t *map_ptr = pixel_map;
+                    const pixel_map_t *map_ptr = pixel_map;
                     uint32_t *lut_s0 = (line & 1) ? color_lut_odd_s0 : color_lut_even_s0;
                     uint32_t *lut_s1 = (line & 1) ? color_lut_odd_s1 : color_lut_even_s1;
                     uint32_t *lut_s2 = (line & 1) ? color_lut_odd_s2 : color_lut_even_s2;
@@ -139,14 +163,27 @@ static void IRAM_ATTR fill_chunk(int chunk_idx, int *line_counter) {
             if (line >= 3 && line < 6) {
                 memcpy(buf, vsync_template, SAMPLES_PER_LINE * 2);
             } else {
-                memcpy(buf, normal_template, SAMPLES_PER_LINE * 2);
                 int video_y = line - active_line_start;
-                if (video_y >= 0 && video_y < RG_SCREEN_HEIGHT && screen_buffer) {
+                bool active = video_y >= 0 && video_y < RG_SCREEN_HEIGHT && screen_buffer;
+
+                if (active) {
+                    // The active region is replaced below, so only copy the
+                    // sync/burst prefix and the trailing blanking samples.
+                    memcpy(buf, normal_template, ACTIVE_START * sizeof(*buf));
+                    memcpy(buf + ACTIVE_END, normal_template + ACTIVE_END,
+                           (SAMPLES_PER_LINE - ACTIVE_END) * sizeof(*buf));
+                } else {
+                    memcpy(buf, normal_template, SAMPLES_PER_LINE * sizeof(*buf));
+                }
+                if (active) {
                     uint8_t line_temp[RG_SCREEN_WIDTH];
-                    memcpy(line_temp, screen_buffer + (video_y * RG_SCREEN_WIDTH), RG_SCREEN_WIDTH);
-                    uint8_t *src = line_temp;
+                    const uint8_t *src = screen_buffer + (video_y * RG_SCREEN_WIDTH);
+                    if (!screen_buffer_internal) {
+                        memcpy(line_temp, src, RG_SCREEN_WIDTH);
+                        src = line_temp;
+                    }
                     uint16_t *dst = buf + ACTIVE_START;
-                    const int16_t *map_ptr = pixel_map;
+                    const pixel_map_t *map_ptr = pixel_map;
                     int active_cc = 180; // 720 samples / 4
                     for (int cc = 0; cc < active_cc; cc++) {
                         uint8_t c0 = src[*map_ptr++];
@@ -394,6 +431,7 @@ static void lcd_init_hw(void *arg) {
 static void lcd_init(void) {
     vblank_sem = xSemaphoreCreateBinary();
     screen_buffer = heap_caps_malloc(RG_SCREEN_WIDTH * RG_SCREEN_HEIGHT, MALLOC_CAP_8BIT | MALLOC_CAP_INTERNAL);
+    screen_buffer_internal = screen_buffer != NULL;
     if (!screen_buffer) {
         RG_LOGW("Failed to allocate 8-bit screen buffer in internal RAM, falling back to PSRAM.");
         screen_buffer = rg_alloc(RG_SCREEN_WIDTH * RG_SCREEN_HEIGHT, MEM_ANY);
@@ -431,28 +469,48 @@ static void lcd_set_window(int left, int top, int width, int height) {
 }
 
 static inline uint16_t *lcd_get_buffer(size_t length) {
-    static uint16_t temp_buffer[320 * 8];
+    static uint16_t temp_buffer[LCD_BUFFER_LENGTH];
     return temp_buffer;
 }
 
 static inline void lcd_send_buffer(uint16_t *buffer, size_t length) {
-    if (!screen_buffer) return;
-    for (size_t i = 0; i < length; i++) {
+    if (!screen_buffer || window_w <= 0) return;
+
+    size_t offset = 0;
+    while (offset < length) {
+        size_t span = RG_MIN(length - offset, (size_t)(window_w - window_col));
         int dst_x = window_x + window_col;
         int dst_y = window_y + window_row;
-        if (dst_x >= 0 && dst_x < RG_SCREEN_WIDTH && dst_y >= 0 && dst_y < RG_SCREEN_HEIGHT) {
-            uint16_t pixel = buffer[i];
+
+        if (dst_y >= 0 && dst_y < RG_SCREEN_HEIGHT) {
+            int first = dst_x < 0 ? -dst_x : 0;
+            int last = span;
+            if (dst_x + last > RG_SCREEN_WIDTH) {
+                last = RG_SCREEN_WIDTH - dst_x;
+            }
+
+            if (first < last) {
+                const uint16_t *src = buffer + offset + first;
+                uint8_t *dst = screen_buffer + (dst_y * RG_SCREEN_WIDTH) + dst_x + first;
+                int count = last - first;
+
+                for (int i = 0; i < count; i++) {
+                    uint16_t pixel = src[i];
 #if RG_SCREEN_PIXEL_FORMAT == 1 // Little Endian
-            uint8_t b0 = pixel & 0xFF;
-            uint8_t b1 = pixel >> 8;
-            screen_buffer[dst_y * RG_SCREEN_WIDTH + dst_x] = (b1 & 0xE0) | ((b1 & 0x07) << 2) | ((b0 >> 3) & 0x03);
+                    uint8_t b0 = pixel & 0xFF;
+                    uint8_t b1 = pixel >> 8;
+                    dst[i] = (b1 & 0xE0) | ((b1 & 0x07) << 2) | ((b0 >> 3) & 0x03);
 #else // Big Endian (Avoids byte-swapping in hot path)
-            uint8_t b0 = pixel & 0xFF;
-            uint8_t b1 = pixel >> 8;
-            screen_buffer[dst_y * RG_SCREEN_WIDTH + dst_x] = (b0 & 0xE0) | ((b0 & 0x07) << 2) | ((b1 >> 3) & 0x03);
+                    uint8_t b0 = pixel & 0xFF;
+                    uint8_t b1 = pixel >> 8;
+                    dst[i] = (b0 & 0xE0) | ((b0 & 0x07) << 2) | ((b1 >> 3) & 0x03);
 #endif
+                }
+            }
         }
-        window_col++;
+
+        offset += span;
+        window_col += span;
         if (window_col >= window_w) {
             window_col = 0;
             window_row++;
