@@ -75,7 +75,10 @@ int SDL_OpenAudio(SDL_AudioSpec *desired, SDL_AudioSpec *obtained)
     audio_buffer = (rg_audio_sample_t *)malloc(max_out_samples * sizeof(rg_audio_sample_t));
     sdl_mix_buffer = (uint8_t *)malloc(as.samples * 4); // Enough for stereo 16-bit
     
-    rg_task_create("audio_task", audio_task, NULL, 2048, 1, RG_TASK_PRIORITY_2, 1);
+    // Wolf's OPL synthesis and channel mixing must complete before the next
+    // buffer deadline. Keep it above Retro-Go's display task so sustained
+    // rendering cannot starve audio.
+    rg_task_create("audio_task", audio_task, NULL, 2048, 1, RG_TASK_PRIORITY_7, 1);
     
     return 0;
 }

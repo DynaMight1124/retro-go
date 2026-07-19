@@ -413,20 +413,16 @@ void VL_FadeIn (int start, int end, SDL_Color *palette, int steps)
 
 IRAM_ATTR byte *VL_LockSurface(SDL_Surface *surface)
 {
-    if(SDL_MUSTLOCK(surface))
-    {
-        if(SDL_LockSurface(surface) < 0)
-            return NULL;
-    }
+    // The Retro-Go SDL display surface uses preallocated asynchronous storage,
+    // so locking also acts as its ownership boundary even without SDL hardware.
+    if(SDL_LockSurface(surface) < 0)
+        return NULL;
     return (byte *) surface->pixels;
 }
 
 IRAM_ATTR void VL_UnlockSurface(SDL_Surface *surface)
 {
-    if(SDL_MUSTLOCK(surface))
-    {
-        SDL_UnlockSurface(surface);
-    }
+    SDL_UnlockSurface(surface);
 }
 
 /*

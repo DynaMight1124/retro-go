@@ -10,6 +10,20 @@ static rg_surface_t *rg_screen = NULL;
 static uint16_t shadow_palette[256];
 static int64_t last_frame_time = 0;
 
+static bool surface_uses_rg_buffer(const SDL_Surface *surface)
+{
+    return surface && rg_screen && surface->pixels == rg_screen->data;
+}
+
+static void wait_for_rg_buffer(const SDL_Surface *surface)
+{
+    if (!surface_uses_rg_buffer(surface)) return;
+
+    while (rg_display_is_busy()) {
+        rg_task_yield();
+    }
+}
+
 void SDL_RG_SetSurface(rg_surface_t *surf)
 {
     rg_screen = surf;
@@ -17,6 +31,10 @@ void SDL_RG_SetSurface(rg_surface_t *surf)
 
 int SDL_LockSurface(SDL_Surface *surface)
 {
+    // Retro-Go consumes its submitted surface asynchronously. Wolf's engine
+    // keeps a separate backbuffer, so wait immediately before that buffer is
+    // copied or a transition writes directly into the display surface.
+    wait_for_rg_buffer(surface);
     return 0;
 }
 
@@ -86,24 +104,55 @@ int SDL_InitSubSystem(Uint32 flags)
     return 0;
 }
 
-SDL_Surface *SDL_CreateRGBSurface(Uint32 flags, int width, int height, int depth, Uint32 Rmask, Uint32 Gmask, Uint32 Bmask, Uint32 Amask)
+static SDL_Surface *create_rgb_surface(Uint32 flags, int width, int height, int depth, void *pixels)
 {
     SDL_Surface *surface = (SDL_Surface *)calloc(1, sizeof(SDL_Surface));
+    if (!surface) return NULL;
+
     surface->format = (SDL_PixelFormat *)calloc(1, sizeof(SDL_PixelFormat));
+    if (!surface->format) {
+        free(surface);
+        return NULL;
+    }
+
+    surface->flags = flags | (pixels ? SDL_PREALLOC : 0);
     surface->format->BitsPerPixel = (Uint8)depth;
     surface->format->BytesPerPixel = (Uint8)(depth / 8);
     surface->w = width;
     surface->h = height;
     surface->pitch = (Uint16)(width * surface->format->BytesPerPixel);
-    surface->pixels = malloc(surface->pitch * height);
+    surface->pixels = pixels ? pixels : malloc(surface->pitch * height);
+    if (!surface->pixels) {
+        free(surface->format);
+        free(surface);
+        return NULL;
+    }
     surface->refcount = 1;
 
     surface->map = (SDL_BlitMap *)calloc(1, sizeof(SDL_BlitMap));
+    if (!surface->map) {
+        if (!(surface->flags & SDL_PREALLOC)) free(surface->pixels);
+        free(surface->format);
+        free(surface);
+        return NULL;
+    }
     surface->map->sw_blit = SDL_SoftBlit;
     surface->map->sw_data = (struct private_swaccel *)calloc(1, sizeof(pub_swaccel));
+    if (!surface->map->sw_data) {
+        free(surface->map);
+        if (!(surface->flags & SDL_PREALLOC)) free(surface->pixels);
+        free(surface->format);
+        free(surface);
+        return NULL;
+    }
     surface->map->sw_data->blit = SDL_BlitCopy;
     
     return surface;
+}
+
+SDL_Surface *SDL_CreateRGBSurface(Uint32 flags, int width, int height, int depth, Uint32 Rmask, Uint32 Gmask, Uint32 Bmask, Uint32 Amask)
+{
+    return create_rgb_surface(flags, width, height, depth, NULL);
 }
 
 int SDL_FillRect(SDL_Surface *dst, SDL_Rect *dstrect, Uint32 color)
@@ -159,7 +208,15 @@ int SDL_SetPalette(SDL_Surface *surface, int flags, SDL_Color *colors, int first
 SDL_Surface *SDL_SetVideoMode(int width, int height, int bpp, Uint32 flags)
 {
     if (!primary_surface) {
-        primary_surface = SDL_CreateRGBSurface(flags, width, height, bpp, 0, 0, 0, 0);
+        void *pixels = NULL;
+        if (rg_screen && bpp == 8 && width == rg_screen->width && height == rg_screen->height) {
+            pixels = rg_screen->data;
+        }
+
+        // This SDL implementation has no hardware or double-buffered surface;
+        // Wolf supplies its own backbuffer and Retro-Go owns the display buffer.
+        flags &= ~(SDL_HWSURFACE | SDL_DOUBLEBUF);
+        primary_surface = create_rgb_surface(flags, width, height, bpp, pixels);
     }
     return primary_surface;
 }
@@ -168,7 +225,7 @@ void SDL_FreeSurface(SDL_Surface *surface)
 {
     if (surface) {
         if (surface == primary_surface) primary_surface = NULL;
-        if (surface->pixels) free(surface->pixels);
+        if (surface->pixels && !(surface->flags & SDL_PREALLOC)) free(surface->pixels);
         if (surface->format) free(surface->format);
         if (surface->map) {
             if (surface->map->sw_data) free(surface->map->sw_data);
@@ -188,6 +245,11 @@ int SDL_UpperBlit (SDL_Surface *src, SDL_Rect *srcrect,
        if ( ! src || ! dst ) {
                return(-1);
        }
+
+       // The primary SDL surface aliases Retro-Go's asynchronous submission
+       // buffer. Acquire it before the engine backbuffer is copied into it.
+       wait_for_rg_buffer(dst);
+
        if ( src->locked || dst->locked ) {
                return(-1);
        }
