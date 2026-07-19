@@ -18,9 +18,16 @@
 #define AUDIO_SAMPLE_RATE (22050)
 #define AUDIO_BUFFER_SIZE (AUDIO_SAMPLE_RATE / 50) // Max samples for PAL
 
+#if RG_SCREEN_PIXEL_FORMAT == 0
+#define STELLA_PIXEL_FORMAT RG_PIXEL_PAL565_BE
+#else
+#define STELLA_PIXEL_FORMAT RG_PIXEL_PAL565_LE
+#endif
+
 static rg_app_t *app;
 extern "C" rg_surface_t *screen;
 static uint16_t *audio_buffer;
+DRAM_ATTR static uint16_t screen_palette[256];
 static int32_t paddle_resistance = 500000; // Start at center
 
 extern Console* theConsole;
@@ -139,16 +146,22 @@ extern "C" void app_main(void) {
     dsInstallSoundEmuFIFO();
     
     RG_LOGI("Creating Display Surface (160x240)...\n");
-    screen = rg_surface_create(160, 240, RG_PIXEL_PAL565_LE, MEM_SLOW);
+    screen = rg_surface_create(160, 240, STELLA_PIXEL_FORMAT, MEM_SLOW);
+    screen->palette = screen_palette;
     
-    // Initialize palette
+    // Build the palette in the byte order consumed by the target display so
+    // the scaler does not have to swap every output pixel.
     const uInt32* gamePalette = theTIA.palette();
     for (int i = 0; i < 256; i++) {
         uint32_t c = gamePalette[i];
         uint8_t r = (c >> 16) & 0xFF;
         uint8_t g = (c >> 8) & 0xFF;
         uint8_t b = c & 0xFF;
-        screen->palette[i] = ((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3);
+        uint16_t color = ((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3);
+        if (STELLA_PIXEL_FORMAT == RG_PIXEL_PAL565_BE) {
+            color = (color << 8) | (color >> 8);
+        }
+        screen_palette[i] = color;
     }
 
     audio_buffer = (uint16_t*)rg_alloc(AUDIO_BUFFER_SIZE * 2 * sizeof(uint16_t), MEM_SLOW);
