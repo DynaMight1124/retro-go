@@ -8,28 +8,24 @@
 #include <esp_heap_caps.h>
 #endif
 
-// Use Retro-Go's memory allocation system. 
-// We use MEM_SLOW (PSRAM) for most allocations to save internal RAM.
+// Use the platform's ordinary allocator for general engine allocations.
+// Retro-Go targets configure malloc/calloc to keep small allocations in
+// internal RAM and place larger allocations in PSRAM. Explicit MEM_SLOW and
+// MEM_FAST allocations elsewhere remain reserved for data with known needs.
 
 extern void SD_ClearSoundCache(void);
 
 void *M_Malloc(size_t size)
 {
-	void *block = rg_alloc(size + sizeof(size_t), MEM_SLOW);
+	void *block = calloc(1, size + sizeof(size_t));
 
-    // If allocation failed, or if a "large" block (e.g. >4KB) ended up in Internal RAM
-    // (identified by address < 0x3f800000 on ESP32), purge sound cache and retry.
-    if (block == NULL || ((uint32_t)block < 0x3f800000 && size > 4096))
-    {
-        SD_ClearSoundCache();
-        if (block && (uint32_t)block < 0x3f800000) {
-            free(block); // Free the internal RAM block before retrying for PSRAM
-            block = NULL;
-        }
-        if (block == NULL) {
-            block = rg_alloc(size + sizeof(size_t), MEM_SLOW);
-        }
-    }
+	// Cached sounds are disposable. Reclaim them before declaring an
+	// allocation failure, but do not second-guess the allocator's placement.
+	if (block == NULL)
+	{
+		SD_ClearSoundCache();
+		block = calloc(1, size + sizeof(size_t));
+	}
 
 	if (block == NULL)
 		I_FatalError("Could not malloc %zu bytes (Free PSRAM: %d KB)", size, (int)heap_caps_get_free_size(MALLOC_CAP_SPIRAM) / 1024);
@@ -50,17 +46,14 @@ void *M_Realloc(void *memblock, size_t size)
 	size_t *oldSizeStore = ((size_t *) memblock) - 1;
 	size_t oldSize = *oldSizeStore;
 
-#ifdef ESP_PLATFORM
-	void *newBlock = heap_caps_realloc(oldSizeStore, size + sizeof(size_t), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
-	if (!newBlock || ((uint32_t)newBlock < 0x3f800000 && size > 4096)) {
-        SD_ClearSoundCache();
-        // If it was a spill to internal RAM, we can't easily "undo" the realloc without losing data,
-        // but we can try to realloc again now that space is cleared.
-		newBlock = heap_caps_realloc(newBlock ? newBlock : oldSizeStore, size + sizeof(size_t), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
-	}
-#else
 	void *newBlock = realloc(oldSizeStore, size + sizeof(size_t));
-#endif
+	if (newBlock == NULL)
+	{
+		// A failed realloc leaves oldSizeStore valid, so it is safe to purge
+		// disposable data and retry with the original block.
+		SD_ClearSoundCache();
+		newBlock = realloc(oldSizeStore, size + sizeof(size_t));
+	}
 
 	if (newBlock == NULL)
 		I_FatalError("Could not realloc %zu bytes", size);

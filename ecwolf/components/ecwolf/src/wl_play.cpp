@@ -28,6 +28,11 @@
 #include "a_inventory.h"
 #include "am_map.h"
 #include "wl_iwad.h"
+#include "rg_video.h"
+
+#ifdef ESP_PLATFORM
+#include <rg_system.h>
+#endif
 
 /*
 =============================================================================
@@ -189,6 +194,18 @@ int32_t GetTimeCount()
 	return SDL_GetTicks()*7/100;
 }
 
+static void FrameDelay(unsigned int milliseconds)
+{
+#ifdef ESP_PLATFORM
+	// SDL_Delay also supplies an idle heartbeat for menus. Gameplay reports a
+	// measured tick at the end of the frame, so its pacing wait must not add a
+	// second zero-busy tick.
+	rg_usleep(milliseconds * 1000);
+#else
+	SDL_Delay(milliseconds);
+#endif
+}
+
 /*
 =====================
 =
@@ -205,7 +222,7 @@ void CalcTics()
 
 	// Have we arrived too soon?
 	while(lasttimecount == GetTimeCount()+1)
-		SDL_Delay(1);
+		FrameDelay(1);
 
 	// Detect rollover, particularly if the game were paused for a LONG time
 	if(lasttimecount > GetTimeCount())
@@ -216,7 +233,7 @@ void CalcTics()
 	if(!tics)
 	{
 		// wait until end of current tic
-		SDL_Delay(((lasttimecount + 1) * 100) / 7 - curtime);
+		FrameDelay(((lasttimecount + 1) * 100) / 7 - curtime);
 		tics = 1;
 	}
 	else if(noadaptive)
@@ -628,7 +645,7 @@ void ProcessEvents()
 		lasttimecount += DEMOTICS;
 		int32_t timediff = (lasttimecount * 100) / 7 - curtime;
 		if(timediff > 0)
-			SDL_Delay(timediff);
+			FrameDelay(timediff);
 
 		if(timediff < -2 * DEMOTICS)       // more than 2-times DEMOTICS behind?
 			lasttimecount = (curtime * 7) / 100;    // yes, set to current timecount
@@ -797,6 +814,7 @@ void CheckKeys (void)
 	{
 		int lastoffs = StopMusic ();
 		SD_StopDigitized();
+		RGVideoIncrementalScope controlPanelVideo;
 
 		US_ControlPanel (control[ConsolePlayer].buttonstate[bt_esc] ? sc_Escape : scan);
 
@@ -1111,6 +1129,11 @@ void PlayLoop (void)
 	{
 		ProcessEvents();
 
+#ifdef ESP_PLATFORM
+		const int64_t frameStart = rg_system_timer();
+		const bool transitionFrame = screenfaded || fizzlein;
+#endif
+
 //
 // actor thinking
 //
@@ -1140,6 +1163,7 @@ void PlayLoop (void)
 
 		UpdatePaletteShifts ();
 
+		RGVideoIncrementalScope fadeVideo(screenfaded);
 		ThreeDRefresh ();
 
 		if(automap && !gamestate.victoryflag)
@@ -1160,15 +1184,45 @@ void PlayLoop (void)
 			ResetTimeCount();
 		}
 
+#ifdef ESP_PLATFORM
+		const int64_t checkKeysStart = rg_system_timer();
+#endif
 		CheckKeys ();
+#ifdef ESP_PLATFORM
+		const int64_t checkKeysTime = rg_system_timer() - checkKeysStart;
+#endif
 		if (!loadedgame)
 		{
 			StatusBar->Tick();
-			if ((gamestate.TimeCount & 1) || !(tics & 1))
-				StatusBar->DrawStatusBar();
+			// Retro-Go alternates between two asynchronously submitted buffers.
+			// The original every-other-tic update leaves each buffer holding a
+			// different HUD generation, so counters and the face appear to phase
+			// when the buffers alternate. Complete the inexpensive status band in
+			// every frame while leaving the costly 3D view double buffered.
+			StatusBar->DrawStatusBar();
 		}
 
 		VH_UpdateScreen();
+
+		// An exit switch changes texture during the final simulation tic. Publish
+		// that completed image into the alternate Retro-Go buffer as well, so the
+		// transition cannot expose the preceding (switch-down) gameplay frame.
+		if (playstate == ex_completed || playstate == ex_secretlevel ||
+			playstate == ex_newmap || playstate == ex_victorious)
+		{
+			RGVideoIncrementalScope finalFrameVideo;
+			VH_UpdateScreen();
+		}
+
+#ifdef ESP_PLATFORM
+		int64_t busyTime = rg_system_timer() - frameStart - checkKeysTime;
+		// Fade/fizzle animation and modal menus contain deliberate waits. A
+		// menu also emits idle ticks while this frame is suspended, so none of
+		// that interrupted frame can be assigned to the later statistics window.
+		if (transitionFrame || checkKeysTime > 20000)
+			busyTime = 0;
+		RGVideo_CompleteFrame(tics, busyTime > 0 ? (int)busyTime : 0);
+#endif
 //
 // debug aids
 //

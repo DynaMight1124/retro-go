@@ -76,7 +76,9 @@ public:
 	// you must call ResetFilePtr() before using this class again.
 	void ResetFilePtr ();
 
-	FILE *GetFile () const { return File; }
+	// Named files participate in the ESP file-handle pool and may be closed
+	// between accesses. Do not expose their transient FILE pointer.
+	FILE *GetFile () const { return ReopenFilename == NULL ? File : NULL; }
 	virtual const char *GetBuffer() const { return NULL; }
 
 	FileReader &operator>> (BYTE &v)
@@ -122,9 +124,17 @@ protected:
 	long Length;
 	long StartPos;
 	long FilePos;
+	char *ReopenFilename;
+	FileReader *PoolPrev;
+	FileReader *PoolNext;
+	bool InFilePool;
 
 private:
 	long CalcFileLen () const;
+	bool EnsureOpen ();
+	void TouchFilePool ();
+	void SuspendFile ();
+	void RemoveFromFilePool ();
 protected:
 	bool CloseOnDestruct;
 };

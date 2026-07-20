@@ -50,5 +50,7 @@ class APatrolPoint : public AActor
 				toucher->dir = dirtype(angle/ANGLE_45);
 			}
 		}
+
+		bool ReceivesTouch() const { return true; }
 };
 IMPLEMENT_CLASS(PatrolPoint)

@@ -32,12 +32,9 @@ extern "C" SDL_mutex *audioMutex;
 static void audio_task(void *arg) {
     const int samples = 512; // Increased from 256 for better stability
     const int len = samples * audio_channels * 2; 
-    Uint8 *buffer = (Uint8 *)rg_alloc(len, MEM_FAST);
-    
-    // Submit buffer is twice as large for 22050Hz expansion
     const int submit_samples = samples * 2;
     const int submit_len = submit_samples * audio_channels * 2;
-    Uint8 *submit_buffer = (Uint8 *)rg_alloc(submit_len, MEM_FAST);
+    Uint8 *buffer = (Uint8 *)rg_alloc(submit_len, MEM_FAST);
 
     RG_LOGI("Audio task started on Core 0: %dHz, %d channels\n", audio_frequency, audio_channels);
 
@@ -100,22 +97,25 @@ static void audio_task(void *arg) {
 
         if (audioMutex) SDL_UnlockMutex(audioMutex);
 
-        // Double-sample 11025Hz to 22050Hz
-        int16_t *src = (int16_t *)buffer;
-        int16_t *dst = (int16_t *)submit_buffer;
-        for (int i = 0; i < samples; i++) {
-            dst[i*4 + 0] = src[i*2 + 0];
-            dst[i*4 + 1] = src[i*2 + 1];
-            dst[i*4 + 2] = src[i*2 + 0];
-            dst[i*4 + 3] = src[i*2 + 1];
+        // The ESP32 internal DAC cannot clock reliably at 11025 Hz. Expand
+        // backwards in place so Retro-Go receives 22050 Hz without a second
+        // buffer or doubling ECWolf's mixer and AdLib synthesis workload.
+        int16_t *frames = (int16_t *)buffer;
+        for (int i = samples - 1; i >= 0; --i) {
+            const int16_t left = frames[i * 2];
+            const int16_t right = frames[i * 2 + 1];
+            frames[i * 4] = left;
+            frames[i * 4 + 1] = right;
+            frames[i * 4 + 2] = left;
+            frames[i * 4 + 3] = right;
         }
 
-        rg_audio_submit((rg_audio_sample_t *)submit_buffer, submit_samples);
+        rg_audio_submit((rg_audio_sample_t *)buffer, submit_samples);
+
     }
     
     RG_LOGI("Audio task terminating...\n");
     free(buffer);
-    free(submit_buffer);
     audio_task_handle = NULL;
 }
 
@@ -131,7 +131,7 @@ int Mix_OpenAudio(int frequency, Uint16 format, int channels_count, int chunksiz
         channels[i].pan_r = 255;
     }
     audio_terminate = false;
-    audio_task_handle = rg_task_create("ecwolf_audio", audio_task, NULL, 16384, 1, RG_TASK_PRIORITY_2, 0);
+    audio_task_handle = rg_task_create("ecwolf_audio", audio_task, NULL, 4096, 1, RG_TASK_PRIORITY_2, 0);
     return 0;
 }
 

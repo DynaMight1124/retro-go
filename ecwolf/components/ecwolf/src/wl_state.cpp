@@ -9,6 +9,7 @@
 #include "actor.h"
 #include "actor.h"
 #include "wl_agent.h"
+#include "wl_draw.h"
 #include "wl_game.h"
 #include "wl_net.h"
 #include "wl_play.h"
@@ -725,19 +726,27 @@ bool MoveObj (AActor *ob, int32_t move)
 	}
 	ob->distance -=move;
 
-	// Check for touching objects
-	for(AActor::Iterator iter = AActor::GetIterator().Next();iter;)
+	// Inventory only reacts to FL_PICKUP actors and patrol points only react to
+	// FL_PATHING actors. Ordinary chasing enemies therefore cannot touch any of
+	// these objects and should not scan even the reduced touch list.
+	if(ob->flags & (FL_PICKUP | FL_PATHING))
 	{
-		AActor *check = iter;
-		iter.Next();
+		// Only inventory and patrol-point actors implement Touch(). Iterating the
+		// complete actor list here made every moving enemy scan hundreds of inert
+		// decorations and actors from PSRAM on large maps.
+		const TArray<AActor *> &touchActors = AActor::GetTouchActors();
+		for(unsigned int i = 0; i < touchActors.Size(); ++i)
+		{
+			AActor *check = touchActors[i];
 
-		if(check == ob || (check->flags & FL_SOLID))
-			continue;
+			if(check == ob || (check->flags & FL_SOLID))
+				continue;
 
-		fixed r = check->radius + ob->radius;
-		if(abs(ob->x - check->x) <= r &&
-			abs(ob->y - check->y) <= r)
-			check->Touch(ob);
+			fixed r = check->radius + ob->radius;
+			if(abs(ob->x - check->x) <= r &&
+				abs(ob->y - check->y) <= r)
+				check->Touch(ob);
+		}
 	}
 
 	return true;
@@ -1067,15 +1076,29 @@ static bool CheckSightTo (AActor *ob, AActor *target, double minseedist, double 
 		//
 		// see if they are looking in the right direction
 		//
-		fov /= 2;
-		float angle = (float) atan2 ((float) deltay, (float) deltax);
-		if (angle<0)
-			angle = (float) (M_PI*2+angle);
-		angle_t iangle = 0-(angle_t)(angle*ANGLE_180/M_PI);
-		angle_t lowerAngle = MIN(iangle, ob->angle);
-		angle_t upperAngle = MAX(iangle, ob->angle);
-		if(MIN(upperAngle - lowerAngle, lowerAngle - upperAngle) > angle_t(fov*ANGLE_1))
-			return false;
+		if(fov > 179.999 && fov < 180.001)
+		{
+			// The standard Wolf3D 180-degree FOV is a half-plane test. A
+			// fixed-point dot product is equivalent and avoids dozens of costly
+			// atan2() calls per tic on ESP32.
+			const unsigned int fineangle = ob->angle >> ANGLETOFINESHIFT;
+			const int64_t facing = (int64_t)deltax * finecosine[fineangle]
+				- (int64_t)deltay * finesine[fineangle];
+			if(facing < 0)
+				return false;
+		}
+		else
+		{
+			fov /= 2;
+			float angle = (float) atan2 ((float) deltay, (float) deltax);
+			if (angle<0)
+				angle = (float) (M_PI*2+angle);
+			angle_t iangle = 0-(angle_t)(angle*ANGLE_180/M_PI);
+			angle_t lowerAngle = MIN(iangle, ob->angle);
+			angle_t upperAngle = MAX(iangle, ob->angle);
+			if(MIN(upperAngle - lowerAngle, lowerAngle - upperAngle) > angle_t(fov*ANGLE_1))
+				return false;
+		}
 	}
 
 	//

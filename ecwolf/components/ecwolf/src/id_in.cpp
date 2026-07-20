@@ -891,10 +891,6 @@ void IN_Ack (void)
 //		button up.
 //
 ///////////////////////////////////////////////////////////////////////////
-#ifdef ESP_PLATFORM
-#include <rg_system.h>
-#endif
-
 bool IN_UserInput(longword delay)
 {
 	longword	lasttime;
@@ -906,9 +902,6 @@ bool IN_UserInput(longword delay)
 		IN_ProcessEvents();
 		if (IN_CheckAck())
 			return true;
-#ifdef ESP_PLATFORM
-		rg_system_tick(0);
-#endif
 		SDL_Delay(5);
 	} while (GetTimeCount() - lasttime < delay);
 	return(false);

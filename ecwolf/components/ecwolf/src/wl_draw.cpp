@@ -15,6 +15,7 @@
 #include "wl_atmos.h"
 #include "wl_shade.h"
 #include "actor.h"
+#include "rg_video.h"
 #include "id_ca.h"
 #include "gamemap.h"
 #include "g_mapinfo.h"
@@ -934,7 +935,7 @@ vertentry:
 				break;
 			}
 passvert:
-			tilehit->visible=true;
+			map->MarkVisible(tilehit);
 			tilehit->amFlags |= AM_Visible;
 			xtile+=xtilestep;
 			yintercept+=ystep;
@@ -1101,7 +1102,7 @@ horizentry:
 				break;
 			}
 passhoriz:
-			tilehit->visible=true;
+			map->MarkVisible(tilehit);
 			tilehit->amFlags |= AM_Visible;
 			ytile+=ytilestep;
 			xintercept+=xstep;
@@ -1226,6 +1227,8 @@ void R_RenderView()
 
 void    ThreeDRefresh (void)
 {
+	RGVideoIncrementalScope transitionVideo(fizzlein);
+
 	// Ensure we have a valid camera
 	if(players[ConsolePlayer].camera == NULL)
 		players[ConsolePlayer].camera = players[ConsolePlayer].mo;

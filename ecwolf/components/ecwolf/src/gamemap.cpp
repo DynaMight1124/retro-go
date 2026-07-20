@@ -4,6 +4,7 @@
 */
 
 #include <climits>
+#include <cassert>
 #include "id_ca.h"
 #include "farchive.h"
 #include "gamemap.h"
@@ -124,16 +125,24 @@ bool GameMap::ActivateTrigger(Trigger &trig, int direction, AActor *activator)
 
 void GameMap::ClearVisibility()
 {
-	for(unsigned int i = 0; i < header.width * header.height; ++i)
-	{
-		for(unsigned int p = 0; p < planes.Size(); ++p)
-			planes[p].map[i].visible = false;
-	}
+	// Only clear spots touched by the previous render. Walking every large
+	// PSRAM-backed Map entry each frame is especially costly on ESP32.
+	for(unsigned int i = 0; i < visibleSpots.Size(); ++i)
+		visibleSpots[i]->visible = false;
+	visibleSpots.Clear();
+
 	if(players[ConsolePlayer].camera)
-    {
-        MapSpot spot = GetSpot(players[ConsolePlayer].camera->tilex, players[ConsolePlayer].camera->tiley, 0);
-        if (spot) spot->visible = true;
-    }
+		MarkVisible(GetSpot(players[ConsolePlayer].camera->tilex,
+			players[ConsolePlayer].camera->tiley, 0));
+}
+
+void GameMap::MarkVisible(Plane::Map *spot)
+{
+	if(spot && !spot->visible)
+	{
+		spot->visible = true;
+		visibleSpots.Push(spot);
+	}
 }
 
 void GameMap::UnloadLinks()
@@ -272,6 +281,34 @@ GameMap::Plane::Map * GameMap::GetSpotByTag(unsigned int tag, Plane::Map *spot) 
 
 bool GameMap::CheckMapExists(const FString &map) { return Wads.CheckNumForName(map) != -1; }
 
+const GameMap::Tile *GameMap::GetTile(unsigned int index) const
+{
+	if(index >= tilePalette.Size())
+		return NULL;
+	return &tilePalette[index];
+}
+
+unsigned int GameMap::GetTileIndex(const GameMap::Tile *tile) const
+{
+	if(!tile)
+		return UINT_MAX;
+	return static_cast<unsigned int>(tile - &tilePalette[0]);
+}
+
+const GameMap::Sector *GameMap::GetSector(unsigned int index) const
+{
+	if(index >= sectorPalette.Size())
+		return NULL;
+	return &sectorPalette[index];
+}
+
+unsigned int GameMap::GetSectorIndex(const GameMap::Sector *sector) const
+{
+	if(!sector)
+		return UINT_MAX;
+	return static_cast<unsigned int>(sector - &sectorPalette[0]);
+}
+
 void GameMap::LoadMap(bool loadingSave)
 {
 	if(!valid)
@@ -375,9 +412,219 @@ void GameMap::SpawnThings() const
     }
 }
 
-FArchive &operator<< (FArchive &arc, GameMap *&gm) { return arc; }
-FArchive &operator<< (FArchive &arc, MapSpot &spot) { return arc; }
-FArchive &operator<< (FArchive &arc, const MapSector *&sector) { return arc; }
-FArchive &operator<< (FArchive &arc, const MapTile *&tile) { return arc; }
-FArchive &operator<< (FArchive &arc, const MapZone *&zone) { return arc; }
-FArchive &operator<< (FArchive &arc, MapTrigger &trigger) { return arc; }
+FArchive &operator<< (FArchive &arc, GameMap *&gm)
+{
+	arc << gm->header.name
+		<< gm->header.width
+		<< gm->header.height
+		<< gm->header.tileSize;
+
+	if(GameSave::SaveVersion >= 1383348286)
+	{
+		unsigned int zone = gm->zonePalette.Size();
+		while(--zone > 0)
+		{
+			unsigned int i = gm->zonePalette.Size() - zone;
+			while(--i > 0)
+				arc << gm->zoneLinks[zone][i];
+		}
+	}
+	else
+	{
+		// Consume the obsolete packed zone-link format for old saves.
+		uint32_t packing = 0;
+		unsigned short shift = 0;
+		unsigned int x = 0;
+		unsigned int y = 1;
+		unsigned int max = 1;
+
+		arc << packing;
+		do
+		{
+			++shift;
+			if(++x >= max)
+			{
+				x = 0;
+				++y;
+				++max;
+			}
+			if(shift == sizeof(packing) * 8)
+			{
+				arc << packing;
+				shift = 0;
+			}
+		}
+		while(y < gm->zonePalette.Size());
+	}
+
+	if(arc.IsLoading())
+		gm->visibleSpots.Clear();
+
+	for(unsigned int p = 0; p < gm->NumPlanes(); ++p)
+	{
+		MapPlane &plane = gm->planes[p];
+		arc << plane.depth;
+		assert(plane.depth == 64);
+		if(arc.IsLoading())
+			plane.gm = gm;
+
+		for(unsigned int i = 0; i < gm->header.width * gm->header.height; ++i)
+		{
+			MapSpot spot = &plane.map[i];
+			BYTE pushdir = spot->pushDirection;
+			arc << pushdir;
+			spot->pushDirection = pushdir;
+
+			arc << spot->texture[0] << spot->texture[1]
+				<< spot->texture[2] << spot->texture[3]
+				<< spot->visible;
+			if(GameSave::SaveVersion >= 1393719642)
+				arc << spot->amFlags;
+			arc << spot->thinker
+				<< spot->slideAmount[0] << spot->slideAmount[1]
+				<< spot->slideAmount[2] << spot->slideAmount[3]
+				<< spot->sideSolid[0] << spot->sideSolid[1]
+				<< spot->sideSolid[2] << spot->sideSolid[3];
+
+			// This port keeps trigger arrays optional to save memory, while the
+			// upstream save format stores the TArray directly.
+			if(arc.IsStoring())
+			{
+				if(spot->triggers)
+					arc << *spot->triggers;
+				else
+				{
+					TArray<MapTrigger> empty;
+					arc << empty;
+				}
+			}
+			else
+			{
+				if(!spot->triggers)
+					spot->triggers = new TArray<MapTrigger>;
+				arc << *spot->triggers;
+				if(spot->triggers->Size() == 0)
+				{
+					delete spot->triggers;
+					spot->triggers = NULL;
+				}
+			}
+
+			arc << spot->pushAmount
+				<< spot->tile
+				<< spot->sector
+				<< spot->zone
+				<< spot->pushReceptor;
+
+			if(GameSave::SaveProdVersion >= 0x001002FF &&
+				GameSave::SaveVersion >= 1375246092)
+				arc << spot->slideStyle;
+
+			if(arc.IsLoading())
+			{
+				spot->plane = &plane;
+				if(spot->visible)
+					gm->visibleSpots.Push(spot);
+			}
+		}
+	}
+
+	if(GameSave::SaveVersion > 1438232816)
+	{
+		if(arc.IsStoring())
+		{
+			unsigned int count = gm->elevatorPosition.CountUsed();
+			arc << count;
+			TMap<unsigned int, MapSpot>::Iterator iter(gm->elevatorPosition);
+			TMap<unsigned int, MapSpot>::Pair *pair;
+			while(iter.NextPair(pair))
+			{
+				DWORD key = pair->Key;
+				arc << key << pair->Value;
+			}
+		}
+		else
+		{
+			unsigned int count;
+			arc << count;
+			gm->elevatorPosition.Clear();
+			while(count-- > 0)
+			{
+				DWORD key;
+				MapSpot value;
+				arc << key << value;
+				gm->elevatorPosition[key] = value;
+			}
+		}
+	}
+
+	return arc;
+}
+
+FArchive &operator<< (FArchive &arc, MapSpot &spot)
+{
+	if(arc.IsStoring())
+	{
+		unsigned int x = UINT_MAX;
+		unsigned int y = UINT_MAX;
+		if(spot)
+		{
+			x = spot->GetX();
+			y = spot->GetY();
+		}
+		arc << x << y;
+	}
+	else
+	{
+		unsigned int x, y;
+		arc << x << y;
+		spot = (x == UINT_MAX || y == UINT_MAX) ? NULL : map->GetSpot(x, y, 0);
+	}
+	return arc;
+}
+
+FArchive &operator<< (FArchive &arc, const MapSector *&sector)
+{
+	unsigned int index;
+	if(arc.IsStoring())
+		index = map->GetSectorIndex(sector);
+	arc << index;
+	if(arc.IsLoading())
+		sector = map->GetSector(index);
+	return arc;
+}
+
+FArchive &operator<< (FArchive &arc, const MapTile *&tile)
+{
+	unsigned int index;
+	if(arc.IsStoring())
+		index = map->GetTileIndex(tile);
+	arc << index;
+	if(arc.IsLoading())
+		tile = map->GetTile(index);
+	return arc;
+}
+
+FArchive &operator<< (FArchive &arc, const MapZone *&zone)
+{
+	unsigned int index;
+	if(arc.IsStoring())
+		index = zone ? zone->index : UINT_MAX;
+	arc << index;
+	if(arc.IsLoading())
+		zone = index == UINT_MAX ? NULL : &map->GetZone(index);
+	return arc;
+}
+
+FArchive &operator<< (FArchive &arc, MapTrigger &trigger)
+{
+	arc << trigger.x << trigger.y << trigger.z
+		<< trigger.active << trigger.action
+		<< trigger.activate[0] << trigger.activate[1]
+		<< trigger.activate[2] << trigger.activate[3]
+		<< trigger.arg[0] << trigger.arg[1] << trigger.arg[2]
+		<< trigger.arg[3] << trigger.arg[4]
+		<< trigger.playerUse << trigger.playerCross << trigger.monsterUse
+		<< trigger.isSecret << trigger.repeatable;
+	return arc;
+}

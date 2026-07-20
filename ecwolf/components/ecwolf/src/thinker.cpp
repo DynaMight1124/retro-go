@@ -41,7 +41,6 @@
 #include "wl_def.h"
 #include "wl_game.h"
 #include "wl_loadsave.h"
-
 ThinkerList thinkerList;
 
 ThinkerList::ThinkerList() : nextThinker(NULL)
@@ -71,6 +70,10 @@ void ThinkerList::DestroyAll(Priority start)
 
 void ThinkerList::MarkRoots()
 {
+	// Every registered thinker is a root. Actors can move between the NORMAL
+	// and DORMANT lists while incremental marking is in progress, so retaining
+	// a list through only its first live node can leave part of a changed list
+	// white and allow a still-linked actor to be collected.
 	for(unsigned int i = 0;i < NUM_TYPES;++i)
 	{
 		Iterator iter(thinkers[i]);
@@ -78,17 +81,16 @@ void ThinkerList::MarkRoots()
 		{
 			Thinker *thinker = iter;
 			if(!(thinker->ObjectFlags & OF_EuthanizeMe))
-			{
 				GC::Mark(thinker);
-				break;
-			}
 		}
 	}
 }
 
 void ThinkerList::Tick()
 {
-	for(unsigned int i = FIRST_TICKABLE;i < NUM_TYPES;++i)
+	// DORMANT thinkers remain registered for GC and savegames, but do not need
+	// a 70 Hz Tick() call until their state becomes active again.
+	for(unsigned int i = FIRST_TICKABLE;i < DORMANT;++i)
 	{
 		if(gamestate.victoryflag && i > VICTORY)
 			break;
@@ -120,13 +122,24 @@ void ThinkerList::Serialize(FArchive &arc)
 {
 	if(arc.IsStoring())
 	{
-		for(unsigned int i = 0;i < NUM_TYPES;i++)
+		// Keep the on-disk list count compatible with existing savegames.
+		// Dormant actors are written as part of the NORMAL list.
+		for(unsigned int i = 0;i < DORMANT;i++)
 		{
 			Iterator iter(thinkers[i]);
 			while(iter.Next())
 			{
 				Thinker *thinker = iter;
 				arc << thinker;
+			}
+			if(i == NORMAL)
+			{
+				Iterator dormant(thinkers[DORMANT]);
+				while(dormant.Next())
+				{
+					Thinker *thinker = dormant;
+					arc << thinker;
+				}
 			}
 
 			Thinker *terminator = NULL;
@@ -135,7 +148,7 @@ void ThinkerList::Serialize(FArchive &arc)
 	}
 	else
 	{
-		for(unsigned int i = 0;i < NUM_TYPES;i++)
+		for(unsigned int i = 0;i < DORMANT;i++)
 		{
 			Thinker *thinker;
 			arc << thinker;
@@ -149,6 +162,8 @@ void ThinkerList::Serialize(FArchive &arc)
 					thinker = real;
 				}
 				Register(thinker, static_cast<Priority>(i));
+				if(thinker->IsThinkerType<AActor>())
+					static_cast<AActor*>(thinker)->UpdateDormancy();
 				arc << thinker;
 			}
 		}

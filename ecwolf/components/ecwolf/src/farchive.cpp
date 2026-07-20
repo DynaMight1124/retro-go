@@ -377,6 +377,109 @@ void FCompressedFile::Implode ()
 
 	if (!nofilecompression && !m_NoCompress)
 	{
+#ifdef ESP_PLATFORM
+		// A save snapshot can occupy a 256 KB PSRAM block. Allocating zlib's
+		// complete worst-case output beside it fails once PSRAM is fragmented,
+		// even when total free memory is sufficient. Stream into small chunks,
+		// then release the raw snapshot before assembling the final buffer.
+		static const unsigned int CHUNK_SIZE = 8192;
+		struct CompressionChunk
+		{
+			CompressionChunk *next;
+			unsigned int used;
+			Byte data[CHUNK_SIZE];
+		};
+
+		CompressionChunk *first = NULL;
+		CompressionChunk *last = NULL;
+		z_stream stream;
+		memset(&stream, 0, sizeof(stream));
+		r = deflateInit2(&stream, Z_BEST_SPEED, Z_DEFLATED, 12, 1,
+			Z_DEFAULT_STRATEGY);
+		if(r != Z_OK)
+			I_Error("Could not initialize save compression: %s", M_ZLibError(r).GetChars());
+
+		stream.next_in = oldbuf;
+		stream.avail_in = len;
+		outlen = 0;
+		do
+		{
+			CompressionChunk *chunk = (CompressionChunk *)M_Malloc(sizeof(CompressionChunk));
+			chunk->next = NULL;
+			stream.next_out = chunk->data;
+			stream.avail_out = CHUNK_SIZE;
+			r = deflate(&stream, Z_FINISH);
+			chunk->used = CHUNK_SIZE - stream.avail_out;
+
+			if(chunk->used > 0)
+			{
+				if(last)
+					last->next = chunk;
+				else
+					first = chunk;
+				last = chunk;
+				outlen += chunk->used;
+			}
+			else
+				M_Free(chunk);
+		}
+		while(r == Z_OK);
+
+		deflateEnd(&stream);
+		if(r != Z_STREAM_END)
+		{
+			while(first)
+			{
+				CompressionChunk *next = first->next;
+				M_Free(first);
+				first = next;
+			}
+			I_Error("Could not compress save buffer: %s", M_ZLibError(r).GetChars());
+		}
+
+		// Preserve the original uncompressed fallback without allocating a
+		// second full-size block. The writer's power-of-two buffer normally
+		// already has room for the eight-byte archive header.
+		if(outlen >= len)
+		{
+			while(first)
+			{
+				CompressionChunk *next = first->next;
+				M_Free(first);
+				first = next;
+			}
+			oldbuf = (BYTE *)M_Realloc(oldbuf, len + 8);
+			memmove(oldbuf + 8, oldbuf, len);
+			m_MaxBufferSize = m_BufferSize = len;
+			m_Buffer = oldbuf;
+			m_Pos = 0;
+			DWORD *lens = (DWORD *)m_Buffer;
+			lens[0] = 0;
+			lens[1] = BigLong((unsigned int)len);
+			return;
+		}
+
+		M_Free(oldbuf);
+		oldbuf = NULL;
+		m_MaxBufferSize = m_BufferSize = outlen;
+		m_Buffer = (BYTE *)M_Malloc(m_BufferSize + 8);
+		m_Pos = 0;
+
+		DWORD *lens = (DWORD *)m_Buffer;
+		lens[0] = BigLong((unsigned int)outlen);
+		lens[1] = BigLong((unsigned int)len);
+
+		BYTE *dest = m_Buffer + 8;
+		while(first)
+		{
+			CompressionChunk *next = first->next;
+			memcpy(dest, first->data, first->used);
+			dest += first->used;
+			M_Free(first);
+			first = next;
+		}
+		return;
+#else
 		outlen = OUT_LEN(len);
 		do
 		{
@@ -399,6 +502,7 @@ void FCompressedFile::Implode ()
 		{
 			DPrintf ("cfile shrank from %lu to %lu bytes\n", len, outlen);
 		}
+#endif
 	}
 	else
 	{

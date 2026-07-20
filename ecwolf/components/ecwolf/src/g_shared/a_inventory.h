@@ -54,6 +54,7 @@ class AInventory : public AActor
 		virtual bool	HandlePickup(AInventory *item, bool &good);
 		void			Serialize(FArchive &arc);
 		void			Touch(AActor *toucher);
+		bool			ReceivesTouch() const { return true; }
 		virtual bool	Use();
 
 		ItemFlags		itemFlags;

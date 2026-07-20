@@ -9,6 +9,7 @@
 #include "m_random.h"
 #include "wl_def.h"
 #include "wl_menu.h"
+#include "rg_video.h"
 #include "wl_iwad.h"
 #include "id_ca.h"
 #include "id_sd.h"
@@ -552,10 +553,13 @@ void US_ControlPanel (ScanCode scancode)
 	int which;
 	bool idEasterEgg = Wads.CheckNumForName("IDGUYPAL") != -1;
 
+	if (ingame && CP_CheckQuick(scancode))
+		return;
+
+	RGVideoIncrementalScope incrementalVideo;
+
 	if (ingame)
 	{
-		if (CP_CheckQuick (scancode))
-			return;
 		lastgamemusicoffset = StartCPMusic (gameinfo.MenuMusic);
 
 		VW_FadeOut();

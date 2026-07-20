@@ -54,6 +54,8 @@ extern class ThinkerList
 			WORLD,	// High priority world manipulations
 			PLAYER,	// Player actors
 			NORMAL,	// General purpose thinker
+			// Retained for serialization/GC, but excluded from ticking.
+			DORMANT,
 
 			NUM_TYPES,
 			FIRST_TICKABLE = VICTORY
@@ -96,6 +98,7 @@ class Thinker : public DObject, public EmbeddedList<Thinker>::Node
 		template<class T>
 		bool			IsThinkerType() { return IsA(T::__StaticClass); }
 		bool			IsThinking() const { return EmbeddedList<Thinker>::List::IsLinked(this); }
+		ThinkerList::Priority GetPriority() const { return thinkerPriority; }
 		void			Serialize(FArchive &arc);
 		void			SetPriority(ThinkerList::Priority priority);
 		virtual void	Tick()=0;

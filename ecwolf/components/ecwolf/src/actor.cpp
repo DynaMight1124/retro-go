@@ -50,6 +50,8 @@
 #include "id_us.h"
 
 TArray<AActor *> AActor::SpawnedActors;
+TArray<AActor *> AActor::touchActors;
+TArray<AActor::CollisionEntry> AActor::collisionActors;
 EmbeddedList<AActor>::List AActor::actors;
 PointerIndexTable<ExpressionNode> AActor::damageExpressions;
 PointerIndexTable<AActor::DropList> AActor::dropItems;
@@ -496,6 +498,11 @@ void AActor::Serialize(FArchive &arc)
 
 	if(arc.IsLoading() && !hasActorRef)
 		actors.Remove(this);
+	else if(arc.IsLoading())
+	{
+		RegisterTouchActor();
+		UpdateCollisionActor();
+	}
 
 	Super::Serialize(arc);
 }
@@ -531,6 +538,25 @@ void AActor::SetState(const Frame *state, bool norun)
 			}
 		}
 	}
+
+	UpdateDormancy();
+	UpdateCollisionActor();
+}
+
+void AActor::UpdateDormancy()
+{
+	// Permanent states without a thinker are inert (decorations, pickups,
+	// corpses, etc.). Keep them registered so GC and savegames still see them,
+	// but remove their no-op Tick() calls from the 70 Hz simulation pass.
+	if(!IsThinking() || state == NULL)
+		return;
+
+	const bool inertState = ticcount < 0 && state->thinker.pointer == NULL &&
+		!(flags & FL_MISSILE);
+	if(inertState && GetPriority() == ThinkerList::NORMAL)
+		SetPriority(ThinkerList::DORMANT);
+	else if(!inertState && GetPriority() == ThinkerList::DORMANT)
+		SetPriority(ThinkerList::NORMAL);
 }
 
 void AActor::SpawnFog()
@@ -560,6 +586,7 @@ bool AActor::Teleport(fixed x, fixed y, angle_t angle, bool nofog)
 	this->x = x;
 	this->y = y;
 	this->angle = angle;
+	RefreshCollisionPosition();
 
 	EnterZone(destination->zone);
 
@@ -605,9 +632,90 @@ void AActor::Tick()
 // us to transfer items into inventory for example.
 void AActor::RemoveFromWorld()
 {
+	UnregisterTouchActor();
+	UnregisterCollisionActor();
 	actors.Remove(this);
 	if(IsThinking())
 		Deactivate();
+}
+
+void AActor::RegisterTouchActor()
+{
+	if(!ReceivesTouch())
+		return;
+
+	for(unsigned int i = 0; i < touchActors.Size(); ++i)
+	{
+		if(touchActors[i] == this)
+			return;
+	}
+	touchActors.Push(this);
+}
+
+void AActor::UnregisterTouchActor()
+{
+	for(unsigned int i = 0; i < touchActors.Size(); ++i)
+	{
+		if(touchActors[i] == this)
+		{
+			touchActors.Delete(i);
+			return;
+		}
+	}
+}
+
+void AActor::UpdateCollisionActor()
+{
+	if((ObjectFlags & OF_EuthanizeMe) || !actors.IsLinked(this))
+	{
+		UnregisterCollisionActor();
+		return;
+	}
+
+	for(unsigned int i = 0; i < collisionActors.Size(); ++i)
+	{
+		if(collisionActors[i].actor == this)
+		{
+			collisionActors[i].x = x;
+			collisionActors[i].y = y;
+			collisionActors[i].radius = radius;
+			collisionActors[i].dynamic = (flags & FL_ISMONSTER) || player != NULL;
+			return;
+		}
+	}
+
+	if((flags & FL_SOLID) || ReceivesTouch())
+	{
+		CollisionEntry entry = { this, x, y, radius,
+			(flags & FL_ISMONSTER) || player != NULL };
+		collisionActors.Push(entry);
+	}
+}
+
+void AActor::RefreshCollisionPosition()
+{
+	for(unsigned int i = 0; i < collisionActors.Size(); ++i)
+	{
+		if(collisionActors[i].actor == this)
+		{
+			collisionActors[i].x = x;
+			collisionActors[i].y = y;
+			collisionActors[i].radius = radius;
+			return;
+		}
+	}
+}
+
+void AActor::UnregisterCollisionActor()
+{
+	for(unsigned int i = 0; i < collisionActors.Size(); ++i)
+	{
+		if(collisionActors[i].actor == this)
+		{
+			collisionActors.Delete(i);
+			return;
+		}
+	}
 }
 
 void AActor::RemoveInventory(AInventory *item)
@@ -726,6 +834,10 @@ AActor *AActor::Spawn(const ClassDef *type, fixed x, fixed y, fixed z, int flags
 		}
 	}
 
+	// Register while the actor is known to be alive. Deferred startup actions
+	// in FinishSpawningActors() are allowed to destroy their actor.
+	actor->RegisterTouchActor();
+	actor->UpdateCollisionActor();
 	SpawnedActors.Push(actor);
 
 	return actor;

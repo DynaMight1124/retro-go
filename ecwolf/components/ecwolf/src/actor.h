@@ -119,18 +119,29 @@ class AActor : public Thinker, public EmbeddedList<AActor>::Node
 		virtual void	RemoveInventory(AInventory *item);
 		void			Serialize(FArchive &arc);
 		void			SetState(const Frame *state, bool norun=false);
+		void			UpdateDormancy();
 		void			SpawnFog();
 		static AActor	*Spawn(const ClassDef *type, fixed x, fixed y, fixed z, int flags);
 		int32_t			SpawnHealth() const;
 		bool			Teleport(fixed x, fixed y, angle_t angle, bool nofog=false);
 		virtual void	Tick();
 		virtual void	Touch(AActor *toucher) {}
+		virtual bool	ReceivesTouch() const { return false; }
 		void			PrintInventory();
 
 		static PointerIndexTable<ExpressionNode> damageExpressions;
 		static PointerIndexTable<DropList> dropItems;
 		static EmbeddedList<AActor>::List actors;
 		static Iterator GetIterator() { return Iterator(actors); }
+		static const TArray<AActor *> &GetTouchActors() { return touchActors; }
+		struct CollisionEntry
+		{
+			AActor *actor;
+			fixed x, y, radius;
+			bool dynamic;
+		};
+		static const TArray<CollisionEntry> &GetCollisionActors() { return collisionActors; }
+		void RefreshCollisionPosition();
 
 		// Basic properties from objtype
 		ActorFlags flags;
@@ -215,9 +226,15 @@ class AActor : public Thinker, public EmbeddedList<AActor>::Node
         const Dialog::Page *conversation;
 
 		static TArray<AActor *> SpawnedActors;
+		static TArray<AActor *> touchActors;
+		static TArray<CollisionEntry> collisionActors;
 
 	protected:
 		void	Init();
+		void	RegisterTouchActor();
+		void	UnregisterTouchActor();
+		void	UpdateCollisionActor();
+		void	UnregisterCollisionActor();
 
 		const MapZone	*soundZone;
 };

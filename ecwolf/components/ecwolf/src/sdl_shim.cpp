@@ -82,9 +82,20 @@ Uint32 SDL_GetTicks(void) {
     return rg_system_timer() / 1000;
 }
 
+static void rg_idle_tick(void) {
+    static int64_t last_tick = 0;
+    const int64_t now = rg_system_timer();
+    // Match Retro-Go GUI polling cadence and avoid turning 5 ms menu sleeps
+    // into an artificial 200 FPS stream.
+    if (now - last_tick >= 20000) {
+        rg_system_tick(0);
+        last_tick = now;
+    }
+}
+
 void SDL_Delay(Uint32 ms) {
     rg_usleep(ms * 1000);
-    rg_system_tick(0);
+    rg_idle_tick();
 }
 
 const char *SDL_GetError(void) {
@@ -161,7 +172,7 @@ int SDL_PollEvent(SDL_Event *event) {
 int SDL_WaitEvent(SDL_Event *event) {
     while (!SDL_PollEvent(event)) {
         rg_usleep(10000);
-        rg_system_tick(0);
+        rg_idle_tick();
     }
     return 1;
 }

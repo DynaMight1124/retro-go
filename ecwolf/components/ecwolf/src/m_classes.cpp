@@ -11,6 +11,7 @@
 #include "g_mapinfo.h"
 #include "v_palette.h"
 #include "colormatcher.h"
+#include "rg_video.h"
 
 bool 			Menu::close = false;
 FTexture		*Menu::cursor = NULL;
@@ -1105,6 +1106,7 @@ void Menu::show()
 	if(countItems() == 0) // Do nothing.
 		return;
 	validateCurPos();
+	RGVideo_BeginIncremental();
 
 	draw();
 	MenuFadeIn();
@@ -1115,6 +1117,7 @@ void Menu::show()
 
 	if(!Menu::areMenusClosed())
 		MenuFadeOut ();
+	RGVideo_EndIncremental();
 }
 
 void Menu::validateCurPos()

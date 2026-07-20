@@ -5,16 +5,14 @@
 #include "r_2d/r_draw.h"
 #include "r_2d/r_things.h"
 #include "wl_draw.h"
+#include "wl_main.h"
+#include "id_us.h"
+#include "rg_video.h"
 #include <rg_system.h>
 #include <rg_display.h>
 #include <rg_surface.h>
 #include <rg_utils.h>
 #include <rg_gui.h>
-
-#ifdef ESP_PLATFORM
-#include <esp_heap_caps.h>
-#include <esp_system.h>
-#endif
 
 extern DWORD (*Col2RGB8)[256];
 extern DWORD (*Col2RGB8_Inverse)[256];
@@ -59,48 +57,131 @@ public:
     int GetPageCount();
     bool IsFullscreen();
 
-    void PaletteChanged() { NeedPalUpdate = true; }
+    void BeginIncremental();
+    void EndIncremental();
+
+    void PaletteChanged() { ++PaletteVersion; }
     int QueryNewPalette() { return 0; }
     bool Is8BitMode() { return true; }
 
 private:
     PalEntry SourcePalette[256];
-    uint16_t cached_pal[256];
+    uint16_t cached_pal[2][256];
     PalEntry Flash;
     int FlashAmount;
     float Gamma;
-    rg_surface_t *rg_surface;
-    bool NeedPalUpdate;
+    BYTE *FrameBuffers[2];
+    rg_surface_t rg_surfaces[2];
+    unsigned int DrawBuffer;
+    unsigned int IncrementalDepth;
+    bool HasSubmittedFrame;
+    bool DrawBufferSeeded;
+    uint32_t PaletteVersion;
+    uint32_t AppliedPaletteVersion[2];
+
+    void SeedDrawBuffer();
 };
 
 IMPLEMENT_INTERNAL_CLASS(RGFB)
 
-static int frame_count = 0;
-static int64_t last_fps_time = 0;
+static RGFB *active_framebuffer = NULL;
 
 RGFB::RGFB(int width, int height) : DFrameBuffer(width, height)
 {
     Width = width;
     Height = height;
     Pitch = width; 
-    Buffer = MemBuffer;
-    rg_surface = rg_surface_create(width, height, RG_PIXEL_565_LE, MEM_SLOW);
+    FrameBuffers[0] = MemBuffer;
+    FrameBuffers[1] = new BYTE[Pitch * height];
+    memset(FrameBuffers[1], 0, Pitch * height);
+    DrawBuffer = 0;
+    IncrementalDepth = 0;
+    HasSubmittedFrame = false;
+    DrawBufferSeeded = false;
+    Buffer = FrameBuffers[DrawBuffer];
+    memset(rg_surfaces, 0, sizeof(rg_surfaces));
+    for (unsigned int i = 0; i < 2; ++i)
+    {
+        rg_surfaces[i].width = width;
+        rg_surfaces[i].height = height;
+        rg_surfaces[i].stride = Pitch;
+        rg_surfaces[i].format = RG_PIXEL_PAL565_LE;
+        rg_surfaces[i].palette = cached_pal[i];
+        rg_surfaces[i].data = FrameBuffers[i];
+    }
     Gamma = 1.0f;
     FlashAmount = 0;
     Flash.d = 0;
-    NeedPalUpdate = true;
+    PaletteVersion = 1;
+    AppliedPaletteVersion[0] = 0;
+    AppliedPaletteVersion[1] = 0;
     memset(cached_pal, 0, sizeof(cached_pal));
     memcpy(SourcePalette, GPalette.BaseColors, 256 * sizeof(PalEntry));
+    active_framebuffer = this;
 }
 
 RGFB::~RGFB()
 {
-    if (rg_surface) rg_surface_free(rg_surface);
+    if (active_framebuffer == this)
+        active_framebuffer = NULL;
+    delete[] FrameBuffers[1];
+}
+
+void RGFB::SeedDrawBuffer()
+{
+    if (!HasSubmittedFrame || DrawBufferSeeded)
+        return;
+
+    memcpy(FrameBuffers[DrawBuffer], FrameBuffers[DrawBuffer ^ 1], Pitch * Height);
+    DrawBufferSeeded = true;
+}
+
+void RGFB::BeginIncremental()
+{
+    ++IncrementalDepth;
+    SeedDrawBuffer();
+}
+
+void RGFB::EndIncremental()
+{
+    if (IncrementalDepth > 0)
+        --IncrementalDepth;
+}
+
+void RGVideo_BeginIncremental()
+{
+    if (active_framebuffer != NULL)
+        active_framebuffer->BeginIncremental();
+}
+
+void RGVideo_EndIncremental()
+{
+    if (active_framebuffer != NULL)
+        active_framebuffer->EndIncremental();
+}
+
+void RGVideo_CompleteFrame(unsigned int tics, int busyTime)
+{
+    // ECWolf may catch up several 70 Hz game tics in one loop iteration.
+    // Retro-Go expects one system tick per emulated tic, but the measured
+    // workload must only be counted once.
+    if (tics == 0)
+        tics = 1;
+    rg_system_tick(busyTime);
+    for (unsigned int i = 1; i < tics; ++i)
+        rg_system_tick(0);
 }
 
 bool RGFB::Lock(bool buffer)
 {
-    return DSimpleCanvas::Lock(buffer);
+    // rg_display_submit keeps the submitted surface queued until its pixels
+    // have been consumed. With two buffers, the renderer can use the other
+    // one immediately; submission naturally blocks before a buffer is reused.
+    const bool result = DSimpleCanvas::Lock(buffer);
+    Buffer = FrameBuffers[DrawBuffer];
+    if (!ingame || IncrementalDepth > 0)
+        SeedDrawBuffer();
+    return result;
 }
 
 void RGFB::Unlock()
@@ -112,43 +193,19 @@ void RGFB::Unlock()
 
 void RGFB::Update()
 {
-    if (NeedPalUpdate)
+    if (AppliedPaletteVersion[DrawBuffer] != PaletteVersion)
     {
         UpdatePalette();
     }
 
-    uint16_t *dest = (uint16_t *)rg_surface->data;
-    uint8_t *src_row = MemBuffer;
+    // Retro-Go expands indexed pixels through this palette while transferring
+    // the frame, avoiding a full 8-bit to RGB565 conversion and second buffer.
+    rg_display_submit(&rg_surfaces[DrawBuffer], 0);
 
-    for (int y = 0; y < Height; y++) {
-        uint8_t *src = src_row;
-        for (int x = 0; x < Width; x++) {
-            *dest++ = cached_pal[*src++];
-        }
-        src_row += Pitch;
-    }
-
-    int timeout = 100; // 100ms timeout
-    while (rg_display_is_busy() && timeout-- > 0) {
-        rg_task_delay(1);
-        rg_system_tick(0);
-    }
-
-    rg_display_submit(rg_surface, 0);
-    rg_system_tick(0);
-
-    frame_count++;
-    int64_t now = rg_system_timer();
-    if (now - last_fps_time >= 5000000) { 
-#ifdef ESP_PLATFORM
-        float fps = (float)frame_count * 1000000.0f / (now - last_fps_time);
-        RG_LOGW("FPS: %.2f, Busy: %d, View: %dx%d, Free PSRAM: %d KB\n", 
-               fps, rg_display_is_busy(), Width, Height, 
-               (int)heap_caps_get_free_size(MALLOC_CAP_SPIRAM) / 1024);
-#endif
-        frame_count = 0;
-        last_fps_time = now;
-    }
+    HasSubmittedFrame = true;
+    DrawBuffer ^= 1;
+    DrawBufferSeeded = false;
+    Buffer = FrameBuffers[DrawBuffer];
 }
 
 PalEntry *RGFB::GetPalette() { return SourcePalette; }
@@ -166,18 +223,18 @@ void RGFB::UpdatePalette()
             p.g = (p.g * (256 - FlashAmount) + Flash.g * FlashAmount) >> 8;
             p.b = (p.b * (256 - FlashAmount) + Flash.b * FlashAmount) >> 8;
         }
-        cached_pal[i] = EC_RGB565(p.r, p.g, p.b);
+        cached_pal[DrawBuffer][i] = EC_RGB565(p.r, p.g, p.b);
     }
-    NeedPalUpdate = false;
+    AppliedPaletteVersion[DrawBuffer] = PaletteVersion;
 }
 
-bool RGFB::SetGamma(float gamma) { Gamma = gamma; NeedPalUpdate = true; return true; }
+bool RGFB::SetGamma(float gamma) { Gamma = gamma; ++PaletteVersion; return true; }
 bool RGFB::SetFlash(PalEntry rgb, int amount) { 
     Flash = rgb; 
     FlashAmount = amount; 
     if (FlashAmount < 0) FlashAmount = 0;
     if (FlashAmount > 256) FlashAmount = 256;
-    NeedPalUpdate = true; 
+    ++PaletteVersion;
     return true; 
 }
 void RGFB::GetFlash(PalEntry &rgb, int &amount) { rgb = Flash; amount = FlashAmount; }
@@ -255,7 +312,6 @@ void I_InitGraphics()
     if (Video == NULL)
         Video = new RGVideo();
 
-    RG_LOGI("PSRAM before tables: %d KB\n", (int)heap_caps_get_free_size(MALLOC_CAP_SPIRAM) / 1024);
     if (Col2RGB8 == NULL)
         Col2RGB8 = (DWORD (*)[256])rg_alloc(65 * 256 * sizeof(DWORD), MEM_SLOW);
     
@@ -263,8 +319,6 @@ void I_InitGraphics()
         Col2RGB8_Inverse = (DWORD (*)[256])rg_alloc(65 * 256 * sizeof(DWORD), MEM_SLOW);
     if (RGB32k == NULL)
         RGB32k = (BYTE (*)[32][32])rg_alloc(32 * 32 * 32 * sizeof(BYTE), MEM_SLOW);
-
-    RG_LOGI("PSRAM after tables: %d KB\n", (int)heap_caps_get_free_size(MALLOC_CAP_SPIRAM) / 1024);
 
     if (ylookup == NULL)
         ylookup = (int *)rg_alloc(MAXHEIGHT * sizeof(int), MEM_SLOW);
@@ -295,7 +349,6 @@ void I_InitGraphics()
     if (finetangent == NULL)
         finetangent = (fixed *)rg_alloc((FINEANGLES / 2 + ANG180) * sizeof(fixed), MEM_SLOW);
     
-    RG_LOGI("PSRAM after math: %d KB\n", (int)heap_caps_get_free_size(MALLOC_CAP_SPIRAM) / 1024);
 }
 
 void I_ShutdownGraphics()

@@ -16,6 +16,7 @@ class UWMFParser;
 class AActor;
 class FileReader;
 class FResourceFile;
+class FArchive;
 
 enum
 {
@@ -162,6 +163,7 @@ class GameMap
 
 		bool			ActivateTrigger(Trigger &trig, int direction, AActor *activator);
 		void			ClearVisibility();
+		void			MarkVisible(Plane::Map *spot);
 		const Header	&GetHeader() const { return header; }
 		Plane::Map		*GetSpot(unsigned int x, unsigned int y, unsigned int z) const { return &planes[z].map[y*header.width+x]; }
 		Plane::Map		*GetSpotByTag(unsigned int tag, Plane::Map *start) const;
@@ -170,6 +172,11 @@ class GameMap
 		void	LoadMap(bool loadingSave);
 		unsigned int	NumPlanes() const { return planes.Size(); }
 		const Plane		&GetPlane(unsigned int index) const { return planes[index]; }
+		const Tile		*GetTile(unsigned int index) const;
+		unsigned int	GetTileIndex(const Tile *tile) const;
+		const Sector	*GetSector(unsigned int index) const;
+		unsigned int	GetSectorIndex(const Sector *sector) const;
+		const Zone		&GetZone(unsigned int index) const { return zonePalette[index]; }
 
 		bool			CheckLink(const Zone *zone1, const Zone *zone2, bool recurse);
 		void			GetHitlist(BYTE* hitlist) const;
@@ -183,6 +190,7 @@ class GameMap
 
 		TMap<unsigned int, Plane::Map *> elevatorPosition;
 	private:
+		friend FArchive &operator<< (FArchive &arc, GameMap *&gm);
 		friend class UWMFParser;
 		friend class FWadCollection;
 		friend struct Plane::Map;
@@ -213,6 +221,7 @@ class GameMap
 		TArray<Zone>	zonePalette;
 		TArray<Thing>	things;
 		TArray<Plane>	planes;
+		TArray<Plane::Map *>	visibleSpots;
 		TMap<unsigned int, Plane::Map *> tagMap;
 
 		bool*				zoneTraversed;

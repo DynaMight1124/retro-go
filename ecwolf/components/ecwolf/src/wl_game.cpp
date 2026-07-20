@@ -32,6 +32,7 @@
 #include "colormatcher.h"
 #include "actor.h"
 #include "doomerrors.h"
+#include "rg_video.h"
 
 #ifdef MYPROFILE
 #include <TIME.H>
@@ -859,7 +860,10 @@ restartgame:
 		ingame = true;
 
 		if (!died)
+		{
+			RGVideoIncrementalScope incrementalVideo;
 			PreloadGraphics (dointermission);
+		}
 		else
 		{
 			died = false;

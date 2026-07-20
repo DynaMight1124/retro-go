@@ -58,7 +58,9 @@ extern "C" void app_main(void) {
     config.frameRate = 70;
     
     rg_system_init(&config);
-    rg_system_set_log_level(RG_LOG_WARN);
+    // ECWolf already catches up multiple 70 Hz game tics before rendering one
+    // video frame. Disable Retro-Go's second, competing frameskip controller.
+    rg_system_get_app()->frameskip = -1;
     rg_display_set_scaling(RG_DISPLAY_SCALING_FULL);
 
     // Start ECWolf in a dedicated task with a large stack (64KB) on Core 1 (Stable)

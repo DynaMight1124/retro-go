@@ -421,37 +421,40 @@ static bool TryMove (AActor *ob)
 		}
 	}
 
-	//
-	// check for actors
-	//
-	for(AActor::Iterator iter = AActor::GetIterator().Next();iter;)
+	// Check only actors which can actually block or receive a touch. Large maps
+	// otherwise walk hundreds of inert PSRAM-backed actors for every attempt.
+	const TArray<AActor::CollisionEntry> &collisionActors = AActor::GetCollisionActors();
+	for(unsigned int i = 0; i < collisionActors.Size();)
 	{
-		// We need to iterate a little awkwardly since the object may disappear
-		// on us rendering the next pointer invalid.
-		AActor *check = iter;
-		iter.Next();
+		const AActor::CollisionEntry &entry = collisionActors[i];
+		AActor *check = entry.actor;
 
-		if(check == ob)
-			continue;
-
-		// Allow players to clip through each other for now.
-		if(check->player && ob->player)
-			continue;
-
-		fixed r = check->radius + ob->radius;
-		if(check->flags & FL_SOLID)
+		if(check != ob)
 		{
-			if(abs(ob->x - check->x) > r ||
-				abs(ob->y - check->y) > r)
+			const fixed checkX = entry.dynamic ? check->x : entry.x;
+			const fixed checkY = entry.dynamic ? check->y : entry.y;
+			const fixed r = entry.radius + ob->radius;
+			if(abs(ob->x - checkX) > r || abs(ob->y - checkY) > r)
+			{
+				++i;
 				continue;
-			return false;
-		}
-		else
-		{
-			if(abs(ob->x - check->x) <= r &&
-				abs(ob->y - check->y) <= r)
+			}
+
+			if(check->player && ob->player)
+			{
+				++i;
+				continue;
+			}
+
+			if(check->flags & FL_SOLID)
+				return false;
+			else if(check->ReceivesTouch())
 				check->Touch(ob);
 		}
+
+		// Touch may consume and unregister the current pickup.
+		if(i < collisionActors.Size() && collisionActors[i].actor == check)
+			++i;
 	}
 
 	return true;

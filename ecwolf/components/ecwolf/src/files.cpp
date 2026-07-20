@@ -51,19 +51,30 @@
 //
 //==========================================================================
 
+// Retro-Go mounts FAT volumes with four available file descriptors. ECWolf
+// normally keeps every resource archive open, so retain only the most recent
+// named readers and transparently reopen older ones when they are accessed.
+static const int MAX_POOLED_FILE_READERS = 3;
+static FileReader *FilePoolHead = NULL;
+static FileReader *FilePoolTail = NULL;
+static int FilePoolSize = 0;
+
 FileReader::FileReader ()
-: File(NULL), Length(0), StartPos(0), FilePos(0), CloseOnDestruct(false)
+: File(NULL), Length(0), StartPos(0), FilePos(0), ReopenFilename(NULL),
+  PoolPrev(NULL), PoolNext(NULL), InFilePool(false), CloseOnDestruct(false)
 {
 }
 
 FileReader::FileReader (const FileReader &other, long length)
-: File(other.File), Length(length), CloseOnDestruct(false)
+: File(other.File), Length(length), ReopenFilename(NULL), PoolPrev(NULL),
+  PoolNext(NULL), InFilePool(false), CloseOnDestruct(false)
 {
 	FilePos = StartPos = ftell (other.File);
 }
 
 FileReader::FileReader (const char *filename)
-: File(NULL), Length(0), StartPos(0), FilePos(0), CloseOnDestruct(false)
+: File(NULL), Length(0), StartPos(0), FilePos(0), ReopenFilename(NULL),
+  PoolPrev(NULL), PoolNext(NULL), InFilePool(false), CloseOnDestruct(false)
 {
 	if (!Open(filename))
 	{
@@ -72,40 +83,136 @@ FileReader::FileReader (const char *filename)
 }
 
 FileReader::FileReader (FILE *file)
-: File(file), Length(0), StartPos(0), FilePos(0), CloseOnDestruct(false)
+: File(file), Length(0), StartPos(0), FilePos(0), ReopenFilename(NULL),
+  PoolPrev(NULL), PoolNext(NULL), InFilePool(false), CloseOnDestruct(false)
 {
 	Length = CalcFileLen();
 }
 
 FileReader::FileReader (FILE *file, long length)
-: File(file), Length(length), CloseOnDestruct(true)
+: File(file), Length(length), ReopenFilename(NULL), PoolPrev(NULL),
+  PoolNext(NULL), InFilePool(false), CloseOnDestruct(true)
 {
 	FilePos = StartPos = ftell (file);
 }
 
 FileReader::~FileReader ()
 {
+	RemoveFromFilePool();
 	if (CloseOnDestruct && File != NULL)
 	{
 		fclose (File);
 		File = NULL;
 	}
+	delete[] ReopenFilename;
 }
 
 bool FileReader::Open (const char *filename)
 {
-	File = ::File(filename).open("rb");
-	if (File == NULL) return false;
+	RemoveFromFilePool();
+	if (CloseOnDestruct && File != NULL)
+	{
+		fclose(File);
+	}
+	File = NULL;
+	delete[] ReopenFilename;
+	ReopenFilename = new char[strlen(filename) + 1];
+	strcpy(ReopenFilename, filename);
 	FilePos = 0;
 	StartPos = 0;
 	CloseOnDestruct = true;
+	if (!EnsureOpen())
+	{
+		delete[] ReopenFilename;
+		ReopenFilename = NULL;
+		return false;
+	}
 	Length = CalcFileLen();
 	return true;
+}
+
+bool FileReader::EnsureOpen ()
+{
+	if (File != NULL)
+	{
+		TouchFilePool();
+		return true;
+	}
+	if (ReopenFilename == NULL)
+	{
+		return false;
+	}
+
+	while (FilePoolSize >= MAX_POOLED_FILE_READERS && FilePoolTail != NULL)
+	{
+		FilePoolTail->SuspendFile();
+	}
+	File = ::File(ReopenFilename).open("rb");
+	if (File == NULL)
+	{
+		return false;
+	}
+	if (FilePos != 0 && fseek(File, FilePos, SEEK_SET) != 0)
+	{
+		fclose(File);
+		File = NULL;
+		return false;
+	}
+	TouchFilePool();
+	return true;
+}
+
+void FileReader::TouchFilePool ()
+{
+	if (ReopenFilename == NULL)
+	{
+		return;
+	}
+	RemoveFromFilePool();
+	PoolPrev = NULL;
+	PoolNext = FilePoolHead;
+	if (FilePoolHead != NULL)
+	{
+		FilePoolHead->PoolPrev = this;
+	}
+	else
+	{
+		FilePoolTail = this;
+	}
+	FilePoolHead = this;
+	InFilePool = true;
+	++FilePoolSize;
+}
+
+void FileReader::SuspendFile ()
+{
+	RemoveFromFilePool();
+	if (File != NULL)
+	{
+		fclose(File);
+		File = NULL;
+	}
+}
+
+void FileReader::RemoveFromFilePool ()
+{
+	if (!InFilePool)
+	{
+		return;
+	}
+	if (PoolPrev != NULL) PoolPrev->PoolNext = PoolNext;
+	else FilePoolHead = PoolNext;
+	if (PoolNext != NULL) PoolNext->PoolPrev = PoolPrev;
+	else FilePoolTail = PoolPrev;
+	PoolPrev = PoolNext = NULL;
+	InFilePool = false;
+	--FilePoolSize;
 }
 
 
 void FileReader::ResetFilePtr ()
 {
+	if (!EnsureOpen()) return;
 	FilePos = ftell (File);
 }
 
@@ -128,6 +235,10 @@ long FileReader::Seek (long offset, int origin)
 	{
 		offset += StartPos + Length;
 	}
+	if (!EnsureOpen())
+	{
+		return -1;
+	}
 	if (0 == fseek (File, offset, SEEK_SET))
 	{
 		FilePos = offset;
@@ -140,6 +251,7 @@ long FileReader::Read (void *buffer, long len)
 {
 	assert(len >= 0);
 	if (len <= 0) return 0;
+	if (!EnsureOpen()) return 0;
 	if (FilePos + len > StartPos + Length)
 	{
 		len = Length - FilePos + StartPos;
@@ -152,6 +264,7 @@ long FileReader::Read (void *buffer, long len)
 char *FileReader::Gets(char *strbuf, int len)
 {
 	if (len <= 0 || FilePos >= StartPos + Length) return NULL;
+	if (!EnsureOpen()) return NULL;
 	char *p = fgets(strbuf, len, File);
 	if (p != NULL)
 	{
