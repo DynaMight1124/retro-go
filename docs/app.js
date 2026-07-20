@@ -463,6 +463,7 @@ function updateInstallButtonAndDetails() {
   const installButton = document.createElement('esp-web-install-button');
   installButton.id = 'esp-install-btn';
   installButton.manifest = state.manifestBlobUrl;
+  installButton.setAttribute('baud-rate', '921600');
 
   buttonContainer.appendChild(installButton);
 }
