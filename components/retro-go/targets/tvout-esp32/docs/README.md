@@ -1,5 +1,5 @@
 # ESP32-TVOut
-- Build Guide & BOM: TBA
+- Build Guide & BOM: https://www.instructables.com/NESP32-AV-Play-Retro-Games-From-a-NES-Controller
 - Status: Complete
 
 Command to build (ESP-IDF v5.5): `python rg_tool.py --target tvout-esp32 release --no-networking`
