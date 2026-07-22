@@ -21,3 +21,5 @@ void HWRoad_write_road_control(const uint8_t);
 
 extern void (*HWRoad_render_background)(uint16_t*);
 extern void (*HWRoad_render_foreground)(uint16_t*);
+void HWRoad_render_background_lores_rows(uint16_t *pixels, int first_y, int y_step);
+void HWRoad_render_foreground_lores_rows(uint16_t *pixels, int first_y, int y_step);

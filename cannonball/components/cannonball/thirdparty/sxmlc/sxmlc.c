@@ -1540,7 +1540,16 @@ int XMLDoc_parse_file_DOM_text_as_nodes(const SXML_CHAR* filename, XMLDoc* doc, 
 	if (doc == NULL || filename == NULL || filename[0] == NULC || doc->init_value != XML_INIT_DONE)
 		return false;
 
-	sx_strncpy(doc->filename, filename, SXMLC_MAX_PATH);
+	/* Keep room for the terminator. Some toolchains diagnose strncpy with a
+	 * bound equal to the destination size, and the old code could leave this
+	 * field unterminated when presented with a long path. Use a character-wise
+	 * copy so this remains valid for both narrow and SXMLC_UNICODE builds. */
+	size_t filename_len = sx_strlen(filename);
+	if (filename_len >= SXMLC_MAX_PATH)
+		filename_len = SXMLC_MAX_PATH - 1;
+	for (size_t i = 0; i < filename_len; i++)
+		doc->filename[i] = filename[i];
+	doc->filename[filename_len] = NULC;
 
 	/* Read potential BOM on file, only when unicode is defined */
 #ifdef SXMLC_UNICODE

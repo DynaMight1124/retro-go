@@ -1,6 +1,15 @@
 # Cannonball for Retro-Go
 
-This is a port of the **Cannonball** engine (the enhanced Outrun engine) to the **Retro-Go** ecosystem, specifically optimised for ESP32-based devices like the **ESP32-P4** and **ESP32-S3**. Honestly, its full speed on the P4 but the S3 struggles and the original ESP32 isnt great. Ideally needs some work to split the audio/graphics cores between core 0 and core 1. 
+This is a port of the **Cannonball** engine (the enhanced Outrun engine) to the **Retro-Go** ecosystem, specifically optimised for ESP32-based devices. Its full speed on the ESP32-S3 and P4, the original ESP32 is much improved at 20-22fps on the opening scene and between 25-30fps in most of the gameplay.
+
+## Recent updates:
+  - RGB conversion: effectively zero
+  - Double-buffered PSRAM display
+  - Parallel road and sprite rendering
+  - Direct native RGB565 output
+  - Render-only adaptive frameskipping
+  - Audio/render priority contention
+  - Several renderer hot-loop costs
 
 ## Features
 - **30 FPS Arcade Gameplay:** Synced via hardware audio timers for a stable, speed-locked experience.
@@ -47,4 +56,4 @@ Access these via the dedicated **Options** button or through the **Retro-Go Menu
 ## Credits
 - **Cannonball Engine:** Created by Chris White.
 - **Retro-Go:** The ESP32 emulation ecosystem.
-- **Port:** Optimized for ESP32-P4/S3 targets.
+- **Port:** Optimised for ESP32 targets.

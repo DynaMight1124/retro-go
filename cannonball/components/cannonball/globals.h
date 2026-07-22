@@ -6,6 +6,13 @@
 #include <rg_system.h>
 #include <rg_utils.h>
 #include <esp_heap_caps.h>
+
+// Render target-native RGB565 directly into Retro-Go's owned surface. Define
+// this to 0 at build time to retain the original selector + conversion path.
+#ifndef CANNONBALL_DIRECT_RGB565
+#define CANNONBALL_DIRECT_RGB565 1
+#endif
+
 // Use standard Retro-Go allocator for stability
 #define malloc(x) rg_alloc(x, MEM_SLOW)
 #define free(x) free(x)
@@ -18,6 +25,13 @@ extern rg_task_t *audio_task_handle;
 #endif
 
 #define REAL_AUDIO_FREQUENCY 22050
+#ifdef RETRO_GO
+// Internal synthesis rate. 11040 is exactly divisible by Cannonball's 30 Hz
+// tick rate; each 368-frame block is resampled to 735 sink frames.
+#define SYNTH_AUDIO_FREQUENCY 11040
+#else
+#define SYNTH_AUDIO_FREQUENCY REAL_AUDIO_FREQUENCY
+#endif
 
 // ------------------------------------------------------------------------------------------------
 // Debug Settings
@@ -44,6 +58,20 @@ extern rg_task_t *audio_task_handle;
 
 // Number of Palette Entries
 #define S16_PALETTE_ENTRIES 4096
+
+#if defined(RETRO_GO) && CANNONBALL_DIRECT_RGB565
+extern uint16_t Render_rgb[S16_PALETTE_ENTRIES * 3];
+static inline uint16_t Video_output_color(uint32_t selector)
+{
+    return Render_rgb[selector & ((S16_PALETTE_ENTRIES * 3) - 1)];
+}
+uint16_t Render_shadow_color(uint16_t color);
+#else
+static inline uint16_t Video_output_color(uint32_t selector)
+{
+    return (uint16_t)selector;
+}
+#endif
 
 // Number of stages
 #define STAGES 15

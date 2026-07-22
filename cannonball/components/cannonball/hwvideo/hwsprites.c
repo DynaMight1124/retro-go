@@ -3,6 +3,7 @@
 #include "globals.h"
 #include "frontend/config.h"
 #include <stdint.h>
+#include <string.h>
 /***************************************************************************
     Video Emulation: OutRun Sprite Rendering Hardware.
     Based on MAME source code.
@@ -57,15 +58,32 @@ uint16_t HWSprites_x1, HWSprites_x2;
 #define COLOR_BASE 0x800
 
 uint32_t *sprites = NULL; // Pointer to decoded sprites (reuses ROM buffer)
+
+#if defined(RETRO_GO) && CANNONBALL_DIRECT_RGB565
+// One bit per low-resolution output pixel. This preserves the selector
+// renderer's idempotent overlapping-shadow behaviour without retaining its
+// complete 143 KB selector framebuffer.
+#define SHADOW_MASK_STRIDE (S16_WIDTH / 8)
+static uint8_t *HWSprites_shadow_mask;
+#endif
     
 void HWSprites_Create(void)
 {
     // Memory is allocated by RomLoader and reused here
+#if defined(RETRO_GO) && CANNONBALL_DIRECT_RGB565
+    if (!HWSprites_shadow_mask)
+        HWSprites_shadow_mask = rg_alloc(SHADOW_MASK_STRIDE * S16_HEIGHT, MEM_FAST);
+#endif
 }
 
 void HWSprites_Destroy(void)
 {
     sprites = NULL;
+#if defined(RETRO_GO) && CANNONBALL_DIRECT_RGB565
+    if (HWSprites_shadow_mask)
+        free(HWSprites_shadow_mask);
+    HWSprites_shadow_mask = NULL;
+#endif
 }
     
 // Two halves of RAM
@@ -134,6 +152,13 @@ void HWSprites_set_x_clip(uint8_t on)
     }
 }
 
+void HWSprites_prepare_frame(void)
+{
+#if defined(RETRO_GO) && CANNONBALL_DIRECT_RGB565
+    memset(HWSprites_shadow_mask, 0, SHADOW_MASK_STRIDE * S16_HEIGHT);
+#endif
+}
+
 
 uint8_t HWSprites_read(const uint16_t adr)
 {
@@ -165,26 +190,84 @@ void HWSprites_swap()
     }
 }
 
-#define HWSprites_draw_pixel()                                                                                  \
-{                                                                                                     \
-    if (x >= HWSprites_x1 && x < HWSprites_x2 && pix != 0 && pix != 15)                                                   \
-    {                                                                                                 \
-        if (shadow && pix == 0xa)                                                                     \
-        {                                                                                             \
-            pPixel[x] &= 0xfff;                                                                       \
-            pPixel[x] += ((S16_PALETTE_ENTRIES * 2) - ((Video_read_pal16(pPixel[x]) & 0x8000) >> 3)); \
-        }                                                                                             \
-        else                                                                                          \
-        {                                                                                             \
-            pPixel[x] = (pix | color);                                                                \
-        }                                                                                             \
-    }                                                                                                 \
+#if defined(RETRO_GO) && CANNONBALL_DIRECT_RGB565
+#define HWSprites_draw_pixel()                                                                         \
+{                                                                                                      \
+    if ((uint32_t)(x - HWSprites_x1) < (uint32_t)(HWSprites_x2 - HWSprites_x1) &&                       \
+        (uint32_t)(pix - 1) < 14U)                                                                     \
+    {                                                                                                  \
+        if (shadow)                                                                                    \
+        {                                                                                              \
+            uint8_t shadow_bit = 1U << (x & 7);                                                        \
+            if (pix == 0xa)                                                                            \
+            {                                                                                          \
+                if ((pShadow[x >> 3] & shadow_bit) == 0)                                               \
+                {                                                                                      \
+                    pPixel[x] = Render_shadow_color(pPixel[x]);                                       \
+                    pShadow[x >> 3] |= shadow_bit;                                                     \
+                }                                                                                      \
+            }                                                                                          \
+            else                                                                                       \
+            {                                                                                          \
+                pPixel[x] = sprite_palette[pix];                                                       \
+                /* A normal pen resets shadow state within the shadow phase. */                        \
+                pShadow[x >> 3] &= (uint8_t)~shadow_bit;                                               \
+            }                                                                                          \
+        }                                                                                              \
+        else                                                                                           \
+        {                                                                                              \
+            pPixel[x] = sprite_palette[pix];                                                           \
+        }                                                                                              \
+    }                                                                                                  \
 }
 
-void HWSprites_render(const uint8_t priority)
+// At native horizontal scale every source nibble produces exactly one output
+// pixel. Keep this separate from HWSprites_draw_pixel so the common opaque
+// case does not execute the generic zoom loop or test the invariant shadow
+// flag for every nibble.
+#define HWSprites_draw_native_pixel()                                                                  \
+{                                                                                                      \
+    if ((uint32_t)(x - HWSprites_x1) < (uint32_t)(HWSprites_x2 - HWSprites_x1) &&                       \
+        (uint32_t)(pix - 1) < 14U)                                                                     \
+    {                                                                                                  \
+        pPixel[x] = sprite_palette[pix];                                                               \
+    }                                                                                                  \
+    x += xdelta;                                                                                       \
+}
+
+#else
+#define HWSprites_draw_pixel()                                                                         \
+{                                                                                                      \
+    if (x >= HWSprites_x1 && x < HWSprites_x2 && pix != 0 && pix != 15)                                \
+    {                                                                                                  \
+        if (shadow && pix == 0xa)                                                                      \
+        {                                                                                              \
+            pPixel[x] &= 0xfff;                                                                        \
+            pPixel[x] += ((S16_PALETTE_ENTRIES * 2) - ((Video_read_pal16(pPixel[x]) & 0x8000) >> 3));  \
+        }                                                                                              \
+        else                                                                                           \
+        {                                                                                              \
+            pPixel[x] = Video_output_color(pix | color);                                               \
+        }                                                                                              \
+    }                                                                                                  \
+}
+#endif
+
+// Sprite pixels and decoded graphics both live in PSRAM on the original
+// ESP32. Keep the hot raster loop in IRAM so instruction fetches do not add
+// external-memory cache pressure while large sprites are being streamed.
+void IRAM_ATTR HWSprites_render_region(const uint8_t priority, int32_t y_min, int32_t y_max)
 {
     uint16_t data;
     const uint32_t numbanks = SPRITES_LENGTH / 0x10000;
+
+    // The hardware +E scratch word is not consumed by Cannonball. Keeping the
+    // decoded address local makes separate, non-overlapping Y regions safe to
+    // render concurrently without changing their pixel order.
+
+    if (y_min < 0) y_min = 0;
+    if (y_max > Config_s16_height) y_max = Config_s16_height;
+    if (y_min >= y_max) return;
 
     for (data = 0; data < SPRITE_RAM_SIZE; data += 8) 
     {
@@ -211,6 +294,12 @@ void HWSprites_render(const uint8_t priority)
         int32_t xdelta = ((ramBuff[data+4] & 0x2000) != 0) ? 1 : -1;
         int32_t hzoom    = ramBuff[data+4] & 0x7ff;     
         int32_t color   = COLOR_BASE + ((ramBuff[data+5] & 0x7f) << 4);
+#if defined(RETRO_GO) && CANNONBALL_DIRECT_RGB565
+        // Sprite selectors always live in the base 0x800-0xfff palette bank.
+        // Hoisting the palette base removes selector construction and masking
+        // from every opaque sprite pixel in the hottest rendering loop.
+        const uint16_t* sprite_palette = &Render_rgb[color];
+#endif
         int32_t x, y, ytarget, yacc = 0, pix;
             
         // adjust X coordinate
@@ -219,9 +308,6 @@ void HWSprites_render(const uint8_t priority)
         if (xpos < 0x80 && xdelta < 0)
             xpos += 0x200;
         xpos -= 0xbe;
-
-        // initialize the end address to the start address
-        ramBuff[data+7] = addr;
 
         // clamp to within the memory region size
         if (numbanks)
@@ -252,22 +338,75 @@ void HWSprites_render(const uint8_t priority)
         for (y = top; y != ytarget; y += ydelta)
         {
             // skip drawing if not within the cliprect
-            if (y >= 0 && y < Config_s16_height)
+            if (y >= y_min && y < y_max)
             {
                 uint16_t* pPixel = &Video_pixels[y * Config_s16_width];
+#if defined(RETRO_GO) && CANNONBALL_DIRECT_RGB565
+                uint8_t* pShadow = &HWSprites_shadow_mask[y * SHADOW_MASK_STRIDE];
+#endif
                 int32_t xacc = 0;
 
+#if defined(RETRO_GO) && CANNONBALL_DIRECT_RGB565
+                // Full-scale, non-shadow sprites are common for the large car
+                // artwork. The generic accumulator below is still required for
+                // every scaled sprite and for exact shadow-mask semantics.
+                if (hzoom == 0x200 && shadow == 0)
+                {
+                    if (flip == 0)
+                    {
+                        uint16_t sprite_addr = addr - 1;
+
+                        for (x = xpos; (xdelta > 0 && x < Config_s16_width) || (xdelta < 0 && x >= 0); )
+                        {
+                            uint32_t pixels = spritedata[++sprite_addr];
+
+                            pix = (pixels >> 28) & 0xf; HWSprites_draw_native_pixel();
+                            pix = (pixels >> 24) & 0xf; HWSprites_draw_native_pixel();
+                            pix = (pixels >> 20) & 0xf; HWSprites_draw_native_pixel();
+                            pix = (pixels >> 16) & 0xf; HWSprites_draw_native_pixel();
+                            pix = (pixels >> 12) & 0xf; HWSprites_draw_native_pixel();
+                            pix = (pixels >>  8) & 0xf; HWSprites_draw_native_pixel();
+                            pix = (pixels >>  4) & 0xf; HWSprites_draw_native_pixel();
+                            pix = (pixels >>  0) & 0xf; HWSprites_draw_native_pixel();
+
+                            if ((pixels & 0x000000f0) == 0x000000f0)
+                                break;
+                        }
+                    }
+                    else
+                    {
+                        uint16_t sprite_addr = addr + 1;
+
+                        for (x = xpos; (xdelta > 0 && x < Config_s16_width) || (xdelta < 0 && x >= 0); )
+                        {
+                            uint32_t pixels = spritedata[--sprite_addr];
+
+                            pix = (pixels >>  0) & 0xf; HWSprites_draw_native_pixel();
+                            pix = (pixels >>  4) & 0xf; HWSprites_draw_native_pixel();
+                            pix = (pixels >>  8) & 0xf; HWSprites_draw_native_pixel();
+                            pix = (pixels >> 12) & 0xf; HWSprites_draw_native_pixel();
+                            pix = (pixels >> 16) & 0xf; HWSprites_draw_native_pixel();
+                            pix = (pixels >> 20) & 0xf; HWSprites_draw_native_pixel();
+                            pix = (pixels >> 24) & 0xf; HWSprites_draw_native_pixel();
+                            pix = (pixels >> 28) & 0xf; HWSprites_draw_native_pixel();
+
+                            if ((pixels & 0x0f000000) == 0x0f000000)
+                                break;
+                        }
+                    }
+                }
+                else
+#endif
                 // non-flipped case
                 if (flip == 0)
                 {
                     // start at the word before because we preincrement below
-                    ramBuff[data+7] = (addr - 1);
+                    uint16_t sprite_addr = addr - 1;
 
                     for (x = xpos; (xdelta > 0 && x < Config_s16_width) || (xdelta < 0 && x >= 0); )
                     {
-                        uint32_t pixels = spritedata[++ramBuff[data+7]]; // Add to base sprite data the vzoom value
+                        uint32_t pixels = spritedata[++sprite_addr];
 
-                        // draw four pixels
                         pix = (pixels >> 28) & 0xf; while (xacc < 0x200) { HWSprites_draw_pixel(); x += xdelta; xacc += hzoom; } xacc -= 0x200;
                         pix = (pixels >> 24) & 0xf; while (xacc < 0x200) { HWSprites_draw_pixel(); x += xdelta; xacc += hzoom; } xacc -= 0x200;
                         pix = (pixels >> 20) & 0xf; while (xacc < 0x200) { HWSprites_draw_pixel(); x += xdelta; xacc += hzoom; } xacc -= 0x200;
@@ -277,7 +416,6 @@ void HWSprites_render(const uint8_t priority)
                         pix = (pixels >>  4) & 0xf; while (xacc < 0x200) { HWSprites_draw_pixel(); x += xdelta; xacc += hzoom; } xacc -= 0x200;
                         pix = (pixels >>  0) & 0xf; while (xacc < 0x200) { HWSprites_draw_pixel(); x += xdelta; xacc += hzoom; } xacc -= 0x200;
 
-                        // stop if the second-to-last pixel in the group was 0xf
                         if ((pixels & 0x000000f0) == 0x000000f0)
                             break;
                     }
@@ -286,13 +424,12 @@ void HWSprites_render(const uint8_t priority)
                 else
                 {
                     // start at the word after because we predecrement below
-                    ramBuff[data+7] = (addr + 1);
+                    uint16_t sprite_addr = addr + 1;
 
                     for (x = xpos; (xdelta > 0 && x < Config_s16_width) || (xdelta < 0 && x >= 0); )
                     {
-                        uint32_t pixels = spritedata[--ramBuff[data+7]];
+                        uint32_t pixels = spritedata[--sprite_addr];
 
-                        // draw four pixels
                         pix = (pixels >>  0) & 0xf; while (xacc < 0x200) { HWSprites_draw_pixel(); x += xdelta; xacc += hzoom; } xacc -= 0x200;
                         pix = (pixels >>  4) & 0xf; while (xacc < 0x200) { HWSprites_draw_pixel(); x += xdelta; xacc += hzoom; } xacc -= 0x200;
                         pix = (pixels >>  8) & 0xf; while (xacc < 0x200) { HWSprites_draw_pixel(); x += xdelta; xacc += hzoom; } xacc -= 0x200;
@@ -302,7 +439,6 @@ void HWSprites_render(const uint8_t priority)
                         pix = (pixels >> 24) & 0xf; while (xacc < 0x200) { HWSprites_draw_pixel(); x += xdelta; xacc += hzoom; } xacc -= 0x200;
                         pix = (pixels >> 28) & 0xf; while (xacc < 0x200) { HWSprites_draw_pixel(); x += xdelta; xacc += hzoom; } xacc -= 0x200;
 
-                        // stop if the second-to-last pixel in the group was 0xf
                         if ((pixels & 0x0f000000) == 0x0f000000)
                             break;
                     }
@@ -314,4 +450,9 @@ void HWSprites_render(const uint8_t priority)
             yacc &= 0x1ff;
         }
     }
+}
+
+void HWSprites_render(const uint8_t priority)
+{
+    HWSprites_render_region(priority, 0, Config_s16_height);
 }

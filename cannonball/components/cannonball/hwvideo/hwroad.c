@@ -117,6 +117,37 @@ uint8_t *HWRoad_roads = NULL;
 uint16_t *HWRoad_ram = NULL;
 uint16_t *HWRoad_ramBuff = NULL;
 
+// RGB565 surfaces and every supported low-resolution road width are 32-bit
+// aligned/even. Store adjacent pixels together to reduce PSRAM transactions.
+typedef uint32_t road_packed_u32_t __attribute__((__may_alias__));
+
+// Convert the road chip's priority decision directly to a color-table index.
+// Keeping this in internal data memory avoids a variable shift and branch for
+// every dual-road output pixel.
+static const DRAM_ATTR uint8_t priority_color_index[2][64] =
+{
+    {
+        0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x17,
+        0x10,0x01,0x01,0x01,0x01,0x01,0x01,0x17,
+        0x10,0x02,0x02,0x02,0x02,0x02,0x02,0x17,
+        0x10,0x11,0x12,0x03,0x03,0x03,0x03,0x17,
+        0x04,0x04,0x04,0x04,0x04,0x04,0x04,0x04,
+        0x05,0x05,0x05,0x05,0x05,0x05,0x05,0x05,
+        0x06,0x06,0x06,0x06,0x06,0x06,0x06,0x06,
+        0x07,0x07,0x07,0x07,0x07,0x07,0x07,0x07,
+    },
+    {
+        0x10,0x00,0x00,0x00,0x00,0x00,0x00,0x17,
+        0x10,0x01,0x01,0x01,0x01,0x01,0x01,0x17,
+        0x10,0x02,0x02,0x02,0x02,0x02,0x02,0x17,
+        0x10,0x11,0x12,0x13,0x03,0x03,0x03,0x17,
+        0x04,0x04,0x04,0x04,0x04,0x04,0x04,0x04,
+        0x05,0x05,0x05,0x05,0x05,0x05,0x05,0x05,
+        0x06,0x06,0x06,0x06,0x06,0x06,0x06,0x06,
+        0x07,0x07,0x07,0x07,0x07,0x07,0x07,0x17,
+    },
+};
+
 void HWRoad_Create(void)
 {
     if (!HWRoad_roads) HWRoad_roads = malloc(0x40200);
@@ -137,6 +168,8 @@ void HWRoad_Destroy(void)
 void HWRoad_decode_road(const uint8_t*);
 void HWRoad_render_background_lores(uint16_t*);
 void HWRoad_render_foreground_lores(uint16_t*);
+void HWRoad_render_background_lores_rows(uint16_t*, int, int);
+void HWRoad_render_foreground_lores_rows(uint16_t*, int, int);
 void HWRoad_render_background_hires(uint16_t*);
 void HWRoad_render_foreground_hires(uint16_t*);
 
@@ -264,12 +297,12 @@ void HWRoad_write_road_control(const uint8_t road_control)
 // ------------------------------------------------------------------------------------------------
 
 // Background: Look for solid fill scanlines
-void HWRoad_render_background_lores(uint16_t* pixels)
+void IRAM_ATTR HWRoad_render_background_lores_rows(uint16_t* pixels, int first_y, int y_step)
 {
     int x, y;
     uint16_t* roadram = HWRoad_ramBuff;
 
-    for (y = 0; y < S16_HEIGHT; y++) 
+    for (y = first_y; y < S16_HEIGHT; y += y_step)
     {
         int data0 = roadram[0x000 + y];
         int data1 = roadram[0x100 + y];
@@ -309,28 +342,30 @@ void HWRoad_render_background_lores(uint16_t* pixels)
         {
             uint16_t* pPixel = pixels + (y * Config_s16_width);
             color |= HWRoad_color_offset3;
-            
-            for (x = 0; x < Config_s16_width; x++)
-                *(pPixel)++ = color;
+            uint16_t output_color = Video_output_color(color);
+            uint32_t output_pair = output_color | ((uint32_t)output_color << 16);
+            road_packed_u32_t* output = (road_packed_u32_t*)pPixel;
+
+            for (x = 0; x < Config_s16_width / 2; x++)
+                *output++ = output_pair;
         }
     }
 }
 
+void HWRoad_render_background_lores(uint16_t* pixels)
+{
+    HWRoad_render_background_lores_rows(pixels, 0, 1);
+}
+
 // Foreground: Render From ROM
-void HWRoad_render_foreground_lores(uint16_t* pixels)
+void IRAM_ATTR HWRoad_render_foreground_lores_rows(uint16_t* pixels, int first_y, int y_step)
 {
     int x, y;
     uint16_t* roadram = HWRoad_ramBuff;
     
-    for (y = 0; y < S16_HEIGHT; y++) 
+    for (y = first_y; y < S16_HEIGHT; y += y_step)
     {
         uint16_t color_table[32];
-
-        static const uint8_t priority_map[2][8] =
-        {
-            { 0x80,0x81,0x81,0x87,0,0,0,0x00 },
-            { 0x81,0x81,0x81,0x8f,0,0,0,0x80 }
-        };
 
         const uint32_t data0 = roadram[0x000 + y];
         const uint32_t data1 = roadram[0x100 + y];
@@ -357,20 +392,20 @@ void HWRoad_render_foreground_lores(uint16_t* pixels)
         color1 = roadram[0x600 + (((HWRoad_road_control & 4) != 0) ? (0x100 + y) : (data1 & 0x1ff))];
 
         // determine the 5 colors for road 0
-        color_table[0x00] = HWRoad_color_offset1 ^ 0x00 ^ ((color0 >> 0) & 1);
-        color_table[0x01] = HWRoad_color_offset1 ^ 0x02 ^ ((color0 >> 1) & 1);
-        color_table[0x02] = HWRoad_color_offset1 ^ 0x04 ^ ((color0 >> 2) & 1);
+        color_table[0x00] = Video_output_color(HWRoad_color_offset1 ^ 0x00 ^ ((color0 >> 0) & 1));
+        color_table[0x01] = Video_output_color(HWRoad_color_offset1 ^ 0x02 ^ ((color0 >> 1) & 1));
+        color_table[0x02] = Video_output_color(HWRoad_color_offset1 ^ 0x04 ^ ((color0 >> 2) & 1));
         bgcolor = (color0 >> 8) & 0xf;
-        color_table[0x03] = ((data0 & 0x200) != 0) ? color_table[0x00] : (HWRoad_color_offset2 ^ 0x00 ^ bgcolor);
-        color_table[0x07] = HWRoad_color_offset1 ^ 0x06 ^ ((color0 >> 3) & 1);
+        color_table[0x03] = ((data0 & 0x200) != 0) ? color_table[0x00] : Video_output_color(HWRoad_color_offset2 ^ 0x00 ^ bgcolor);
+        color_table[0x07] = Video_output_color(HWRoad_color_offset1 ^ 0x06 ^ ((color0 >> 3) & 1));
 
         // determine the 5 colors for road 1
-        color_table[0x10] = HWRoad_color_offset1 ^ 0x08 ^ ((color1 >> 4) & 1);
-        color_table[0x11] = HWRoad_color_offset1 ^ 0x0a ^ ((color1 >> 5) & 1);
-        color_table[0x12] = HWRoad_color_offset1 ^ 0x0c ^ ((color1 >> 6) & 1);
+        color_table[0x10] = Video_output_color(HWRoad_color_offset1 ^ 0x08 ^ ((color1 >> 4) & 1));
+        color_table[0x11] = Video_output_color(HWRoad_color_offset1 ^ 0x0a ^ ((color1 >> 5) & 1));
+        color_table[0x12] = Video_output_color(HWRoad_color_offset1 ^ 0x0c ^ ((color1 >> 6) & 1));
         bgcolor = (color1 >> 8) & 0xf;
-        color_table[0x13] = ((data1 & 0x200) != 0) ? color_table[0x10] : (HWRoad_color_offset2 ^ 0x10 ^ bgcolor);
-        color_table[0x17] = HWRoad_color_offset1 ^ 0x0e ^ ((color1 >> 7) & 1);
+        color_table[0x13] = ((data1 & 0x200) != 0) ? color_table[0x10] : Video_output_color(HWRoad_color_offset2 ^ 0x10 ^ bgcolor);
+        color_table[0x17] = Video_output_color(HWRoad_color_offset1 ^ 0x0e ^ ((color1 >> 7) & 1));
 
         // Shift road dependent on whether we are in widescreen mode or not
         uint16_t s16_x = 0x5f8 + Config_s16_x_off;
@@ -382,45 +417,57 @@ void HWRoad_render_foreground_lores(uint16_t* pixels)
                 if (data0 & 0x800)
                     continue;
                 hpos0 = (hpos0 - (s16_x + HWRoad_x_offset)) & 0xfff;
-                for (x = 0; x < Config_s16_width; x++) 
+                road_packed_u32_t* output0 = (road_packed_u32_t*)pPixel;
+                for (x = 0; x < Config_s16_width; x += 2)
                 {
-                    int pix0 = (hpos0 < 0x200) ? src0[hpos0] : 3;
-                    pPixel[x] = color_table[0x00 + pix0];
+                    int pix0a = (hpos0 < 0x200) ? src0[hpos0] : 3;
                     hpos0 = (hpos0 + 1) & 0xfff;
+                    int pix0b = (hpos0 < 0x200) ? src0[hpos0] : 3;
+                    hpos0 = (hpos0 + 1) & 0xfff;
+                    *output0++ = color_table[pix0a] |
+                                 ((uint32_t)color_table[pix0b] << 16);
                 }
                 break;
 
             case 1:
                 hpos0 = (hpos0 - (s16_x + HWRoad_x_offset)) & 0xfff;
                 hpos1 = (hpos1 - (s16_x + HWRoad_x_offset)) & 0xfff;
-                for (x = 0; x < Config_s16_width; x++) 
+                road_packed_u32_t* output1 = (road_packed_u32_t*)pPixel;
+                for (x = 0; x < Config_s16_width; x += 2)
                 {
-                    int pix0 = (hpos0 < 0x200) ? src0[hpos0] : 3;
-                    int pix1 = (hpos1 < 0x200) ? src1[hpos1] : 3;
-                    if (((priority_map[0][pix0] >> pix1) & 1) != 0)
-                        pPixel[x] = color_table[0x10 + pix1];
-                    else
-                        pPixel[x] = color_table[0x00 + pix0];
-
+                    int pix0a = (hpos0 < 0x200) ? src0[hpos0] : 3;
+                    int pix1a = (hpos1 < 0x200) ? src1[hpos1] : 3;
                     hpos0 = (hpos0 + 1) & 0xfff;
                     hpos1 = (hpos1 + 1) & 0xfff;
+                    uint16_t out_a = color_table[priority_color_index[0][(pix0a << 3) | pix1a]];
+
+                    int pix0b = (hpos0 < 0x200) ? src0[hpos0] : 3;
+                    int pix1b = (hpos1 < 0x200) ? src1[hpos1] : 3;
+                    hpos0 = (hpos0 + 1) & 0xfff;
+                    hpos1 = (hpos1 + 1) & 0xfff;
+                    uint16_t out_b = color_table[priority_color_index[0][(pix0b << 3) | pix1b]];
+                    *output1++ = out_a | ((uint32_t)out_b << 16);
                 }
                 break;
 
             case 2:
                 hpos0 = (hpos0 - (s16_x + HWRoad_x_offset)) & 0xfff;
                 hpos1 = (hpos1 - (s16_x + HWRoad_x_offset)) & 0xfff;
-                for (x = 0; x < Config_s16_width; x++) 
+                road_packed_u32_t* output2 = (road_packed_u32_t*)pPixel;
+                for (x = 0; x < Config_s16_width; x += 2)
                 {
-                    int pix0 = (hpos0 < 0x200) ? src0[hpos0] : 3;
-                    int pix1 = (hpos1 < 0x200) ? src1[hpos1] : 3;
-                    if (((priority_map[1][pix0] >> pix1) & 1) != 0)
-                        pPixel[x] = color_table[0x10 + pix1];
-                    else
-                        pPixel[x] = color_table[0x00 + pix0];
-
+                    int pix0a = (hpos0 < 0x200) ? src0[hpos0] : 3;
+                    int pix1a = (hpos1 < 0x200) ? src1[hpos1] : 3;
                     hpos0 = (hpos0 + 1) & 0xfff;
                     hpos1 = (hpos1 + 1) & 0xfff;
+                    uint16_t out_a = color_table[priority_color_index[1][(pix0a << 3) | pix1a]];
+
+                    int pix0b = (hpos0 < 0x200) ? src0[hpos0] : 3;
+                    int pix1b = (hpos1 < 0x200) ? src1[hpos1] : 3;
+                    hpos0 = (hpos0 + 1) & 0xfff;
+                    hpos1 = (hpos1 + 1) & 0xfff;
+                    uint16_t out_b = color_table[priority_color_index[1][(pix0b << 3) | pix1b]];
+                    *output2++ = out_a | ((uint32_t)out_b << 16);
                 }
                 break;
 
@@ -428,15 +475,24 @@ void HWRoad_render_foreground_lores(uint16_t* pixels)
                 if (data1 & 0x800)
                     continue;
                 hpos1 = (hpos1 - (s16_x + HWRoad_x_offset)) & 0xfff;
-                for (x = 0; x < Config_s16_width; x++) 
+                road_packed_u32_t* output3 = (road_packed_u32_t*)pPixel;
+                for (x = 0; x < Config_s16_width; x += 2)
                 {
-                    int pix1 = (hpos1 < 0x200) ? src1[hpos1] : 3;
-                    pPixel[x] = color_table[0x10 + pix1];
+                    int pix1a = (hpos1 < 0x200) ? src1[hpos1] : 3;
                     hpos1 = (hpos1 + 1) & 0xfff;
+                    int pix1b = (hpos1 < 0x200) ? src1[hpos1] : 3;
+                    hpos1 = (hpos1 + 1) & 0xfff;
+                    *output3++ = color_table[0x10 + pix1a] |
+                                 ((uint32_t)color_table[0x10 + pix1b] << 16);
                 }
                 break;
             } // end switch
     } // end for
+}
+
+void HWRoad_render_foreground_lores(uint16_t* pixels)
+{
+    HWRoad_render_foreground_lores_rows(pixels, 0, 1);
 }
 
 // ------------------------------------------------------------------------------------------------
@@ -487,9 +543,10 @@ void HWRoad_render_background_hires(uint16_t* pixels)
         {
             uint16_t* pPixel = pixels + (y * Config_s16_width);
             color |= HWRoad_color_offset3;
+            uint16_t output_color = Video_output_color(color);
             
             for (x = 0; x < Config_s16_width; x++)
-                *(pPixel)++ = color;
+                *(pPixel)++ = output_color;
         }
 
         // Hi-Res Mode: Copy extra line of background
@@ -577,20 +634,20 @@ void HWRoad_render_foreground_hires(uint16_t* pixels)
             color1 = roadram[0x600 + (((HWRoad_road_control & 4) != 0) ? (0x100 + yy) : (data1 & 0x1ff))];
         
             // determine the 5 colors for road 0
-            color_table[0x00] = HWRoad_color_offset1 ^ 0x00 ^ ((color0 >> 0) & 1);
-            color_table[0x01] = HWRoad_color_offset1 ^ 0x02 ^ ((color0 >> 1) & 1);
-            color_table[0x02] = HWRoad_color_offset1 ^ 0x04 ^ ((color0 >> 2) & 1);
+            color_table[0x00] = Video_output_color(HWRoad_color_offset1 ^ 0x00 ^ ((color0 >> 0) & 1));
+            color_table[0x01] = Video_output_color(HWRoad_color_offset1 ^ 0x02 ^ ((color0 >> 1) & 1));
+            color_table[0x02] = Video_output_color(HWRoad_color_offset1 ^ 0x04 ^ ((color0 >> 2) & 1));
             bgcolor = (color0 >> 8) & 0xf;
-            color_table[0x03] = ((data0 & 0x200) != 0) ? color_table[0x00] : (HWRoad_color_offset2 ^ 0x00 ^ bgcolor);
-            color_table[0x07] = HWRoad_color_offset1 ^ 0x06 ^ ((color0 >> 3) & 1);
+            color_table[0x03] = ((data0 & 0x200) != 0) ? color_table[0x00] : Video_output_color(HWRoad_color_offset2 ^ 0x00 ^ bgcolor);
+            color_table[0x07] = Video_output_color(HWRoad_color_offset1 ^ 0x06 ^ ((color0 >> 3) & 1));
 
             // determine the 5 colors for road 1
-            color_table[0x10] = HWRoad_color_offset1 ^ 0x08 ^ ((color1 >> 4) & 1);
-            color_table[0x11] = HWRoad_color_offset1 ^ 0x0a ^ ((color1 >> 5) & 1);
-            color_table[0x12] = HWRoad_color_offset1 ^ 0x0c ^ ((color1 >> 6) & 1);
+            color_table[0x10] = Video_output_color(HWRoad_color_offset1 ^ 0x08 ^ ((color1 >> 4) & 1));
+            color_table[0x11] = Video_output_color(HWRoad_color_offset1 ^ 0x0a ^ ((color1 >> 5) & 1));
+            color_table[0x12] = Video_output_color(HWRoad_color_offset1 ^ 0x0c ^ ((color1 >> 6) & 1));
             bgcolor = (color1 >> 8) & 0xf;
-            color_table[0x13] = ((data1 & 0x200) != 0) ? color_table[0x10] : (HWRoad_color_offset2 ^ 0x10 ^ bgcolor);
-            color_table[0x17] = HWRoad_color_offset1 ^ 0x0e ^ ((color1 >> 7) & 1);        
+            color_table[0x13] = ((data1 & 0x200) != 0) ? color_table[0x10] : Video_output_color(HWRoad_color_offset2 ^ 0x10 ^ bgcolor);
+            color_table[0x17] = Video_output_color(HWRoad_color_offset1 ^ 0x0e ^ ((color1 >> 7) & 1));
         }
         
         if (src0 == NULL)
@@ -673,4 +730,3 @@ void HWRoad_render_foreground_hires(uint16_t* pixels)
             } // end switch
     } // end for
 }
-

@@ -12,6 +12,7 @@
 #include "video.h"
 #include "setup.h"
 #include "globals.h"
+#include <string.h>
 
 #ifdef WITH_OPENGL
 #include "sdl/rendergl.h"
@@ -20,24 +21,41 @@
 #endif
 
 uint16_t *Video_pixels = NULL;
+static uint8_t Video_owns_pixels = 0;
 uint8_t Video_enabled;
 uint8_t *palette = NULL; // 2 Bytes Per Palette Entry
 void Video_refresh_palette(uint32_t);
 
+#ifdef RETRO_GO
+video_profile_t Video_profile;
+#endif
+
 void Video_Create(void)
 {
     if (!palette) palette = malloc(0x2000); // 8192 bytes to match 0x1FFF addressing
+#if !defined(RETRO_GO) || !CANNONBALL_DIRECT_RGB565
     if (!Video_pixels) Video_pixels = malloc(S16_WIDTH_WIDE * S16_HEIGHT * sizeof(uint16_t));
+    if (Video_pixels) Video_owns_pixels = 1;
+#endif
 }
 
 void Video_Destroy(void)
 {
     HWTiles_Destroy();
-    if (Video_pixels) free(Video_pixels);
+    if (Video_pixels && Video_owns_pixels) free(Video_pixels);
     if (palette) free(palette);
     palette = NULL;
     Video_pixels = NULL;
+    Video_owns_pixels = 0;
     Render_disable();
+}
+
+void Video_set_framebuffer(uint16_t *pixels)
+{
+    if (Video_pixels && Video_owns_pixels)
+        free(Video_pixels);
+    Video_pixels = pixels;
+    Video_owns_pixels = 0;
 }
 
 int Video_init(video_settings_t* settings)
@@ -46,8 +64,16 @@ int Video_init(video_settings_t* settings)
         return 0;
 
     // Internal pixel array. The size of this is always constant
-    if (Video_pixels) free(Video_pixels);
+#if defined(RETRO_GO) && CANNONBALL_DIRECT_RGB565
+    if (!Video_pixels)
+        return 0;
+#else
+    if (Video_pixels && Video_owns_pixels) free(Video_pixels);
     Video_pixels = (uint16_t*)malloc(Config_s16_width * Config_s16_height * sizeof(uint16_t));
+    Video_owns_pixels = Video_pixels != NULL;
+#endif
+    if (Video_pixels)
+        memset(Video_pixels, 0, Config_s16_width * Config_s16_height * sizeof(uint16_t));
 
     // Convert S16 tiles to a more useable format
     HWTiles_init(Roms_tiles.rom, Config_video.hires != 0);
@@ -62,11 +88,10 @@ int Video_init(video_settings_t* settings)
 
     // Convert S16 sprites
     HWSprites_init(Roms_sprites.rom);
-    if (Roms_sprites.rom)
-    {
-        free(Roms_sprites.rom);
-        Roms_sprites.rom = NULL;
-    }
+    // HWSprites_init decodes the graphics in place and retains this buffer as
+    // its live sprite-data store. Keep the RomLoader allocation alive for the
+    // complete video lifetime; freeing it here leaves HWSprites::sprites
+    // dangling and later allocations selectively corrupt sprite frames.
 
     // Convert S16 Road Stuff
     HWRoad_init(Roms_road.rom, Config_video.hires != 0);
@@ -135,16 +160,27 @@ void Video_draw_frame()
     {
         // OutRun Hardware Video Emulation
         HWTiles_update_tile_values();
+#ifdef RETRO_GO
+        Render_draw_road_background();
+#else
         HWRoad_render_background(Video_pixels);
+#endif
         if (Config_video.detailLevel == 2)        
         {
 			/* This needs to be fixed. Clouds are not displayed properly. */
             //HWTiles_render_tile_layer(Video_pixels, 1, 0);      // background layer
-            HWTiles_render_tile_layer(Video_pixels, 0, 0);      // foreground layer
+			HWTiles_render_tile_layer(Video_pixels, 0, 0);      // foreground layer
         }
-        
+#ifdef RETRO_GO
+        Render_draw_road_foreground();
+#else
         HWRoad_render_foreground(Video_pixels);
+#endif
+#ifdef RETRO_GO
+        Render_draw_sprites();
+#else
         HWSprites_render(8);
+#endif
         HWTiles_render_text_layer(Video_pixels, 1);
      }
 

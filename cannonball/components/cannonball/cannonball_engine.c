@@ -7,6 +7,7 @@
 
 // SDL Library
 #include <SDL/SDL.h>
+#include <stdbool.h>
 #include <stdint.h>
 
 // SDL Specific Code
@@ -94,7 +95,7 @@ static void process_events(void)
 // Pause Engine
 uint8_t pause_engine;
 
-void tick()
+void tick(bool draw_frame)
 {
     cannonball_frame++;
 
@@ -176,8 +177,13 @@ void tick()
             break;
     }
 
-    // Draw SDL Video
-    Video_draw_frame();  
+#ifdef RETRO_GO
+    // Synthesis can run on the other core while the main core renders.
+    Audio_tick();
+#endif
+
+    if (draw_frame)
+        Video_draw_frame();
 }
 
 #ifndef RETRO_GO
@@ -202,7 +208,7 @@ static void main_loop()
 		start = SDL_GetTicks();
 		
         Timer_start(&frame_time);
-        tick();
+        tick(true);
         #ifdef COMPILE_SOUND_CODE
         deltatime += (cannonball_frame_ms * Audio_adjust_speed());
         #else

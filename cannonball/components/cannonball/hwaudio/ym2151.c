@@ -1359,7 +1359,11 @@ void YM_init(int rate, int fps)
     if (YM_initalized)
         free(YM_buffer);
     
+#ifdef RETRO_GO
+    YM_buffer = (int16_t*)rg_alloc(YM_buffer_size * sizeof(int16_t), MEM_FAST);
+#else
     YM_buffer = (int16_t*)malloc(YM_buffer_size * sizeof(int16_t));
+#endif
 
     YM_initalized = 1;
 

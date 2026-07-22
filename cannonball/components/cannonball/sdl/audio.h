@@ -32,6 +32,7 @@ extern uint16_t* Audio_mix_buffer;
 
 void Audio_init();
 void Audio_tick();
+void Audio_wait();
 void Audio_start_audio();
 void Audio_stop_audio();
 double Audio_adjust_speed();
@@ -39,4 +40,3 @@ void Audio_load_wav(const char* filename);
 void Audio_clear_wav();
 
 #endif
-

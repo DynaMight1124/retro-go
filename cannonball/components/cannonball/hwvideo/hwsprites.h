@@ -12,4 +12,6 @@ void HWSprites_set_x_clip(uint8_t);
 void HWSprites_swap();
 uint8_t HWSprites_read(const uint16_t adr);
 void HWSprites_write(const uint16_t adr, const uint16_t data);
+void HWSprites_prepare_frame(void);
 void HWSprites_render(const uint8_t);
+void HWSprites_render_region(const uint8_t priority, int32_t y_min, int32_t y_max);

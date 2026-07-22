@@ -25,8 +25,18 @@ extern uint16_t *Video_pixels;
 extern uint8_t Video_enabled;
 extern uint8_t *palette;
 
+#ifdef RETRO_GO
+typedef struct
+{
+    uint32_t sprite_top;
+    uint32_t sprite_bottom;
+} video_profile_t;
+extern video_profile_t Video_profile;
+#endif
+
 void Video_Create();
 void Video_Destroy();
+void Video_set_framebuffer(uint16_t *pixels);
     
 int Video_init(video_settings_t* settings);
 void Video_disable();

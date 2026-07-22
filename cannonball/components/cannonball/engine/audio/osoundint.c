@@ -67,7 +67,7 @@ void OSoundInt_init()
     }
 
     SegaPCM_init(Config_fps);
-    YM_init(REAL_AUDIO_FREQUENCY, Config_fps);
+    YM_init(SYNTH_AUDIO_FREQUENCY, Config_fps);
 
     OSoundInt_reset();
 

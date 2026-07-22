@@ -76,3 +76,9 @@ target_compile_definitions(${COMPONENT_LIB} PRIVATE
 )
 
 target_compile_options(${COMPONENT_LIB} PRIVATE "-include" "${CMAKE_CURRENT_SOURCE_DIR}/globals.h")
+
+# Cannonball's software road/sprite renderers are dominated by tight nested
+# loops. The inherited ESP-IDF command line currently ends at -O2 even though
+# Retro-Go reports an optimized build, so make the application-local intent
+# explicit without changing shared target configuration.
+target_compile_options(${COMPONENT_LIB} PRIVATE -O3)
