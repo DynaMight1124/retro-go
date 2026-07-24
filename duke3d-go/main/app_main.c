@@ -9,9 +9,10 @@
 // Must use MEM_FAST (internal DRAM) so that SPI flash cache disable operations
 // work correctly when using LittleFS on internal storage (no SD card).
 #define DUKE_STACK_SIZE (48 * 1024)
+#define DUKE_ENGINE_CORE 0
 
 static TaskHandle_t duke_task_handle = NULL;
-// Flag to signal Core 0 that Core 1 has finished cleanup and is ready for reboot
+// Flag to signal app_main that the engine task has finished cleanup.
 volatile bool reboot_ready_flag = false;
 
 static void ensure_dir(const char *path)
@@ -123,10 +124,10 @@ void dukeTask(void *pvParameters)
     // Give some time for background tasks or final OS cleanup on this core
     vTaskDelay(pdMS_TO_TICKS(50));
 
-    // Signal Core 0 to perform the reboot
+    // Signal app_main to perform the reboot.
     reboot_ready_flag = true;
     
-    // We are done. Core 1 will now run the idle task.
+    // We are done. The engine core will now run its idle task.
     vTaskDelete(NULL);
 }
 
@@ -157,7 +158,8 @@ void app_main(void)
     };
 
     rg_system_init(&config);
-    rg_system_set_log_level(RG_LOG_WARN);
+    // Keep Retro-Go's periodic STACK/HEAP/BUSY/FPS status line enabled.
+    rg_system_set_log_level(RG_LOG_DEBUG);
     if (!rg_settings_exists(NS_APP, "DispScaling")) {
         rg_display_set_scaling(RG_DISPLAY_SCALING_FULL);
     }
@@ -183,7 +185,7 @@ void app_main(void)
         5,                  /* Priority at which the task is created. */
         stack_ptr,          /* Stack buffer */
         &duke_task_buffer,  /* Task buffer */
-        1                   /* Core 1 for the engine */
+        DUKE_ENGINE_CORE    /* Keep the renderer off Retro-Go's Core 1 display task */
     );
 
     if (duke_task_handle == NULL) {

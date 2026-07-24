@@ -4,10 +4,14 @@
 #include "build.h"
 #include "freertos/semphr.h"
 #include "esp_timer.h"
+#include "esp_memory_utils.h"
 
 static rg_surface_t screen_surface;
 
 SDL_Surface* primary_surface;
+static size_t primary_pixel_capacity;
+static bool primary_uses_fb_pool;
+static bool full_sync_next_flip;
 
 int SDL_LockSurface(SDL_Surface *surface)
 {
@@ -76,6 +80,7 @@ Uint32 SDL_WasInit(Uint32 flags)
 }
 
 #define MAX_SUBMITTED_SURFACES 2
+#define PREFERRED_RENDER_HEIGHT 200
 typedef struct {
     rg_surface_t surface;
     uint8_t *pixels;
@@ -83,6 +88,8 @@ typedef struct {
 
 static fb_t fb_pool[MAX_SUBMITTED_SURFACES];
 static int current_fb_idx = 0;
+static bool frame_has_3d_view;
+static int64_t frame_busy_start;
 
 int SDL_InitSubSystem(Uint32 flags)
 {
@@ -96,7 +103,10 @@ int SDL_InitSubSystem(Uint32 flags)
                 return -1;
             }
         }
-        SDL_CreateRGBSurface(0, INTERNAL_RES_W, INTERNAL_RES_H, 8, 0,0,0,0);
+        // Duke normally selects 320x200. The primary SDL surface is attached
+        // to these preallocated 320x240 buffers, so either supported height
+        // can be selected without allocating or copying another framebuffer.
+        SDL_CreateRGBSurface(0, INTERNAL_RES_W, PREFERRED_RENDER_HEIGHT, 8, 0,0,0,0);
     }
     return 0; // 0 = OK, -1 = Error
 }
@@ -126,8 +136,33 @@ SDL_Surface *SDL_CreateRGBSurface(Uint32 flags, int width, int height, int depth
     surface->pitch = width*(depth/8);
     surface->clip_rect = rect;
     surface->refcount = 1;
-    surface->pixels = rg_alloc(width*height*(depth/8), MEM_SLOW);
-    
+    const size_t pixel_bytes = width * height * (depth / 8);
+    const size_t pool_pixel_capacity = INTERNAL_RES_W * INTERNAL_RES_H;
+    if (depth == 8 && pixel_bytes <= pool_pixel_capacity && fb_pool[0].pixels) {
+        // Render directly into the same two buffers submitted to Retro-Go.
+        // This removes the former 64KB PSRAM-to-PSRAM copy on every frame.
+        current_fb_idx = 0;
+        surface->pixels = fb_pool[current_fb_idx].pixels;
+        primary_pixel_capacity = pool_pixel_capacity;
+        primary_uses_fb_pool = true;
+        RG_LOGI("Direct double buffering enabled: 2 x %u-byte indexed buffers",
+                (unsigned)pool_pixel_capacity);
+    } else {
+        surface->pixels = rg_alloc(pixel_bytes, MEM_FAST | MEM_NOPANIC);
+        primary_pixel_capacity = pixel_bytes;
+        primary_uses_fb_pool = false;
+    }
+    if (!surface->pixels) {
+        RG_LOGE("Failed to allocate %u-byte render framebuffer", (unsigned)pixel_bytes);
+        free(pf->palette->colors);
+        free(pf->palette);
+        free(pf);
+        free(surface);
+        return NULL;
+    }
+    RG_LOGI("Render framebuffer: %u bytes in %s RAM",
+            (unsigned)pixel_bytes,
+            esp_ptr_internal(surface->pixels) ? "internal" : "external");
     extern uint8_t* frameplace;
     extern uint8_t* frameoffset;
     frameoffset = frameplace = (uint8_t*)surface->pixels;
@@ -234,12 +269,64 @@ int SDL_SetPalette565(const uint8_t *pal6)
     return 1;
 }
 
+void SDL_PresentPalette(void)
+{
+    // Gameplay palette effects run near the end of displayrest(). Swapping a
+    // direct render buffer there would split one frame across two buffers.
+    // The normal nextpage() immediately presents the new palette safely.
+    if (primary_uses_fb_pool && frame_has_3d_view)
+        return;
+
+    SDL_Flip(primary_surface);
+}
+
+void SDL_MarkFrame3D(void)
+{
+    frame_has_3d_view = true;
+}
+
+void SDL_RequestFullFrameSync(void)
+{
+    full_sync_next_flip = true;
+}
+
 SDL_Surface *SDL_SetVideoMode(int width, int height, int bpp, Uint32 flags)
 {
     if (primary_surface) {
+        const size_t required_bytes = (size_t)width * height *
+                                      (primary_surface->format->BitsPerPixel / 8);
+        if (required_bytes > primary_pixel_capacity) {
+            void *candidate = rg_alloc(required_bytes, MEM_FAST | MEM_NOPANIC);
+            const bool candidate_internal = candidate && esp_ptr_internal(candidate);
+
+            // A larger mode must use the new allocation even when it falls
+            // back to PSRAM.
+            if (candidate) {
+                memcpy(candidate, primary_surface->pixels, primary_pixel_capacity);
+                if (!primary_uses_fb_pool)
+                    free(primary_surface->pixels);
+                primary_surface->pixels = candidate;
+                primary_pixel_capacity = required_bytes;
+                primary_uses_fb_pool = false;
+                RG_LOGW("Render framebuffer resized: %u bytes in %s RAM",
+                        (unsigned)required_bytes,
+                        candidate_internal ? "internal" : "external");
+            }
+        }
+
+        if (required_bytes > primary_pixel_capacity) {
+            RG_LOGE("Unable to resize render framebuffer to %ux%u",
+                    (unsigned)width, (unsigned)height);
+            return NULL;
+        }
+
         primary_surface->w = width;
         primary_surface->h = height;
         primary_surface->pitch = width * (primary_surface->format->BitsPerPixel / 8);
+
+        extern uint8_t* frameplace;
+        extern uint8_t* frameoffset;
+        frameoffset = frameplace = (uint8_t *)primary_surface->pixels;
         return primary_surface;
     }
 	return SDL_GetVideoSurface();
@@ -248,7 +335,8 @@ SDL_Surface *SDL_SetVideoMode(int width, int height, int bpp, Uint32 flags)
 void SDL_FreeSurface(SDL_Surface *surface)
 {
     if (surface) {
-        if (surface->pixels) free(surface->pixels);
+        if (surface->pixels && !(surface == primary_surface && primary_uses_fb_pool))
+            free(surface->pixels);
         if (surface->format) {
             if (surface->format->palette) {
                 if (surface->format->palette->colors) free(surface->format->palette->colors);
@@ -288,8 +376,16 @@ IRAM_ATTR int SDL_Flip(SDL_Surface *screen)
         return -1;
     }
 
+    const bool force_full_sync = full_sync_next_flip;
+    full_sync_next_flip = false;
+
+    const int64_t flip_start = rg_system_timer();
+    const uint32_t render_us = frame_busy_start > 0
+        ? (uint32_t)(flip_start - frame_busy_start) : 0;
+    const bool had_3d_view = frame_has_3d_view;
+    frame_has_3d_view = false;
+
     fb_t *fb = &fb_pool[current_fb_idx];
-    current_fb_idx = (current_fb_idx + 1) % MAX_SUBMITTED_SURFACES;
 
     fb->surface.width = screen->w;
     fb->surface.height = screen->h;
@@ -298,18 +394,82 @@ IRAM_ATTR int SDL_Flip(SDL_Surface *screen)
     fb->surface.data = fb->pixels;
 
 
-    // Copy pixels to stable buffer (Prevents sprite flickering)
-    memcpy(fb->pixels, screen->pixels, screen->w * screen->h);
-
-    // Copy palette to stable buffer
+    // Pixels normally already live in this stable submission buffer. Retain
+    // the copy fallback for an unexpected mode larger than the pool.
+    const int64_t copy_start = rg_system_timer();
+    if (!primary_uses_fb_pool) {
+        memcpy(fb->pixels, screen->pixels, (size_t)screen->w * screen->h);
+    }
     if (screen_surface.palette) {
         memcpy(fb->surface.palette, screen_surface.palette, 256 * 2);
     }
+    uint32_t copy_us = (uint32_t)(rg_system_timer() - copy_start);
 
     rg_display_submit(&fb->surface, 0);
-    rg_system_tick(0);
+
+    // A blocking submit to Retro-Go's depth-one queue guarantees that the
+    // alternate buffer is no longer queued. Point every Duke framebuffer
+    // alias at it before the engine starts drawing the next frame.
+    if (primary_uses_fb_pool) {
+        const int next_fb_idx =
+            (current_fb_idx + 1) % MAX_SUBMITTED_SURFACES;
+        uint8_t *next_pixels = fb_pool[next_fb_idx].pixels;
+        const int64_t sync_start = rg_system_timer();
+
+        if (force_full_sync || !had_3d_view) {
+            // Splash screens, fades and other 2D paths are incremental.
+            // Seed the alternate buffer completely before it is reused.
+            memcpy(next_pixels, fb->pixels, (size_t)screen->w * screen->h);
+        } else {
+            // The 3D viewport is fully redrawn. Preserve only the incremental
+            // status bar, borders and other pixels outside that rectangle.
+            int x1 = windowx1;
+            int x2 = windowx2;
+            int y1 = windowy1;
+            int y2 = windowy2;
+            if (x1 < 0) x1 = 0;
+            if (x1 > screen->w) x1 = screen->w;
+            if (x2 < -1) x2 = -1;
+            if (x2 >= screen->w) x2 = screen->w - 1;
+            if (y1 < 0) y1 = 0;
+            if (y1 > screen->h) y1 = screen->h;
+            if (y2 < -1) y2 = -1;
+            if (y2 >= screen->h) y2 = screen->h - 1;
+            const size_t stride = (size_t)screen->w;
+
+            if (y1 > 0)
+                memcpy(next_pixels, fb->pixels, stride * y1);
+            if (y2 + 1 < screen->h)
+                memcpy(next_pixels + stride * (y2 + 1),
+                       fb->pixels + stride * (y2 + 1),
+                       stride * (screen->h - y2 - 1));
+            if (x1 > 0 || x2 + 1 < screen->w) {
+                for (int y = y1; y <= y2; y++) {
+                    uint8_t *dst = next_pixels + stride * y;
+                    const uint8_t *src = fb->pixels + stride * y;
+                    if (x1 > 0)
+                        memcpy(dst, src, x1);
+                    if (x2 + 1 < screen->w)
+                        memcpy(dst + x2 + 1, src + x2 + 1,
+                               screen->w - x2 - 1);
+                }
+            }
+        }
+        copy_us += (uint32_t)(rg_system_timer() - sync_start);
+
+        current_fb_idx = next_fb_idx;
+        screen->pixels = fb_pool[current_fb_idx].pixels;
+        extern uint8_t *frameplace;
+        extern uint8_t *frameoffset;
+        frameoffset = frameplace = (uint8_t *)screen->pixels;
+    } else {
+        current_fb_idx = (current_fb_idx + 1) % MAX_SUBMITTED_SURFACES;
+    }
+
+    rg_system_tick(render_us + copy_us);
 
     limit_fps(60);
+    frame_busy_start = rg_system_timer();
 
 	return 0;
 }

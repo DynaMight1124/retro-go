@@ -25,7 +25,6 @@ Prepared for public release: 03/21/2003 - Charlie Wiederhold, 3D Realms
 //-------------------------------------------------------------------------
 
 #include "duke3d.h"
-#include "rg_system.h"
 
 extern int32_t numenvsnds;
 extern uint8_t  actor_tog;
@@ -911,7 +910,8 @@ void ms(short i)
 void movefta(void)
 {
     int32_t x, px, py, sx, sy;
-    short i, j, p, psect, ssect, nexti;
+    short i, j, p, psect, nexti;
+    int is_badguy;
     spritetype *s;
 
     i = headspritestat[2];
@@ -922,16 +922,17 @@ void movefta(void)
         s = &sprite[i];
         p = findplayer(s,&x);
 
-        ssect = psect = s->sectnum;
+        psect = s->sectnum;
 
         if(sprite[ps[p].i].extra > 0 )
         {
+            is_badguy = badguy(s);
             if( x < 30000 )
             {
                 hittype[i].timetosleep++;
                 if( hittype[i].timetosleep >= (x>>8) )
                 {
-                    if(badguy(s))
+                    if(is_badguy)
                     {
                         px = ps[p].oposx+64-(TRAND&127);
                         py = ps[p].oposy+64-(TRAND&127);
@@ -943,12 +944,10 @@ void movefta(void)
                         }
                         sx = s->x+64-(TRAND&127);
                         sy = s->y+64-(TRAND&127);
-                        updatesector(px,py,&ssect);
-                        if(ssect == -1)
-                        {
-                            i = nexti;
-                            continue;
-                        }
+                        // The original code repeated updatesector(px, py)
+                        // from the same initial sector here and discarded
+                        // the result. The first search above already proves
+                        // these coordinates belong to a valid sector.
                         j = cansee(sx,sy,s->z-(TRAND%(52<<8)),s->sectnum,px,py,ps[p].oposz-(TRAND%(32<<8)),ps[p].cursectnum);
                     }
                     else
@@ -988,7 +987,7 @@ void movefta(void)
                     else hittype[i].timetosleep = 0;
                 }
             }
-            if( badguy( s ) )
+            if(is_badguy)
             {
                 if (sector[s->sectnum].ceilingstat&1)
                     s->shade = sector[s->sectnum].ceilingshade;
@@ -4951,7 +4950,6 @@ void moveeffectors(void)   //STATNUM 3
             sh = s->hitag;
 
             t = &hittype[i].temp_data[0];
-
     
 
             // RG_LOGI("moveeffectors: processing sprite %d, lotag=%d", i, st);
@@ -5422,7 +5420,6 @@ void moveeffectors(void)   //STATNUM 3
             case 3:
 
                 if( t[4] == 0 ) break;
-                p = findplayer(s,&x);
 
             //    if(t[5] > 0) { t[5]--; break; }
 
@@ -5504,9 +5501,10 @@ void moveeffectors(void)   //STATNUM 3
                 {
                     if(sprite[j].cstat&16)
                     {
-                        if (sc->ceilingstat&1)
+                        if(sc->ceilingstat&1)
                             sprite[j].shade = sc->ceilingshade;
-                        else sprite[j].shade = sc->floorshade;
+                        else
+                            sprite[j].shade = sc->floorshade;
                     }
 
                     j = nextspritesect[j];
@@ -6919,4 +6917,3 @@ void moveeffectors(void)   //STATNUM 3
           alignflorslope(s->sectnum,wal->x,wal->y,sector[wal->nextsector].floorz);
      }
 }
-

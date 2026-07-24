@@ -39,6 +39,42 @@ Prepared for public release: 03/21/2003 - Charlie Wiederhold, 3D Realms
 #include "filesystem.h"
 #include <rg_system.h>
 
+// Frequently requested or costly effects should not fight hot tiles for the
+// same cache slots. Expensive one-shot loads are retained immediately; other
+// sounds are promoted after their third request. The common budget remains one
+// quarter of the dynamic Build cache so rendering keeps most of the capacity.
+EXT_RAM_BSS_ATTR static uint8_t sound_play_count[NUM_SOUNDS];
+EXT_RAM_BSS_ATTR static uint8_t sound_retained[NUM_SOUNDS];
+EXT_RAM_BSS_ATTR static uint32_t sound_load_cost_us[NUM_SOUNDS];
+static uint32_t sound_retained_bytes;
+
+static void retain_frequent_sound(uint16_t num)
+{
+    if (num >= NUM_SOUNDS || sound_retained[num]) return;
+
+    if (sound_play_count[num] < 255)
+        sound_play_count[num]++;
+    const int costly_one_shot = sound_load_cost_us[num] >= 20000
+        && (soundm[num] & 1) == 0;
+    if ((!costly_one_shot && sound_play_count[num] < 3) ||
+        soundsiz[num] <= 0 || cachesize <= 0)
+        return;
+
+    uint32_t budget = (uint32_t)cachesize / 4;
+    if (budget > 1024 * 1024) budget = 1024 * 1024;
+
+    const uint32_t bytes = ((uint32_t)soundsiz[num] + 15) & ~15U;
+    if (sound_retained_bytes >= budget ||
+        bytes > budget - sound_retained_bytes)
+        return;
+
+    sound_retained[num] = 1;
+    sound_retained_bytes += bytes;
+
+    // Shift the normal 199 + active-voices lock scheme up by one. The final
+    // playback callback will therefore leave this cache entry locked at 200.
+    Sound[num].lock++;
+}
 
 #define LOUDESTVOLUME 150
 
@@ -273,6 +309,7 @@ uint8_t  loadsound(uint16_t num)
 
     if(num >= NUM_SOUNDS || SoundToggle == 0) return 0;
     if (FXDevice == NumSoundCards) return 0;
+    const int64_t load_start = rg_system_timer();
 
     fp = TCkopen4load(sounds[num],0);
     if(fp == -1)
@@ -304,6 +341,8 @@ uint8_t  loadsound(uint16_t num)
         printf("loadsound: %d (%s), kread FAILED! length=%"PRId32"\n", num, sounds[num], l);
     }
     kclose( fp );
+    const uint32_t load_us = (uint32_t)(rg_system_timer() - load_start);
+    sound_load_cost_us[num] = load_us;
     return 1;
 }
 
@@ -412,6 +451,8 @@ int xyzsound(short num,short i,int32_t x,int32_t y,int32_t z)
        else Sound[num].lock++;
     }
 
+    retain_frequent_sound(num);
+
     if( soundm[num]&16 ) sndist = 0;
 
     if(sndist < ((255-LOUDESTVOLUME)<<6) )
@@ -480,6 +521,8 @@ void sound(short num)
           Sound[num].lock = 200;
        else Sound[num].lock++;
     }
+
+    retain_frequent_sound(num);
 
     if( soundm[num]&1 )
     {
@@ -679,4 +722,7 @@ void clearsoundlocks(void)
     for(i=0;i<11;i++)
  
             lumplockbyte[i] = 199;
+
+    memset(sound_retained, 0, sizeof(sound_retained));
+    sound_retained_bytes = 0;
 }

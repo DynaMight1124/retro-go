@@ -252,4 +252,3 @@ void reportandexit(char  *errormessage)
 	printf("Cache length sum = %"PRId32"\n",j);
     RG_PANIC(errormessage);
 }
-

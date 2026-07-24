@@ -120,7 +120,7 @@ static int MV_FooMemory;
 static int   MV_BufferDescriptor;
 static int   MV_BufferEmpty[ NumberOfBuffers ];
 char *MV_MixBuffer[ NumberOfBuffers + 1 ];
-double *MV_FooBuffer = NULL;
+int32_t *MV_FooBuffer = NULL;
 
 static VoiceNode *MV_Voices = NULL;
 
@@ -624,7 +624,7 @@ IRAM_ATTR static void MV_Mix( VoiceNode *voice )
    if ( ( MV_Channels == 2 ) && ( IS_QUIET( MV_LeftVolume ) ) )
       {
       MV_LeftVolume      = MV_RightVolume;
-      MV_MixDestination += 8;
+      MV_MixDestination += sizeof(*MV_FooBuffer);
       }
 
    // Add this voice to the mix
@@ -782,7 +782,7 @@ IRAM_ATTR void MV_ServiceVoc
 	}
 
 	{
-		ClearBuffer_DW( MV_FooBuffer, 0, sizeof(double) / 4 * MV_BufferSize / MV_SampleSize * MV_Channels);
+		ClearBuffer_DW( MV_FooBuffer, 0, sizeof(*MV_FooBuffer) / 4 * MV_BufferSize / MV_SampleSize * MV_Channels);
 		MV_BufferEmpty[ MV_MixPage ] = TRUE;
 	}
 
@@ -3567,7 +3567,7 @@ printf("MV_Init card: %d, rate: %d, voices: %d, channels: %d, bits: %d\n", sound
    MV_SetVolume( MV_MaxTotalVolume );
 
 
-   MV_FooMemory = sizeof(double) * MixBufferSize * numchannels + 1024;
+   MV_FooMemory = sizeof(*MV_FooBuffer) * MixBufferSize * numchannels + 1024;
    status = USRHOOKS_GetMem( ( void ** )&ptr, MV_FooMemory);
    if ( status != USRHOOKS_Ok )
    {
@@ -3593,7 +3593,7 @@ printf("MV_Init card: %d, rate: %d, voices: %d, channels: %d, bits: %d\n", sound
 	   return( MV_Error );
    }
 
-   MV_FooBuffer = (double *)ptr;
+   MV_FooBuffer = (int32_t *)ptr;
 
 // Start the playback engine
    status = MV_StartPlayback();

@@ -1094,11 +1094,11 @@ int loadpics(char  *filename, char * gamedir)
     } else if (dynamic_size < 512 * 1024) {
         RG_LOGW("loadpics: cache target is low and might result in the game being slow due to frequent tile cache misses");
     } else if (dynamic_size > 1536 * 1024) {
-        RG_LOGW("loadpics: cache target very high, setting to maximum of 1.5MB");
+        RG_LOGI("loadpics: cache target very high, setting to maximum of 1.5MB");
         min_cache_size = 1536 * 1024;
     }
 
-    RG_LOGW("loadpics: dynamic cache computed=%" PRId32 "KB, adjusted target=%" PRId32 "KB (ext free=%uKB largest=%uKB reserve=%" PRId32 "KB)",
+    RG_LOGI("loadpics: dynamic cache computed=%" PRId32 "KB, adjusted target=%" PRId32 "KB (ext free=%uKB largest=%uKB reserve=%" PRId32 "KB)",
             (int32_t)(dynamic_size / 1024),
             (int32_t)(min_cache_size / 1024),
             (unsigned)(ext_free / 1024),
@@ -1109,8 +1109,11 @@ int loadpics(char  *filename, char * gamedir)
     cachesize = (cachesize + 15) & ~15; // Align size to 16 bytes
 
 #ifdef CONFIG_IDF_TARGET_ESP32
-    if (cachesize > 1024 * 1024) {
-        cachesize = 1024 * 1024;
+    // The dynamic calculation above has already reserved 640 KiB for the
+    // rest of the port. Honor its 1.5 MiB target instead of cutting the cache
+    // back to 1 MiB, which causes tiles and sound effects to evict each other.
+    if (cachesize > 1536 * 1024) {
+        cachesize = 1536 * 1024;
     }
 #elif defined(CONFIG_IDF_TARGET_ESP32S3)
     if (cachesize > 4 * 1024 * 1024) {

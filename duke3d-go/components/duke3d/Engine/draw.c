@@ -64,8 +64,11 @@ IRAM_ATTR void hlineasm4(int32_t numPixels, int32_t shade, uint32_t i4, uint32_t
     
     uint8_t * texture = textureSetup;
     uint8_t bits = bitsSetup;
+    const uint32_t xinc = (uint32_t)asm2;
+    const uint32_t yinc = (uint32_t)asm1;
     
     shade = shade & 0xffffff00;
+    uint8_t *palette = globalpalwritten;
     numPixels++;
     
 	if (!RENDER_DRAW_CEILING_AND_FLOOR)
@@ -73,19 +76,19 @@ IRAM_ATTR void hlineasm4(int32_t numPixels, int32_t shade, uint32_t i4, uint32_t
 
     while (numPixels) {
 
-	    source = i5 >> shifter;
-	    source = shld(source,i4,bits);
-	    source = texture[source];
+        source = i5 >> shifter;
+        source = shld(source,i4,bits);
+        source = texture[source];
         
-		*dest = globalpalwritten[shade|source];
+        *dest = palette[shade|source];
         
-	    dest--;
+        dest--;
         
-	    i5 -= asm1;
-	    i4 -= asm2;
+        i5 -= yinc;
+        i4 -= xinc;
         
-	    numPixels--;
-		
+        numPixels--;
+
     }
 }
 
@@ -237,6 +240,8 @@ IRAM_ATTR int32_t prevlineasm1(int32_t i1, uint8_t* palette, int32_t i3, int32_t
 IRAM_ATTR int32_t vlineasm1(int32_t vince, uint8_t* palookupoffse, int32_t numPixels, int32_t vplce, uint8_t* texture, uint8_t* dest)
 {
     uint32_t temp;
+    const uint8_t shift = mach3_al;
+    const int32_t stride = bytesperline;
 
     if (!RENDER_DRAW_WALL_BORDERS)
 		return vplce;
@@ -244,7 +249,7 @@ IRAM_ATTR int32_t vlineasm1(int32_t vince, uint8_t* palookupoffse, int32_t numPi
     numPixels++;
     while (numPixels)
     {
-	    temp = ((uint32_t)vplce) >> mach3_al;
+	    temp = ((uint32_t)vplce) >> shift;
         
 	    temp = texture[temp];
       
@@ -252,7 +257,7 @@ IRAM_ATTR int32_t vlineasm1(int32_t vince, uint8_t* palookupoffse, int32_t numPi
 			*dest = palookupoffse[temp];
 	    
 		vplce += vince;
-	    dest += bytesperline;
+	    dest += stride;
 	    numPixels--;
     }
     return vplce;
@@ -375,10 +380,12 @@ static uint8_t  machmv;
 IRAM_ATTR int32_t mvlineasm1(int32_t vince, uint8_t* palookupoffse, int32_t i3, int32_t vplce, uint8_t* texture, uint8_t  *dest)
 {
     uint32_t temp;
+    const uint8_t shift = machmv;
+    const int32_t stride = bytesperline;
 
     for(;i3>=0;i3--)
     {
-		temp = ((uint32_t)vplce) >> machmv;
+		temp = ((uint32_t)vplce) >> shift;
 	    temp = texture[temp];
 
 	    if (temp != 255) 
@@ -388,7 +395,7 @@ IRAM_ATTR int32_t mvlineasm1(int32_t vince, uint8_t* palookupoffse, int32_t i3, 
 		}
 
 	    vplce += vince;
-	    dest += bytesperline;
+	    dest += stride;
     }
     return vplce;
 }
@@ -407,28 +414,78 @@ IRAM_ATTR void vlineasm4(int32_t columnIndex, intptr_t framebuffer)
 		return ;
 
     {
-        int i;
+        int row;
         uint32_t temp;
-        
-        uintptr_t index = (framebuffer + ylookup[columnIndex]);
-        uint8_t  *dest= (uint8_t *)(-ylookup[columnIndex]);
-        //uint8_t  *dest= (uint8_t *)framebuffer;
-        
-        //uint32_t index = 0;
-        do {
-            for (i = 0; i < 4; i++)
+        // Framebuffer byte stores may alias any global from the compiler's
+        // perspective. Keep the per-column hot state in registers and
+        // publish the final interpolation positions after drawing the group.
+        uint32_t vplce0 = (uint32_t)vplce[0];
+        uint32_t vplce1 = (uint32_t)vplce[1];
+        uint32_t vplce2 = (uint32_t)vplce[2];
+        uint32_t vplce3 = (uint32_t)vplce[3];
+        const uint32_t vince0 = (uint32_t)vince[0];
+        const uint32_t vince1 = (uint32_t)vince[1];
+        const uint32_t vince2 = (uint32_t)vince[2];
+        const uint32_t vince3 = (uint32_t)vince[3];
+        const uint8_t *texture0 = (const uint8_t *)bufplce[0];
+        const uint8_t *texture1 = (const uint8_t *)bufplce[1];
+        const uint8_t *texture2 = (const uint8_t *)bufplce[2];
+        const uint8_t *texture3 = (const uint8_t *)bufplce[3];
+        const uint8_t *palette0 = palookupoffse[0];
+        const uint8_t *palette1 = palookupoffse[1];
+        const uint8_t *palette2 = palookupoffse[2];
+        const uint8_t *palette3 = palookupoffse[3];
+        const uint8_t shift = mach3_al;
+        const int32_t stride = bytesperline;
+
+        // The original C translation encoded the row count by starting a
+        // synthetic pointer at -ylookup[columnIndex] and waiting for its
+        // unsigned address to wrap to zero. The caller already passes the
+        // exact number of rows, so walk the framebuffer directly.
+        uint8_t *dest = (uint8_t *)framebuffer;
+        const int packed_store =
+            (((uintptr_t)dest | (uintptr_t)stride) & 3U) == 0;
+
+        for (row = 0; row < columnIndex; row++)
+        {
+            uint32_t pixels;
+
+            temp = texture0[vplce0 >> shift];
+            pixels = palette0[temp];
+            vplce0 += vince0;
+
+            temp = texture1[vplce1 >> shift];
+            pixels |= (uint32_t)palette1[temp] << 8;
+            vplce1 += vince1;
+
+            temp = texture2[vplce2 >> shift];
+            pixels |= (uint32_t)palette2[temp] << 16;
+            vplce2 += vince2;
+
+            temp = texture3[vplce3 >> shift];
+            pixels |= (uint32_t)palette3[temp] << 24;
+            vplce3 += vince3;
+
+            if (PIXEL_ALLOWED())
             {
-				
-        	    temp = ((uint32_t)vplce[i]) >> mach3_al;
-        	    temp = (((uint8_t *)(bufplce[i]))[temp]);
-                
-				if (PIXEL_ALLOWED())
-        			dest[index+i] = palookupoffse [i] [temp];
-                
-	            vplce[i] += vince[i];
+                if (packed_store)
+                    *(uint32_t *)(void *)dest = pixels;
+                else
+                {
+                    dest[0] = (uint8_t)pixels;
+                    dest[1] = (uint8_t)(pixels >> 8);
+                    dest[2] = (uint8_t)(pixels >> 16);
+                    dest[3] = (uint8_t)(pixels >> 24);
+                }
             }
-            dest += bytesperline;
-        } while (((uint32_t)dest - bytesperline) < ((uint32_t)dest));
+
+            dest += stride;
+        }
+
+        vplce[0] = (int32_t)vplce0;
+        vplce[1] = (int32_t)vplce1;
+        vplce[2] = (int32_t)vplce2;
+        vplce[3] = (int32_t)vplce3;
     }
 } 
 
@@ -442,28 +499,87 @@ void setupmvlineasm(int32_t i1)
 
 IRAM_ATTR void mvlineasm4(int32_t column, intptr_t framebufferOffset)
 {
-    int i;
+    int row;
     uint32_t temp;
-    uintptr_t index = (framebufferOffset + ylookup[column]);
-    uint8_t  *dest = (uint8_t *)(-ylookup[column]);
+    uint8_t *dest = (uint8_t *)framebufferOffset;
+    uint32_t vplce0 = (uint32_t)vplce[0];
+    uint32_t vplce1 = (uint32_t)vplce[1];
+    uint32_t vplce2 = (uint32_t)vplce[2];
+    uint32_t vplce3 = (uint32_t)vplce[3];
+    const uint32_t vince0 = (uint32_t)vince[0];
+    const uint32_t vince1 = (uint32_t)vince[1];
+    const uint32_t vince2 = (uint32_t)vince[2];
+    const uint32_t vince3 = (uint32_t)vince[3];
+    const uint8_t *texture0 = (const uint8_t *)bufplce[0];
+    const uint8_t *texture1 = (const uint8_t *)bufplce[1];
+    const uint8_t *texture2 = (const uint8_t *)bufplce[2];
+    const uint8_t *texture3 = (const uint8_t *)bufplce[3];
+    const uint8_t *palette0 = palookupoffse[0];
+    const uint8_t *palette1 = palookupoffse[1];
+    const uint8_t *palette2 = palookupoffse[2];
+    const uint8_t *palette3 = palookupoffse[3];
+    const uint8_t shift = machmv;
+    const int32_t stride = bytesperline;
+    const int packed_store =
+        (((uintptr_t)dest | (uintptr_t)stride) & 3U) == 0;
 
-    do {
+    for (row = 0; row < column; row++)
+    {
+        uint32_t pixels = 0;
+        uint8_t opaque = 0;
 
-        for (i = 0; i < 4; i++)
+        temp = texture0[vplce0 >> shift];
+        if (temp != 255)
         {
-			
-	      temp = ((uint32_t)vplce[i]) >> machmv;
-	      temp = (((uint8_t *)(bufplce[i]))[temp]);
-	      if (temp != 255)
-		  {
-			  if (PIXEL_ALLOWED())
-				dest[index+i] = palookupoffse[i][temp];
-		  }
-	      vplce[i] += vince[i];
+            pixels = palette0[temp];
+            opaque = 1;
         }
-        dest += bytesperline;
+        vplce0 += vince0;
 
-    } while (((uint32_t)dest - bytesperline) < ((uint32_t)dest));
+        temp = texture1[vplce1 >> shift];
+        if (temp != 255)
+        {
+            pixels |= (uint32_t)palette1[temp] << 8;
+            opaque |= 2;
+        }
+        vplce1 += vince1;
+
+        temp = texture2[vplce2 >> shift];
+        if (temp != 255)
+        {
+            pixels |= (uint32_t)palette2[temp] << 16;
+            opaque |= 4;
+        }
+        vplce2 += vince2;
+
+        temp = texture3[vplce3 >> shift];
+        if (temp != 255)
+        {
+            pixels |= (uint32_t)palette3[temp] << 24;
+            opaque |= 8;
+        }
+        vplce3 += vince3;
+
+        if (PIXEL_ALLOWED())
+        {
+            if (packed_store && opaque == 15)
+                *(uint32_t *)(void *)dest = pixels;
+            else
+            {
+                if (opaque&1) dest[0] = (uint8_t)pixels;
+                if (opaque&2) dest[1] = (uint8_t)(pixels >> 8);
+                if (opaque&4) dest[2] = (uint8_t)(pixels >> 16);
+                if (opaque&8) dest[3] = (uint8_t)(pixels >> 24);
+            }
+        }
+
+        dest += stride;
+    }
+
+    vplce[0] = (int32_t)vplce0;
+    vplce[1] = (int32_t)vplce1;
+    vplce[2] = (int32_t)vplce2;
+    vplce[3] = (int32_t)vplce3;
 } 
 /* END ---------------  WALLS RENDERING METHOD (USED TO BE HIGHLY OPTIMIZED ASSEMBLY) ----------------------------*/
 

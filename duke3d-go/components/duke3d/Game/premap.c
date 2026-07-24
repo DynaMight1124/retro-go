@@ -32,6 +32,7 @@ Prepared for public release: 03/21/2003 - Charlie Wiederhold, 3D Realms
 #include "filesystem.h"
 #include "game.h"
 #include "rg_system.h"
+#include "SDL.h"
 
 
 extern uint8_t  everyothertime;
@@ -1411,6 +1412,10 @@ void dofrontscreens(void)
             menutext(160,90+16+8,0,0,level_names[(ud.volume_number*11) + ud.level_number]);
         }
 
+        // This screen can follow a gameplay/menu flip whose 3D-frame marker is
+        // still set. Ensure both direct buffers contain the loading image
+        // before the palette fade starts presenting them.
+        SDL_RequestFullFrameSync();
         nextpage();
 
         for(j=63;j>0;j-=7) palto(0,0,0,j);
@@ -1423,6 +1428,7 @@ void dofrontscreens(void)
         palto(0,0,0,0);
         rotatesprite(320<<15,200<<15,65536L,0,LOADSCREEN,0,0,2+8+64,0,0,xdim-1,ydim-1);
         menutext(160,105,0,0,"LOADING...");
+        SDL_RequestFullFrameSync();
         nextpage();
     }
 }

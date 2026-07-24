@@ -17,6 +17,8 @@ static bool audio_task_running = false;
 
 #define ENGINE_RATE 11025
 #define HW_RATE     22050
+#define AUDIO_TASK_CORE 1
+#define AUDIO_TASK_PRIORITY RG_TASK_PRIORITY_8
 
 IRAM_ATTR void updateTask(void *arg)
 {
@@ -50,7 +52,7 @@ IRAM_ATTR void updateTask(void *arg)
                 stereo_buffer[i*2+1].left = mixed_l;
                 stereo_buffer[i*2+1].right = mixed_r;
             }
-            
+
 			rg_audio_submit(stereo_buffer, SAMPLECOUNT * 2);
             vTaskDelay(pdMS_TO_TICKS(1)); // Yield
 	  } else {
@@ -152,7 +154,8 @@ int SDL_OpenAudio(SDL_AudioSpec *desired, SDL_AudioSpec *obtained)
     opl_synth_player.init(ENGINE_RATE); // Synth renders at 11kHz
     set_overclock_safe(rg_system_get_overclock());
 
-	xTaskCreatePinnedToCore(&updateTask, "audioTask", 8192, NULL, 15, &audio_task_handle, 0);
+	xTaskCreatePinnedToCore(&updateTask, "audioTask", 8192, NULL,
+                            AUDIO_TASK_PRIORITY, &audio_task_handle, AUDIO_TASK_CORE);
 	printf("audio task started at %d Hz output (Rendering at %d Hz)\n", HW_RATE, ENGINE_RATE);
 	return 0;
 }

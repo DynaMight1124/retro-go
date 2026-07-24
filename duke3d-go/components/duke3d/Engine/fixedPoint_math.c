@@ -1,6 +1,7 @@
 // converted from asm to c by Jonof
 
 #include <stdio.h>
+#include <string.h>
 #include "platform.h"
 #include "fixedPoint_math.h"
 #include "esp_attr.h"
@@ -12,14 +13,43 @@ IRAM_ATTR void clearbuf(void *d, int32_t c, int32_t a)
 }
 
 IRAM_ATTR void clearbufbyte(void *D, int32_t c, int32_t a)
-{ // Cringe City
-	uint8_t  *p = (uint8_t *)D;
-	int32_t m[4] = { 0xffl,0xff00l,0xff0000l,0xff000000l };
-	int32_t n[4] = { 0,8,16,24 };
-	int32_t z=0;
-	while ((c--) > 0) {
-		*(p++) = (uint8_t )((a & m[z])>>n[z]);
-		z=(z+1)&3;
+{
+	uint8_t *p = (uint8_t *)D;
+	uint32_t pattern = (uint32_t)a;
+
+	if (c <= 0)
+		return;
+
+	// The common clear-to-one-colour case is best handled by the optimized
+	// libc routine. Otherwise preserve Build's repeating four-byte pattern.
+	const uint8_t byte = (uint8_t)pattern;
+	if (pattern == (uint32_t)byte * 0x01010101u)
+	{
+		memset(p, byte, (size_t)c);
+		return;
+	}
+
+	// Align the destination while rotating the little-endian byte pattern so
+	// the first word store continues exactly where the byte loop left off.
+	while (c > 0 && ((uintptr_t)p & 3u))
+	{
+		*p++ = (uint8_t)pattern;
+		pattern = (pattern >> 8) | (pattern << 24);
+		c--;
+	}
+
+	uint32_t *words = (uint32_t *)p;
+	while (c >= 4)
+	{
+		*words++ = pattern;
+		c -= 4;
+	}
+
+	p = (uint8_t *)words;
+	while (c-- > 0)
+	{
+		*p++ = (uint8_t)pattern;
+		pattern = (pattern >> 8) | (pattern << 24);
 	}
 }
 
@@ -52,4 +82,3 @@ IRAM_ATTR void qinterpolatedown16short(int32_t* bufptr, int32_t num, int32_t val
     int32_t i; short *sptr = (short *)bufptr;
     for(i=0;i<num;i++) { sptr[i] = (short)(val>>16); val += add; }
 }
-

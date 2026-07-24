@@ -24,6 +24,18 @@
 
 extern char game_dir[512];
 
+static void copy_string_bounded(char *dst, size_t dst_size, const char *src)
+{
+    if (dst_size == 0)
+        return;
+
+    size_t length = 0;
+    while (length + 1 < dst_size && src[length] != '\0')
+        length++;
+    memcpy(dst, src, length);
+    dst[length] = '\0';
+}
+
 //The multiplayer module in game.dll needs direct access to the crc32 (sic).
 int32_t groupefil_crc32[MAXGROUPFILES];
 
@@ -39,6 +51,9 @@ typedef struct grpArchive_s{
     grpIndexEntry_t  *gfilelist   ;//Array containing the filenames.
     int32_t  *fileOffsets         ;//Array containing the file offsets.
     int32_t  *filesizes           ;//Array containing the file offsets.
+    int32_t  *hashHeads           ;//Buckets for fast case-insensitive name lookup.
+    int32_t  *hashNext            ;//Collision chain, one entry per GRP member.
+    uint32_t hashMask             ;//Bucket count minus one (power-of-two table).
     int fileDescriptor            ;//The fd used for open,read operations.
     const uint8_t *data           ;//Raw GRP data when archive is memory-backed.
     uint8_t dataOwned             ;//If true, free(data) on uninit.
@@ -55,6 +70,72 @@ typedef struct grpSet_s{
 // Marking it static gurantee not only invisility outside module
 // but also that the content will be set to 0.
 static grpSet_t grpSet;
+
+static uint32_t grp_name_hash(const char *name)
+{
+    int32_t length = 0;
+    uint32_t hash = 2166136261u;
+
+    while (length < 12 && name[length] != '\0') length++;
+    while (length > 0 && name[length - 1] == ' ') length--;
+
+    for (int32_t i = 0; i < length; i++) {
+        hash ^= (uint8_t)tolower((unsigned char)name[i]);
+        hash *= 16777619u;
+    }
+    return hash;
+}
+
+static int grp_name_matches(const char *shortname, const char *grpName)
+{
+    int32_t m;
+
+    for (m = 0; m < 12; m++) {
+        const char c1 = shortname[m];
+        const char c2 = grpName[m];
+        if (c1 == '\0') {
+            int32_t n;
+            for (n = m; n < 12; n++)
+                if (grpName[n] != ' ' && grpName[n] != '\0') break;
+            return n == 12;
+        }
+        if (tolower((unsigned char)c1) != tolower((unsigned char)c2))
+            return 0;
+    }
+    return 1;
+}
+
+static void grp_build_name_index(grpArchive_t *archive)
+{
+    uint32_t bucketCount = 1;
+    while (bucketCount < (uint32_t)archive->numFiles * 2u)
+        bucketCount <<= 1;
+
+    archive->hashHeads = rg_alloc(bucketCount * sizeof(*archive->hashHeads),
+                                  MEM_SLOW | MEM_NOPANIC);
+    archive->hashNext = rg_alloc((size_t)archive->numFiles * sizeof(*archive->hashNext),
+                                 MEM_SLOW | MEM_NOPANIC);
+    if (!archive->hashHeads || !archive->hashNext) {
+        free(archive->hashHeads);
+        free(archive->hashNext);
+        archive->hashHeads = NULL;
+        archive->hashNext = NULL;
+        archive->hashMask = 0;
+        return;
+    }
+
+    archive->hashMask = bucketCount - 1;
+    memset(archive->hashHeads, 0xff, bucketCount * sizeof(*archive->hashHeads));
+
+    // Insert in ascending order at each bucket head. Collision chains then
+    // retain the original reverse-index override behavior used by kopen4load.
+    for (int32_t i = 0; i < archive->numFiles; i++) {
+        const uint32_t bucket = grp_name_hash((char *)archive->gfilelist[i])
+            & archive->hashMask;
+        archive->hashNext[i] = archive->hashHeads[bucket];
+        archive->hashHeads[bucket] = i;
+    }
+}
 
 
 static int32_t initgroupfile_common(grpArchive_t *archive, const char *name, int32_t totalLength)
@@ -121,6 +202,8 @@ static int32_t initgroupfile_common(grpArchive_t *archive, const char *name, int
         archive->fileOffsets[i] = j; // absolute offset list of all files.
         j += k;
     }
+
+    grp_build_name_index(archive);
 
     if (totalLength == 44356548)
     {
@@ -235,6 +318,8 @@ void uninitgroupfile(void)
 	       free(grpSet.archives[i].gfilelist);
 	       free(grpSet.archives[i].fileOffsets);
 	       free(grpSet.archives[i].filesizes);
+	       free(grpSet.archives[i].hashHeads);
+	       free(grpSet.archives[i].hashNext);
 	       memset(&grpSet.archives[i], 0, sizeof(grpArchive_t));
 	   }
     
@@ -372,35 +457,30 @@ int32_t kopen4load(const char  *filename, int openOnlyFromGRP){
         archive = &grpSet.archives[k];
         if (!archive->gfilelist) continue;
 
-        for(i=archive->numFiles-1;i>=0;i--){
-            const char *grpName = (char*)archive->gfilelist[i];
-            int m;
-            for (m = 0; m < 12; m++) {
-                char c1 = shortname[m];
-                char c2 = grpName[m];
-                if (c1 == '\0') {
-                    int n;
-                    for (n = m; n < 12; n++) {
-                        if (grpName[n] != ' ' && grpName[n] != '\0') break;
-                    }
-                    if (n == 12) goto found_in_grp;
+        if (archive->hashHeads) {
+            const uint32_t bucket = grp_name_hash(shortname) & archive->hashMask;
+            i = archive->hashHeads[bucket];
+            while (i >= 0 &&
+                   !grp_name_matches(shortname, (char *)archive->gfilelist[i]))
+                i = archive->hashNext[i];
+        } else {
+            // Allocation failure while constructing the index is non-fatal.
+            // Preserve the original reverse linear lookup as a fallback.
+            for (i = archive->numFiles - 1; i >= 0; i--)
+                if (grp_name_matches(shortname, (char *)archive->gfilelist[i]))
                     break;
-                }
-                if (tolower((unsigned char)c1) != tolower((unsigned char)c2)) break;
-            }
-            if (m == 12) {
-                found_in_grp:
-                // RG_LOGI("kopen4load: Found '%s' in GRP index %ld.", shortname, (long)i);
-                openFiles[newhandle].type = GRP_FILE;
-                openFiles[newhandle].used = 1;
-                openFiles[newhandle].cursor = 0;
-                openFiles[newhandle].fd = i;
-                openFiles[newhandle].grpID = k;                
-                openFiles[newhandle].buffer = NULL;
-                openFiles[newhandle].bufSize = 0;
-                openFiles[newhandle].bufFilePos = -1;
-                return(newhandle);
-            }
+        }
+
+        if (i >= 0) {
+            openFiles[newhandle].type = GRP_FILE;
+            openFiles[newhandle].used = 1;
+            openFiles[newhandle].cursor = 0;
+            openFiles[newhandle].fd = i;
+            openFiles[newhandle].grpID = k;
+            openFiles[newhandle].buffer = NULL;
+            openFiles[newhandle].bufSize = 0;
+            openFiles[newhandle].bufFilePos = -1;
+            return(newhandle);
         }
 	}
 
@@ -449,8 +529,17 @@ int32_t kread(int32_t handle, void *buffer, int32_t leng){
         return totalToRead;
     }
 
-    // Use buffer for small reads or if already buffered
-    if (totalToRead < KREAD_BUFFER_SIZE || openFile->buffer != NULL) {
+    // A complete GRP member is normally copied into its final cache allocation
+    // in one call (sounds and many tiles use this path). Send it through the
+    // persistent DMA bounce buffer below instead of allocating and freeing an
+    // 8 KiB per-handle read cache for every member.
+    const int fullGrpRead = openFile->type == GRP_FILE
+        && openFile->cursor == 0
+        && totalToRead == archive->filesizes[openFile->fd];
+
+    // Use a per-handle buffer for genuinely small or interleaved reads.
+    if ((totalToRead < KREAD_BUFFER_SIZE && !fullGrpRead)
+        || openFile->buffer != NULL) {
         if (!openFile->buffer) {
             openFile->buffer = rg_alloc(KREAD_BUFFER_SIZE, MEM_FAST | MEM_DMA | MEM_NOPANIC);
             if (!openFile->buffer) openFile->buffer = rg_alloc(KREAD_BUFFER_SIZE, MEM_SLOW);
@@ -487,7 +576,6 @@ int32_t kread(int32_t handle, void *buffer, int32_t leng){
                     openFile->bufFilePos = -1;
                     break;
                 }
-                rg_system_tick(0);
             }
 
             int32_t inBufPos = openFile->cursor - openFile->bufFilePos;
@@ -981,7 +1069,7 @@ void   setGameDir(char* gameDir){
     if (gameDir == NULL)
         return;
     
-    strncpy(game_dir,gameDir,sizeof(game_dir));
+    copy_string_bounded(game_dir, sizeof(game_dir), gameDir);
 }
 
 char*  getGameDir(void){
@@ -997,8 +1085,7 @@ const char *get_save_path(const char *filename)
 {
     static char path[1024];
     char name_no_ext[512];
-    strncpy(name_no_ext, filename, sizeof(name_no_ext));
-    name_no_ext[sizeof(name_no_ext) - 1] = '\0';
+    copy_string_bounded(name_no_ext, sizeof(name_no_ext), filename);
     char *dot = strrchr(name_no_ext, '.');
     if (dot && strcasecmp(dot, ".sav") == 0) *dot = '\0';
 
@@ -1007,7 +1094,7 @@ const char *get_save_path(const char *filename)
     
     char *rg_path = rg_emu_get_path(RG_PATH_SAVE_STATE, name_with_dir);
     if (rg_path) {
-        strncpy(path, rg_path, sizeof(path));
+        copy_string_bounded(path, sizeof(path), rg_path);
         free(rg_path);
     } else {
         snprintf(path, sizeof(path), RG_BASE_PATH_SAVES "/duke3d/%s", filename);
@@ -1020,8 +1107,7 @@ const char *get_config_path(const char *filename)
 {
     static char path[1024];
     char name_no_ext[512];
-    strncpy(name_no_ext, filename, sizeof(name_no_ext));
-    name_no_ext[sizeof(name_no_ext) - 1] = '\0';
+    copy_string_bounded(name_no_ext, sizeof(name_no_ext), filename);
     char *dot = strrchr(name_no_ext, '.');
     if (dot && strcasecmp(dot, ".cfg") == 0) *dot = '\0';
 

@@ -83,6 +83,18 @@ Prepared for public release: 03/21/2003 - Charlie Wiederhold, 3D Realms
 
 #define TIMERUPDATESIZ 32
 
+static void copy_string_bounded(char *dst, size_t dst_size, const char *src)
+{
+    if (dst_size == 0)
+        return;
+
+    size_t length = 0;
+    while (length + 1 < dst_size && src[length] != '\0')
+        length++;
+    memcpy(dst, src, length);
+    dst[length] = '\0';
+}
+
 int32_t cameradist = 0, cameraclock = 0;
 uint8_t  eightytwofifty = 0;
 uint8_t  playerswhenstarted;
@@ -2441,7 +2453,7 @@ void gameexit(char  *msg)
 {
     char  t[256];
 
-    strncpy(t,msg,256); t[255] = 0;
+    copy_string_bounded(t, sizeof(t), msg);
 
     if(*t != 0) ps[myconnectindex].palette = (uint8_t  *) &palette[0];
 
@@ -4459,7 +4471,7 @@ short spawn( short j, short pn )
                 break;
 
             case WATERDRIP:
-                if((j >= 0 && sprite[j].statnum == 10) || sprite[j].statnum == 1)
+                if(j >= 0 && (sprite[j].statnum == 10 || sprite[j].statnum == 1))
                 {
                     sp->shade = 32;
                     if(sprite[j].pal != 1)
@@ -7826,8 +7838,7 @@ static void apply_sound_overrides_from_def(void)
 
             if (def_parse_string_value(braceOpen, braceClose, "file", soundFile, sizeof(soundFile)))
             {
-                strncpy(sounds[soundId], soundFile, sizeof(sounds[soundId]) - 1);
-                sounds[soundId][sizeof(sounds[soundId]) - 1] = '\0';
+                copy_string_bounded(sounds[soundId], sizeof(sounds[soundId]), soundFile);
             }
 
             if (def_parse_int_value(braceOpen, braceClose, "minpitch", &minpitch))
@@ -9923,18 +9934,24 @@ uint8_t  domovethings(void)
     if( ud.pause_on == 0 )
     {
         movefta();//ST 2
+
         moveweapons();          //ST 5 (must be last)
+
         movetransports();       //ST 9
 
         moveplayers();          //ST 10
         movefallers();          //ST 12
+
         moveexplosions();       //ST 4
 
         moveactors();           //ST 1
+
         moveeffectors();        //ST 3
 
         movestandables();       //ST 6
+
         doanimations();
+
         movefx();               //ST 11
     }
 
@@ -9944,9 +9961,9 @@ uint8_t  domovethings(void)
     {
         animatewalls();
         movecyclers();
+
         pan3dsound();
     }
-
 
     return 0;
 }
@@ -10896,8 +10913,7 @@ void takescreenshot(void)
 	strcat(text, ".bmp");
 
     char name_no_ext[512];
-    strncpy(name_no_ext, text, sizeof(name_no_ext));
-    name_no_ext[sizeof(name_no_ext) - 1] = '\0';
+    copy_string_bounded(name_no_ext, sizeof(name_no_ext), text);
     char *dot = strrchr(name_no_ext, '.');
     if (dot && strcasecmp(dot, ".bmp") == 0) *dot = '\0';
 
@@ -10907,7 +10923,7 @@ void takescreenshot(void)
     char *path = rg_emu_get_path(RG_PATH_SCREENSHOT, name_with_dir);
     if (path)
     {
-        strncpy(szFilename, path, sizeof(szFilename));
+        copy_string_bounded(szFilename, sizeof(szFilename), path);
         free(path);
     }
     else
@@ -11184,4 +11200,3 @@ Programming:   ( the functions I need )
 // Bog
 // Test Blimp respawn
 // move 1 in player???
-

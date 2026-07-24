@@ -1,7 +1,7 @@
 #include "multivoc.h"
 #include "_multivc.h"
 
-extern double *MV_FooBuffer;
+extern int32_t *MV_FooBuffer;
 extern int MV_BufferSize;
 extern int MV_SampleSize;
 extern int MV_MaxVolume;
@@ -21,6 +21,19 @@ static	double IIR_ALPHA, ACC_COEF_A, ACC_COEF_B, ACC_COEF_C, ACC_COEF_D, IIR_COE
 		IN_COEF_L, IN_COEF_R;
 
 static  double iRVBLeft, iRVBRight;
+
+static double mix_to_normalized(int32_t sample)
+{
+	return (double)sample / ((double)MV_MaxVolume * 32768.0);
+}
+
+static int32_t normalized_to_mix(double sample)
+{
+	double scaled = sample * ((double)MV_MaxVolume * 32768.0);
+	if (scaled > 2147483647.0) return INT32_MAX;
+	if (scaled < -2147483648.0) return INT32_MIN;
+	return (int32_t)scaled;
+}
 
 static int cnv_offset(int src)
 {
@@ -220,8 +233,9 @@ IRAM_ATTR void MV_FPReverb(int volume)
 	{
 		for (i = 0; i < count; i++)
 		{
-			double temp = MV_FooBuffer[i];
-			MV_FooBuffer[i] += ((MixREVERBLeft(temp, temp, reverbBuffer) + MixREVERBRight()) * .5) * (double)volume / (double)MV_MaxVolume;
+			double temp = mix_to_normalized(MV_FooBuffer[i]);
+			temp += ((MixREVERBLeft(temp, temp, reverbBuffer) + MixREVERBRight()) * .5) * (double)volume / (double)MV_MaxVolume;
+			MV_FooBuffer[i] = normalized_to_mix(temp);
 		}
 	}
 	else
@@ -229,13 +243,13 @@ IRAM_ATTR void MV_FPReverb(int volume)
 		count >>= 1;
 		for (i = 0; i < count; i++)
 		{
-			double left = MV_FooBuffer[i*2];
-			double right = MV_FooBuffer[i*2+1];
+			double left = mix_to_normalized(MV_FooBuffer[i*2]);
+			double right = mix_to_normalized(MV_FooBuffer[i*2+1]);
 			double scale = (double)volume / (double)MV_MaxVolume;
 			left += MixREVERBLeft(left, right, reverbBuffer) * scale;
 			right += MixREVERBRight() * scale;
-			MV_FooBuffer[i*2] = left;
-			MV_FooBuffer[i*2+1] = right;
+			MV_FooBuffer[i*2] = normalized_to_mix(left);
+			MV_FooBuffer[i*2+1] = normalized_to_mix(right);
 		}
 	}
 
@@ -265,7 +279,7 @@ void MV_16BitDownmix(char *dest, int count)
 
 	for (i = 0; i < count; i++)
 	{
-		int out = (int)((MV_FooBuffer[i] * (double)0x8000));
+		int out = MV_FooBuffer[i] / MV_MaxVolume;
 		if (out < -32768) pdest[i] = -32768;
 		else if (out > 32767) pdest[i] = 32767;
 		else pdest[i] = out;
@@ -278,7 +292,7 @@ void MV_8BitDownmix(char *dest, int count)
 
 	for (i = 0; i < count; i++)
 	{
-		int out = ((int)((MV_FooBuffer[i] * (double)0x80)));
+		int out = MV_FooBuffer[i] / (MV_MaxVolume << 8);
 		if (out < -128) dest[i] = 0;
 		else if (out > 127) dest[i] = 255;
 		else dest[i] = out + 0x80;

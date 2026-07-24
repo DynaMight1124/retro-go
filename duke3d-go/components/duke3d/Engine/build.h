@@ -31,22 +31,15 @@
 #define MAXSPRITESONSCREEN 256
 #endif
 
-#ifdef CONFIG_IDF_TARGET_ESP32
-#define MAXSECTORS 512
-#define MAXWALLS 4096
-#define MAXXDIM 320
-#define MAXYDIM 240
-#else
 #define MAXSECTORS 2048
 #define MAXWALLS 8192
-#define MAXXDIM 1600
-#define MAXYDIM 1200
-#endif
 #define MAXTILES 9216
 #define MAXPLAYERS 16
 
 #define INTERNAL_RES_W 320
 #define INTERNAL_RES_H 240
+#define MAXXDIM INTERNAL_RES_W
+#define MAXYDIM INTERNAL_RES_H
 #define DEFAULT_RES_W  240
 #define DEFAULT_RES_H  160
 
@@ -206,7 +199,9 @@ EXTERN FAST_RAM_ATTR int32_t validmodexdim[256], validmodeydim[256];
 EXTERN short numsectors, numwalls;
 EXTERN volatile int32_t totalclock;
 EXTERN int32_t numframes, randomseed;
-EXTERN EXTERN_ATTR short sintable[2048];
+// This compact table is used throughout rendering and simulation. Keeping it
+// internal avoids repeated PSRAM cache misses on every supported target.
+EXTERN short sintable[2048];
 EXTERN EXTERN_ATTR uint8_t  palette[768];
 EXTERN short numpalookups;
 EXTERN uint8_t  *palookup[MAXPALOOKUPS];
@@ -219,9 +214,12 @@ EXTERN FAST_RAM_ATTR short startumost[MAXXDIM], startdmost[MAXXDIM];
 
 EXTERN short pskyoff[MAXPSKYTILES], pskybits;
 
-EXTERN EXTERN_ATTR short headspritesect[MAXSECTORS+1], headspritestat[MAXSTATUS+1];
+// Every renderer and game tick walks these linked-list heads and forward
+// links. They are compact enough to keep internal, while the less frequent
+// reverse links and the large sprite records remain in PSRAM.
+EXTERN short headspritesect[MAXSECTORS+1], headspritestat[MAXSTATUS+1];
 EXTERN EXTERN_ATTR short prevspritesect[MAXSPRITES], prevspritestat[MAXSPRITES];
-EXTERN EXTERN_ATTR short nextspritesect[MAXSPRITES], nextspritestat[MAXSPRITES];
+EXTERN short nextspritesect[MAXSPRITES], nextspritestat[MAXSPRITES];
 
 
 

@@ -4102,8 +4102,10 @@ static int32_t fdmatrix[12][12] =
 static int32_t goalx[MAXPLAYERS], goaly[MAXPLAYERS], goalz[MAXPLAYERS];
 static int32_t goalsect[MAXPLAYERS], goalwall[MAXPLAYERS], goalsprite[MAXPLAYERS];
 static int32_t goalplayer[MAXPLAYERS], clipmovecount[MAXPLAYERS];
-short searchsect[MAXSECTORS], searchparent[MAXSECTORS];
-uint8_t  dashow2dsector[(MAXSECTORS+7)>>3];
+// Bot pathfinding scratch is cold during normal single-player/demo play.  Keep
+// it out of scarce internal RAM now that the full sector capacity is enabled.
+EXT_RAM_BSS_ATTR short searchsect[MAXSECTORS], searchparent[MAXSECTORS];
+EXT_RAM_BSS_ATTR uint8_t dashow2dsector[(MAXSECTORS+7)>>3];
 void computergetinput(int32_t snum, input *syn)
 {
     int32_t i, j, k, l, x1, y1, z1, x2, y2, z2, x3, y3, z3, dx, dy;
@@ -4476,4 +4478,3 @@ void computergetinput(int32_t snum, input *syn)
         syn->avel = min(max((((daang+1024-damyang)&2047)-1024)>>3,-127),127);
     }
 }
-

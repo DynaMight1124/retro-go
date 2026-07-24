@@ -29,9 +29,11 @@
 
 #include "engine.h"
 #include "tiles.h"
+#include "SDL_video.h"
 
 #include <rg_system.h>
 #include "esp_attr.h"
+#include "esp_memory_utils.h"
 
 int32_t stereowidth = 23040, stereopixelwidth = 28, ostereopixelwidth = -1;
 int32_t stereomode = 0, visualpage, activepage, whiteband, blackband;
@@ -51,6 +53,12 @@ uint8_t  oa1, o3c2, ortca, ortcb, overtbits, laststereoint;
 #endif
 #define MAXNODESPERLINE 42   /* Warning: This depends on MAXYSAVES & MAXYDIM! */
 #define MAXCLIPDIST 1024
+
+// TILE_MakeAvailable() only performs this null check before loading. Keep the
+// resident-tile fast path inside hot IRAM renderers and call into flash only
+// for the uncommon cold-tile case.
+#define TILE_ENSURE_AVAILABLE(picID) \
+    do { if (tiles[(picID)].data == NULL) TILE_MakeAvailable(picID); } while (0)
 
 /* used to be static. --ryan. */
 uint8_t  moustat = 0;
@@ -86,6 +94,8 @@ EXT_RAM_BSS_ATTR int32_t tilefileoffs[MAXTILES];
 int32_t artsize = 0, cachesize = 0;
 EXT_RAM_BSS_ATTR static uint8_t palookup0_static[MAXPALOOKUPS << 8];
 EXT_RAM_BSS_ATTR static uint8_t transluc_static[65536];
+static uint8_t *palookup0_fast;
+static size_t palookup0_fast_size;
 
 EXT_RAM_BSS_ATTR static short radarang[1280], radarang2[MAXXDIM+1];
 EXT_RAM_BSS_ATTR static uint16_t sqrtable[4096], shlookup[4096+256];
@@ -151,16 +161,18 @@ EXT_RAM_BSS_ATTR static spritetype *tspriteptr[MAXSPRITESONSCREEN];
 EXT_RAM_BSS_ATTR static int32_t spritesz[MAXSPRITESONSCREEN];
 
 //FCS: (up-most pixel on column x that can still be drawn to)
+// These are touched only while temporarily rendering to a tile. Keeping the
+// backup pair external recovers enough contiguous DRAM for the 320x200 frame.
 EXT_RAM_BSS_ATTR int16_t bakumost[MAXXDIM+1], bakdmost[MAXXDIM+1];
-EXT_RAM_BSS_ATTR short umost[MAXXDIM+1];
+short umost[MAXXDIM+1];
 
 //FCS: (down-most pixel +1 on column x that can still be drawn to)
-EXT_RAM_BSS_ATTR short dmost[MAXXDIM+1];
+short dmost[MAXXDIM+1];
 
-EXT_RAM_BSS_ATTR short uplc[MAXXDIM+1], dplc[MAXXDIM+1];
-EXT_RAM_BSS_ATTR static int16_t uwall[MAXXDIM+1], dwall[MAXXDIM+1];
-EXT_RAM_BSS_ATTR static int32_t swplc[MAXXDIM+1], lplc[MAXXDIM+1];
-EXT_RAM_BSS_ATTR static int32_t swall[MAXXDIM+1], lwall[MAXXDIM+4];
+short uplc[MAXXDIM+1], dplc[MAXXDIM+1];
+static int16_t uwall[MAXXDIM+1], dwall[MAXXDIM+1];
+static int32_t swplc[MAXXDIM+1], lplc[MAXXDIM+1];
+static int32_t swall[MAXXDIM+1], lwall[MAXXDIM+4];
 int32_t xdimen = -1, xdimenrecip, halfxdimen, xdimenscale, xdimscale;
 int32_t wx1, wy1, wx2, wy2, ydimen;
 int32_t viewoffset;
@@ -332,6 +344,7 @@ static void scansector (short sectnum)
     int32_t xs, ys, x1, y1, x2, y2, xp1, yp1, xp2=0, yp2=0, tempint;
     short z, zz, startwall, endwall, numscansbefore, scanfirst, bunchfrst;
     short nextsectnum;
+    static uint8_t capacity_warning_shown;
 
     //The stack storing sectors to visit.
     short sectorsToVisit[256], numSectorsToVisit;
@@ -437,6 +450,21 @@ static void scansector (short sectnum)
 
             /* If wall's NOT facing you */
             if (dmulscale32(xp1,yp2,-xp2,yp1) >= 0) goto skipitaddwall;
+
+            // The final pvWalls entry is reserved as scratch space by the
+            // masked-wall renderer. The original code did not enforce the
+            // limit, allowing complex views to overwrite the lookup tables
+            // that follow pvWalls in memory.
+            if (numscans >= MAXWALLSB-1)
+            {
+                if (!capacity_warning_shown)
+                {
+                    RG_LOGW("scansector: projected wall capacity reached (%d)",
+                            MAXWALLSB-1);
+                    capacity_warning_shown = 1;
+                }
+                goto skipitaddwall;
+            }
 
             // The wall is still not eligible for rendition: Let's do some more Frustrum culling !!
             if (xp1 >= -yp1){
@@ -732,7 +760,7 @@ static void ceilscan (int32_t x1, int32_t x2, int32_t sectnum)
     if (tiles[globalpicnum].animFlags&192)
         globalpicnum += animateoffs(globalpicnum);
 
-    TILE_MakeAvailable(globalpicnum);
+    TILE_ENSURE_AVAILABLE(globalpicnum);
 
     globalbufplc = tiles[globalpicnum].data;
 
@@ -970,7 +998,7 @@ static void florscan (int32_t x1, int32_t x2, int32_t sectnum)
         globalpicnum += animateoffs(globalpicnum);
 
     //If the texture is not in RAM: Load it !!
-    TILE_MakeAvailable(globalpicnum);
+    TILE_ENSURE_AVAILABLE(globalpicnum);
 
     //Check where is the texture in RAM
     globalbufplc = tiles[globalpicnum].data;
@@ -1238,7 +1266,7 @@ IRAM_ATTR static void wallscan(int32_t x1, int32_t x2,
     if ((dwal[x1] < 0) && (dwal[x2] < 0))
         return;
 
-    TILE_MakeAvailable(globalpicnum);
+    TILE_ENSURE_AVAILABLE(globalpicnum);
 
     xnice = (pow2long[picsiz[globalpicnum]&15] == tileWidth);
     if (xnice)
@@ -1426,7 +1454,7 @@ IRAM_ATTR static void maskwallscan(int32_t x1, int32_t x2,
     if ((dwal[x1] < 0) && (dwal[x2] < 0))
         return;
 
-    TILE_MakeAvailable(globalpicnum);
+    TILE_ENSURE_AVAILABLE(globalpicnum);
 
     startx = x1;
 
@@ -1757,7 +1785,7 @@ static void grouscan (int32_t dax1, int32_t dax2, int32_t sectnum, uint8_t  dast
         (tiles[globalpicnum].dim.height <= 0))
         return;
 
-    TILE_MakeAvailable(globalpicnum);
+    TILE_ENSURE_AVAILABLE(globalpicnum);
 
     wal = &wall[sec->wallptr];
     wx = wall[wal->point2].x - wal->x;
@@ -2583,6 +2611,7 @@ static void drawalls(int32_t bunch)
             }
         }
     }
+
 }
 
 
@@ -2775,6 +2804,7 @@ int pixelRenderable = 0;
 */
 void drawrooms(int32_t daposx, int32_t daposy, int32_t daposz,short daang, int32_t dahoriz, short dacursectnum)
 {
+    SDL_MarkFrame3D();
     int32_t i, j, z, closest;
 	//Ceiling and Floor height at the player position.
 	int32_t cz, fz;
@@ -3022,6 +3052,7 @@ void drawrooms(int32_t daposx, int32_t daposy, int32_t daposz,short daang, int32
         bunchfirst[closest] = bunchfirst[numbunches];
         bunchlast[closest] = bunchlast[numbunches];
     }
+
 }
 
 
@@ -3163,7 +3194,7 @@ IRAM_ATTR static void transmaskwallscan(int32_t x1, int32_t x2)
         (tiles[globalpicnum].dim.height <= 0))
         return;
 
-    TILE_MakeAvailable(globalpicnum);
+    TILE_ENSURE_AVAILABLE(globalpicnum);
 
     x = x1;
     while ((startumost[x+windowx1] > startdmost[x+windowx1]) && (x <= x2)) x++;
@@ -3219,7 +3250,14 @@ int loadboard(char  *filename, int32_t *daposx, int32_t *daposy,
     kread32(fil,daposz);
     kread16(fil,daang);
     kread16(fil,dacursectnum);
-    kread16(fil,&numsectors);
+    if (!kread16(fil,&numsectors) ||
+        numsectors <= 0 || numsectors > MAXSECTORS)
+    {
+        RG_LOGE("loadboard: invalid sector count %d (maximum %d)",
+                numsectors, MAXSECTORS);
+        kclose(fil);
+        return(-1);
+    }
 
     for (x = 0, sect = &sector[0]; x < numsectors; x++, sect++)
     {
@@ -3248,7 +3286,14 @@ int loadboard(char  *filename, int32_t *daposx, int32_t *daposy,
         kread16(fil,&sect->extra);
     }
 
-    kread16(fil,&numwalls);
+    if (!kread16(fil,&numwalls) ||
+        numwalls <= 0 || numwalls > MAXWALLS)
+    {
+        RG_LOGE("loadboard: invalid wall count %d (maximum %d)",
+                numwalls, MAXWALLS);
+        kclose(fil);
+        return(-1);
+    }
     for (x = 0, w = &wall[0]; x < numwalls; x++, w++)
     {
         kread32(fil,&w->x);
@@ -3270,7 +3315,41 @@ int loadboard(char  *filename, int32_t *daposx, int32_t *daposy,
         kread16(fil,&w->extra);
     }
 
-    kread16(fil,&numsprites);
+    for (x = 0, sect = &sector[0]; x < numsectors; x++, sect++)
+    {
+        const int32_t wallptr = sect->wallptr;
+        const int32_t wallnum = sect->wallnum;
+        if (wallptr < 0 || wallnum <= 0 ||
+            wallptr >= numwalls || wallnum > numwalls-wallptr)
+        {
+            RG_LOGE("loadboard: sector %d has invalid wall range %ld+%ld/%d",
+                    x, (long)wallptr, (long)wallnum, numwalls);
+            kclose(fil);
+            return(-1);
+        }
+    }
+
+    for (x = 0, w = &wall[0]; x < numwalls; x++, w++)
+    {
+        if (w->point2 < 0 || w->point2 >= numwalls ||
+            w->nextwall < -1 || w->nextwall >= numwalls ||
+            w->nextsector < -1 || w->nextsector >= numsectors)
+        {
+            RG_LOGE("loadboard: wall %d has invalid links (%d, %d, %d)",
+                    x, w->point2, w->nextwall, w->nextsector);
+            kclose(fil);
+            return(-1);
+        }
+    }
+
+    if (!kread16(fil,&numsprites) ||
+        numsprites < 0 || numsprites > MAXSPRITES)
+    {
+        RG_LOGE("loadboard: invalid sprite count %d (maximum %d)",
+                numsprites, MAXSPRITES);
+        kclose(fil);
+        return(-1);
+    }
     for (x = 0, s = &sprite[0]; x < numsprites; x++, s++)
     {
         kread32(fil,&s->x);
@@ -3300,7 +3379,17 @@ int loadboard(char  *filename, int32_t *daposx, int32_t *daposy,
 
 
     for(i=0; i<numsprites; i++)
+    {
+        if (sprite[i].sectnum < 0 || sprite[i].sectnum >= numsectors ||
+            sprite[i].statnum < 0 || sprite[i].statnum >= MAXSTATUS)
+        {
+            RG_LOGE("loadboard: sprite %d has invalid sector/status (%d, %d)",
+                    i, sprite[i].sectnum, sprite[i].statnum);
+            kclose(fil);
+            return(-1);
+        }
         insertsprite(sprite[i].sectnum,sprite[i].statnum);
+    }
 
     /* Must be after loading sectors, etc! */
     updatesector(*daposx,*daposy,dacursectnum);
@@ -3574,12 +3663,42 @@ static void loadpalette(void)
 
     kread16(fil,&numpalookups);
 
+    if (numpalookups <= 0 || numpalookups > MAXPALOOKUPS)
+    {
+        RG_LOGE("Invalid palette lookup count: %d", numpalookups);
+        RG_PANIC("Invalid palette lookup count");
+    }
+
     //CODE EXPLORATION
     printf("Num palettes lookup: %d.\n",numpalookups);
 
-    // Keep these core lookup tables in static external RAM so startup doesn't
-    // depend on cache initialization order or large contiguous heap blocks.
-    palookup[0] = palookup0_static;
+    // Palette zero is read for almost every opaque rendered pixel. Allocate
+    // only the rows present in palette.dat and keep them internal when there
+    // is enough room. rg_alloc may loosen MEM_FAST, so verify placement and
+    // fall back to the existing static external table if that happens.
+    const size_t lookup_size = (size_t)numpalookups << 8;
+    if (palookup0_fast && palookup0_fast_size != lookup_size)
+    {
+        free(palookup0_fast);
+        palookup0_fast = NULL;
+        palookup0_fast_size = 0;
+    }
+    if (!palookup0_fast)
+    {
+        uint8_t *candidate = rg_alloc(lookup_size, MEM_FAST | MEM_NOPANIC);
+        if (candidate && esp_ptr_internal(candidate))
+        {
+            palookup0_fast = candidate;
+            palookup0_fast_size = lookup_size;
+        }
+        else if (candidate)
+        {
+            free(candidate);
+        }
+    }
+    palookup[0] = palookup0_fast ? palookup0_fast : palookup0_static;
+    RG_LOGI("Renderer palette lookup: %u bytes in %s RAM",
+            (unsigned)lookup_size, palookup0_fast ? "internal" : "external");
 
     // Translucent palette is 64KB.
     transluc = transluc_static;
@@ -3667,6 +3786,13 @@ void initengine(void)
 void uninitengine(void)
 {
     transluc = NULL;
+    if (palookup0_fast)
+    {
+        free(palookup0_fast);
+        palookup0_fast = NULL;
+        palookup0_fast_size = 0;
+        palookup[0] = NULL;
+    }
     if (pic != NULL) {
         kkfree(pic);
         pic = NULL;
@@ -3936,7 +4062,7 @@ IRAM_ATTR static void  dorotatesprite (int32_t sx, int32_t sy, int32_t z, short 
         nextv = v;
     }
 
-    TILE_MakeAvailable(picnum);
+    TILE_ENSURE_AVAILABLE(picnum);
 
     setgotpic(picnum);
     bufplc = tiles[picnum].data;
@@ -4008,10 +4134,11 @@ IRAM_ATTR static void  dorotatesprite (int32_t sx, int32_t sy, int32_t z, short 
             palookupoffse[0] = palookupoffse[1] = palookupoffse[2] = palookupoffse[3] = palookupoffs;
             vince[0] = vince[1] = vince[2] = vince[3] = yv;
 
-            for(x=x1; x<x2; x+=4)
+            for(x=x1; x<x2; x+=xend)
             {
                 bad = 15;
-                xend = min(x2-x,4);
+                xend = min(x2-x,
+                    4-(int32_t)((uintptr_t)(frameplace+x)&3U));
                 for(xx=0; xx<xend; xx++)
                 {
                     bx += xv2;
@@ -4037,8 +4164,17 @@ IRAM_ATTR static void  dorotatesprite (int32_t sx, int32_t sy, int32_t z, short 
 
                 p = x+frameplace;
 
-                u4 = max(max(y1ve[0],y1ve[1]),max(y1ve[2],y1ve[3]));
-                d4 = min(min(y2ve[0],y2ve[1]),min(y2ve[2],y2ve[3]));
+                if (bad == 0)
+                {
+                    u4 = max(max(y1ve[0],y1ve[1]),max(y1ve[2],y1ve[3]));
+                    d4 = min(min(y2ve[0],y2ve[1]),min(y2ve[2],y2ve[3]));
+                }
+                else
+                {
+                    // Partial groups use the individual-column path below.
+                    u4 = 0;
+                    d4 = -1;
+                }
 
                 if (dastat&64)
                 {
@@ -5656,7 +5792,7 @@ IRAM_ATTR static void drawsprite (int32_t snum)
         if ((uint32_t)globalpicnum >= (uint32_t)MAXTILES)
             globalpicnum = 0;
 
-        TILE_MakeAvailable(globalpicnum);
+        TILE_ENSURE_AVAILABLE(globalpicnum);
 
         setgotpic(globalpicnum);
         globalbufplc = tiles[globalpicnum].data;
@@ -5806,7 +5942,9 @@ void drawmasks(void)
     {
         j = maskwall[maskwallcnt-1];
         if (spritewallfront(tspriteptr[spritesortcnt-1],pvWalls[j].worldWallId) == 0)
+        {
             drawsprite(--spritesortcnt);
+        }
         else
         {
             /* Check to see if any sprites behind the masked wall... */
@@ -5841,8 +5979,15 @@ void drawmasks(void)
             drawmaskwall(--maskwallcnt);
         }
     }
-    while (spritesortcnt > 0) drawsprite(--spritesortcnt);
-    while (maskwallcnt > 0) drawmaskwall(--maskwallcnt);
+    while (spritesortcnt > 0)
+    {
+        drawsprite(--spritesortcnt);
+    }
+    while (maskwallcnt > 0)
+    {
+        drawmaskwall(--maskwallcnt);
+    }
+
 }
 
 
@@ -8751,7 +8896,7 @@ void drawmapview(int32_t dax, int32_t day, int32_t zoome, short ang)
             if ((tiles[globalpicnum].animFlags&192) != 0)
                 globalpicnum += animateoffs(globalpicnum);
 
-            TILE_MakeAvailable(globalpicnum);
+            TILE_ENSURE_AVAILABLE(globalpicnum);
 
             globalbufplc = tiles[globalpicnum].data;
 
@@ -8935,7 +9080,7 @@ void drawmapview(int32_t dax, int32_t day, int32_t zoome, short ang)
             if ((tiles[globalpicnum].animFlags&192) != 0)
                 globalpicnum += animateoffs(globalpicnum);
 
-            TILE_MakeAvailable(globalpicnum);
+            TILE_ENSURE_AVAILABLE(globalpicnum);
 
             globalbufplc = tiles[globalpicnum].data;
             if ((sector[spr->sectnum].ceilingstat&1) > 0)

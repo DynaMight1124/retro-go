@@ -1362,7 +1362,7 @@ int VBE_setPalette(uint8_t  *palettebuffer)
         lastPalette[i*3+2] = palettebuffer[i*4+0]; // Blue
     }
 
-    _updateScreenRect(0, 0, 0, 0);
+    SDL_PresentPalette();
     return ret;
 }
 
@@ -1935,4 +1935,3 @@ IRAM_ATTR void TIMER_GetPlatformTicks(int64_t* t)
 }
 #endif
 /* end of sdl_driver.c ... */
-
