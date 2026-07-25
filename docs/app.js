@@ -226,16 +226,33 @@ async function fetchReleases() {
       return;
     }
 
+    // Try to fetch the official designated 'Latest' release tag from GitHub API
+    let latestTag = null;
+    try {
+      const latestRes = await fetch(`https://api.github.com/repos/${state.owner}/${state.repo}/releases/latest`, {
+        headers: getFetchHeaders()
+      });
+      if (latestRes.ok) {
+        const latestData = await latestRes.json();
+        latestTag = latestData.tag_name;
+      }
+    } catch (e) {
+      console.warn('Could not fetch latest release marker:', e);
+    }
+
     // Populate dropdown
     state.releases.forEach(rel => {
       const opt = document.createElement('option');
       opt.value = rel.tag_name;
-      opt.textContent = `${rel.name || rel.tag_name} (${new Date(rel.published_at).toLocaleDateString()})${rel.prerelease ? ' [Pre-release]' : ''}`;
+      const isLatest = rel.tag_name === latestTag;
+      const labelBadge = isLatest ? ' [Latest]' : (rel.prerelease ? ' [Pre-release]' : '');
+      opt.textContent = `${rel.name || rel.tag_name} (${new Date(rel.published_at).toLocaleDateString()})${labelBadge}`;
       selectEl.appendChild(opt);
     });
 
-    // Select latest
-    state.selectedRelease = state.releases[0];
+    // Select designated 'Latest' release, or fall back to first non-prerelease / newest
+    const officialLatest = latestTag ? state.releases.find(r => r.tag_name === latestTag) : null;
+    state.selectedRelease = officialLatest || state.releases.find(r => !r.prerelease) || state.releases[0];
     selectEl.value = state.selectedRelease.tag_name;
     hideWarning();
 
