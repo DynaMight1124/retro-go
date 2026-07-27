@@ -353,21 +353,52 @@ void SDL_QuitSubSystem(Uint32 flags)
 
 }
 
+static void frame_limit_timer_cb(void *arg)
+{
+    xSemaphoreGive((SemaphoreHandle_t)arg);
+}
+
 static void limit_fps(int fps)
 {
-    static uint32_t last_tick = 0;
-    uint32_t now = SDL_GetTicks();
-    uint32_t frame_time = 1000 / fps;
+    static SemaphoreHandle_t wait_sem;
+    static esp_timer_handle_t wait_timer;
+    static int64_t last_frame_us;
 
-    if (last_tick > 0)
-    {
-        uint32_t elapsed = now - last_tick;
-        if (elapsed < frame_time)
-        {
-            vTaskDelay(pdMS_TO_TICKS(frame_time - elapsed));
+    if (!wait_sem) {
+        wait_sem = xSemaphoreCreateBinary();
+        if (wait_sem) {
+            const esp_timer_create_args_t timer_args = {
+                .callback = frame_limit_timer_cb,
+                .arg = wait_sem,
+                .name = "duke_fps",
+            };
+            if (esp_timer_create(&timer_args, &wait_timer) != ESP_OK) {
+                vSemaphoreDelete(wait_sem);
+                wait_sem = NULL;
+            }
         }
     }
-    last_tick = SDL_GetTicks();
+
+    const int64_t frame_time_us = (1000000 + fps - 1) / fps;
+    int64_t now = rg_system_timer();
+
+    if (last_frame_us > 0) {
+        const int64_t remaining_us = frame_time_us - (now - last_frame_us);
+        if (remaining_us > 0) {
+            if (wait_timer) {
+                xSemaphoreTake(wait_sem, 0);
+                if (esp_timer_start_once(wait_timer, remaining_us) == ESP_OK) {
+                    xSemaphoreTake(wait_sem, portMAX_DELAY);
+                } else {
+                    rg_usleep((uint32_t)remaining_us);
+                }
+            } else {
+                rg_usleep((uint32_t)remaining_us);
+            }
+        }
+    }
+
+    last_frame_us = rg_system_timer();
 }
 
 IRAM_ATTR int SDL_Flip(SDL_Surface *screen)

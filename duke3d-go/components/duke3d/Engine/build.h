@@ -39,9 +39,9 @@
 #define INTERNAL_RES_W 320
 #define INTERNAL_RES_H 240
 #define MAXXDIM INTERNAL_RES_W
-#define MAXYDIM INTERNAL_RES_H
-#define DEFAULT_RES_W  240
-#define DEFAULT_RES_H  160
+// Screen tilt and the death view render through a temporary 320x320 tile.
+// Renderer work arrays must cover that target, not only the LCD height.
+#define MAXYDIM INTERNAL_RES_W
 
 #define MAXPALOOKUPS 256
 #define MAXPSKYTILES 256
