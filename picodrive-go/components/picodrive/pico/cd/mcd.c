@@ -1,6 +1,7 @@
 #include <rg_system.h>
 #include "../pico_int.h"
 #include "../memory.h"
+#include "megasd.h"
 
 mcd_state *Pico_mcd;
 u32 pcd_base_address;
@@ -131,12 +132,31 @@ extern void cdc_dma_update(void);
 extern void msd_update(void);
 extern void gfx_update(unsigned int now);
 
-extern void pcd_pcm_update(s32 *buffer, int length, int stereo);
-
 static void pcd_cdc_event(unsigned int now)
 {
+  int audio = Pico_mcd->s68k_regs[0x36] & 0x1;
+
   // 75Hz CDC update
   cdd_update();
+
+  // main 68k cycles since frame start
+  int cycles = 1LL * (now - mcd_s68k_cycle_base) *
+    mcd_s68k_cycle_mult >> 16;
+  // samples at the configured output rate since frame start
+  int samples = 1LL * cycles_68k_to_z80(cycles) *
+    Pico.snd.clkz_mult >> 20;
+  // samples at the 44.1 kHz CDDA source rate since frame start
+  samples = samples * Pico.snd.cdda_mult >> 16;
+  if (samples < 2352 / 4)
+    // save offset to the first used sample for state saving
+    Pico_mcd->m.cdda_lba_offset = 2352 / 4 - samples;
+
+  /* If CDDA just turned on, preserve its exact position in this frame. */
+  audio &= !(Pico_mcd->s68k_regs[0x36] & 0x1);
+  if (audio) {
+    Pico_mcd->m.cdda_lba_offset = 0;
+    Pico_mcd->cdda_frame_offs = samples;
+  }
 
   /* check if a new CDD command has been processed */
   if (!(Pico_mcd->s68k_regs[0x4b] & 0xf0))
@@ -150,9 +170,6 @@ static void pcd_cdc_event(unsigned int now)
   }
 
   msd_update();
-  
-  // Tick the PCM chip status
-  pcd_pcm_update(NULL, 0, 0);
 
   pcd_event_schedule(now, PCD_EVENT_CDC, 12500000/75);
 }
@@ -201,7 +218,16 @@ static void pcd_run_events(unsigned int until)
     if (oldest_diff <= 0) {
       time = pcd_event_times[oldest];
       pcd_event_times[oldest] = 0;
-      pcd_event_cbs[oldest](time);
+      pprof_start(cd_event);
+      if (oldest == PCD_EVENT_GFX) {
+        pprof_start(cd_gfx);
+        pcd_event_cbs[oldest](time);
+        pprof_end(cd_gfx);
+      }
+      else {
+        pcd_event_cbs[oldest](time);
+      }
+      pprof_end(cd_event);
     }
     else if (oldest_diff < 0x7fffffff) {
       event_time_next = pcd_event_times[oldest];
@@ -321,5 +347,76 @@ PICO_INTERNAL void PicoFrameMCD(void) {
   PicoMCDPrepare();
   pcd_prepare_frame();
   PicoFrameHints();
-  PsndGetSamples(0);
-}void pcd_state_loaded(void) { PicoMemSetupCD(); }
+}
+
+void pcd_state_loaded(void)
+{
+  unsigned int cycles;
+
+  pcd_state_loaded_mem();
+
+  memset(Pico_mcd->pcm_mixbuf, 0, sizeof(Pico_mcd->pcm_mixbuf));
+  Pico_mcd->pcm_mixbuf_dirty = 0;
+  Pico_mcd->pcm_mixpos = 0;
+  Pico_mcd->pcm_regs_dirty = 1;
+
+  /* Repair timing from old or incomplete states. */
+  cycles = pcd_cycles_m68k_to_s68k(Pico.t.m68c_aim);
+#if defined(PPROF) && PPROF_LEVEL >= 3
+  RG_LOGI("mcd load pre cycles=%u s68k_cnt=%u s68k_aim=%u "
+          "events=%u,%u,%u,%u pcm_ctrl=%02x pcm_en=%02x pcm_upd=%u\n",
+          cycles, SekCycleCntS68k, SekCycleAimS68k,
+          pcd_event_times[0], pcd_event_times[1],
+          pcd_event_times[2], pcd_event_times[3],
+          Pico_mcd->pcm.control, Pico_mcd->pcm.enabled,
+          Pico_mcd->pcm.update_cycles);
+#endif
+  /*
+   * The sub-CPU cycle counters are runtime state and are not saved.  On a
+   * cold launcher resume they are therefore zero, while the serialized CD
+   * event and PCM timestamps still use the old sub-CPU timeline.  Restore
+   * that timeline from the PCM update clock, which tracks the same counter
+   * and is saved with the rest of the Sega CD state.  An in-process load
+   * retains nonzero counters and must not be rebased.
+   */
+  if (SekCycleCntS68k == 0 && SekCycleAimS68k == 0 &&
+      Pico_mcd->pcm.update_cycles != 0)
+    SekCycleCntS68k = SekCycleAimS68k = Pico_mcd->pcm.update_cycles;
+
+  if (CYCLES_GE(cycles - SekCycleAimS68k, 12500000 / 60))
+    SekCycleCntS68k = SekCycleAimS68k = cycles;
+
+  if (pcd_event_times[PCD_EVENT_CDC] == 0) {
+    pcd_event_schedule(SekCycleAimS68k, PCD_EVENT_CDC, 12500000 / 75);
+
+    if (Pico_mcd->s68k_regs[0x31])
+      pcd_event_schedule(SekCycleAimS68k, PCD_EVENT_TIMER3,
+        (Pico_mcd->s68k_regs[0x31] + 1) * 384);
+  }
+
+  if (CYCLES_GE(cycles - Pico_mcd->pcm.update_cycles, 12500000 / 50))
+    Pico_mcd->pcm.update_cycles = cycles;
+
+  if (Pico_mcd->m.need_sync) {
+    Pico_mcd->m.state_flags |= PCD_ST_S68K_SYNC;
+    Pico_mcd->m.need_sync = 0;
+  }
+
+  /*
+   * event_time_next is derived state and is not serialized. Rebuild it from
+   * the restored event array; retaining the reset-time value breaks cold
+   * launcher resumes while an in-process load can appear to work by chance.
+   */
+  event_time_next = 0;
+  pcd_run_events(SekCycleCntS68k);
+
+  msd_load();
+#if defined(PPROF) && PPROF_LEVEL >= 3
+  RG_LOGI("mcd load post s68k_cnt=%u s68k_aim=%u next=%u "
+          "events=%u,%u,%u,%u pcm_upd=%u flags=%08x\n",
+          SekCycleCntS68k, SekCycleAimS68k, event_time_next,
+          pcd_event_times[0], pcd_event_times[1],
+          pcd_event_times[2], pcd_event_times[3],
+          Pico_mcd->pcm.update_cycles, Pico_mcd->m.state_flags);
+#endif
+}

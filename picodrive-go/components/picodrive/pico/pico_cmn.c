@@ -362,11 +362,6 @@ static int PicoFrameHints(void)
   return 0;
 }
 
-static void local_PicoFrameFull(void)
-{
-  PicoFrameHints();
-}
-
 #undef CPUS_RUN
 
 // vim:shiftwidth=2:ts=2:expandtab

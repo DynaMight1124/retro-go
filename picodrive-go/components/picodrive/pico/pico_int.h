@@ -907,6 +907,7 @@ PICO_INTERNAL void SekUnpackCpu(const unsigned char *cpu, int is_sub);
 void SekStepM68k(void);
 void SekInitIdleDet(void);
 void SekFinishIdleDet(void);
+int  SekIdlePatchCount(void);
 #if defined(CPU_CMP_R) || defined(CPU_CMP_W)
 void SekTrace(int is_s68k);
 #else
@@ -1236,10 +1237,15 @@ do { \
 
 // profiling
 #ifdef PPROF
+#ifdef ESP_PLATFORM
+#include <platform/retro-go/pprof.h>
+#else
 #include <platform/linux/pprof.h>
+#endif
 #else
 #define pprof_init()
 #define pprof_finish()
+#define pprof_reset()
 #define pprof_start(x)
 #define pprof_end(...)
 #define pprof_end_sub(...)

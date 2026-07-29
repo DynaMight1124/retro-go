@@ -130,31 +130,29 @@ int flac_decoder_reset(flac_decoder* decoder, uint32_t sample_rate, uint8_t num_
 
 int flac_decoder_decode_interleaved(flac_decoder* decoder, int16_t *samples, uint32_t num_samples, int swap_endian)
 {
-	/* configure the uncompressed buffer */
-	memset(decoder->uncompressed_start, 0, sizeof(decoder->uncompressed_start));
-	decoder->uncompressed_start[0] = samples;
-	decoder->uncompressed_offset = 0;
-	decoder->uncompressed_length = num_samples;
-	decoder->uncompressed_swap = swap_endian;
+	uint64_t decoded;
 
-#define	BUFFER	2352	/* bytes per CD audio sector */
-	uint32_t buf_samples = BUFFER / channels(decoder);
-	/* loop until we get everything we want */
-	int16_t *buffer = malloc(BUFFER * sizeof(int16_t));
-	if (!buffer) return 0;
-	
-	int result = 1;
-	while (decoder->uncompressed_offset < decoder->uncompressed_length) {
-		uint32_t frames = (num_samples < buf_samples ? num_samples : buf_samples);
-		if (!drflac_read_pcm_frames_s16(decoder->decoder, frames, buffer)) {
-			result = 0;
-			break;
+	/*
+	 * dr_flac already produces interleaved signed 16-bit PCM. Decode directly
+	 * into libchdr's hunk buffer instead of allocating a temporary buffer and
+	 * copying it out in sector-sized pieces. CHD's requested byte order is
+	 * retained by applying the same 16-bit swap in place afterwards.
+	 */
+	decoded = drflac_read_pcm_frames_s16(decoder->decoder, num_samples, samples);
+	if (decoded != num_samples)
+		return 0;
+
+	if (swap_endian) {
+		uint32_t i;
+		uint32_t sample_count = num_samples * channels(decoder);
+
+		for (i = 0; i < sample_count; i++) {
+			uint16_t sample = (uint16_t)samples[i];
+			samples[i] = (int16_t)((sample << 8) | (sample >> 8));
 		}
-		flac_decoder_write_callback(decoder, buffer, frames*sizeof(*buffer)*channels(decoder));
-		num_samples -= frames;
 	}
-	free(buffer);
-	return result;
+
+	return 1;
 }
 
 /*-------------------------------------------------

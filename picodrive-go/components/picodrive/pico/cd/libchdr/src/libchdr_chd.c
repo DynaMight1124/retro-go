@@ -47,6 +47,12 @@
 #include <libchdr/cdrom.h>
 #include <libchdr/flac.h>
 #include <libchdr/huffman.h>
+#ifdef PPROF
+#include <pprof.h>
+#else
+#define pprof_start(point)
+#define pprof_end(point)
+#endif
 #include <zstd.h>
 
 #include "LzmaEnc.h"
@@ -3272,7 +3278,12 @@ static UINT64 core_stdio_fsize(core_file *file) {
 	core_stdio_fread - core_file wrapper over fread
 -------------------------------------------------*/
 static size_t core_stdio_fread(void *ptr, size_t size, size_t nmemb, core_file *file) {
-	return fread(ptr, size, nmemb, (FILE*)file->argp);
+	size_t result;
+
+	pprof_start(chd_io);
+	result = fread(ptr, size, nmemb, (FILE*)file->argp);
+	pprof_end(chd_io);
+	return result;
 }
 
 /*-------------------------------------------------

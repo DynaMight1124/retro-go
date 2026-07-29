@@ -62,6 +62,8 @@ void pcd_pcm_sync(unsigned int to)
   if ((int)(to - cycles) < 384)
     return;
 
+  pprof_start(pcm_gen);
+
   steps = DIVQ32(to - cycles, 384);
   if (Pico_mcd->pcm_mixpos + steps > PCM_MIXBUF_LEN)
     // shouldn't happen, but occasionally does
@@ -119,44 +121,62 @@ void pcd_pcm_sync(unsigned int to)
 end:
   Pico_mcd->pcm.update_cycles = cycles + steps * 384;
   Pico_mcd->pcm_mixpos += steps;
+  pprof_end(pcm_gen);
 }
 
 void pcd_pcm_update(s32 *buf32, int length, int stereo)
 {
-  int step, *pcm;
-  int p = 0;
+  int source_len, step, *pcm;
+  unsigned int p = 0;
 
   pcd_pcm_sync(SekCyclesDoneS68k());
 
   if (!Pico_mcd->pcm_mixbuf_dirty || !(PicoIn.opt & POPT_EN_MCD_PCM) || !buf32)
     goto out;
 
-  step = (Pico_mcd->pcm_mixpos << 16) / length;
+  source_len = Pico_mcd->pcm_mixpos;
+  if (source_len <= 0 || length <= 0)
+    goto out;
+
+  pprof_start(pcm_mix);
+
+  step = (source_len << 16) / length;
   pcm = Pico_mcd->pcm_mixbuf;
 
+  // The RF5C164 produces roughly 32.5kHz PCM. Linear interpolation avoids the
+  // stair-step distortion of nearest-neighbour conversion. An 8-bit fraction
+  // keeps this cheap enough for embedded targets while providing ample
+  // interpolation precision.
   if (stereo) {
     while (length-- > 0) {
-      *buf32++ += pcm[0];
-      *buf32++ += pcm[1];
+      unsigned int pos = p >> 16;
+      unsigned int next = pos + 1 < (unsigned int)source_len ? pos + 1 : pos;
+      unsigned int frac = (p >> 8) & 0xff;
+      int l = pcm[pos * 2];
+      int r = pcm[pos * 2 + 1];
 
+      *buf32++ += l + ((pcm[next * 2] - l) * (int)frac >> 8);
+      *buf32++ += r + ((pcm[next * 2 + 1] - r) * (int)frac >> 8);
       p += step;
-      pcm += (p >> 16) * 2;
-      p &= 0xffff;
     }
   }
   else {
     while (length-- > 0) {
-      // mostly unused
-      *buf32++ += (pcm[0] + pcm[1]) >> 1;
+      unsigned int pos = p >> 16;
+      unsigned int next = pos + 1 < (unsigned int)source_len ? pos + 1 : pos;
+      unsigned int frac = (p >> 8) & 0xff;
+      int cur = (pcm[pos * 2] + pcm[pos * 2 + 1]) >> 1;
+      int following = (pcm[next * 2] + pcm[next * 2 + 1]) >> 1;
 
+      *buf32++ += cur + ((following - cur) * (int)frac >> 8);
       p += step;
-      pcm += (p >> 16) * 2;
-      p &= 0xffff;
     }
   }
 
   memset(Pico_mcd->pcm_mixbuf, 0,
     Pico_mcd->pcm_mixpos * 2 * sizeof(Pico_mcd->pcm_mixbuf[0]));
+
+  pprof_end(pcm_mix);
 
 out:
   Pico_mcd->pcm_mixbuf_dirty = 0;

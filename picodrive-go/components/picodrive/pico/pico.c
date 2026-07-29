@@ -13,6 +13,12 @@
 #include "sound/ym2612.h"
 #include "sound/vgm.h"
 
+#if defined(CONFIG_IDF_TARGET_ESP32)
+#define PICO_MEMORY_CAPS MEM_SLOW
+#else
+#define PICO_MEMORY_CAPS MEM_FAST
+#endif
+
 typedef void (*opcode_func)(M68K_CONTEXT *ctx);
 extern opcode_func *JumpTable;
 
@@ -37,26 +43,27 @@ void (*PicoLineHook)(void) = NULL;
 // to be called once on emu init
 void PicoInit(void)
 {
-  RG_LOGI("PicoInit: Allocating core tables in PSRAM...\n");
+  RG_LOGI("PicoInit: Allocating core tables...\n");
   if (!JumpTable) 
     JumpTable = rg_alloc(0x10000 * sizeof(void *), MEM_SLOW);
   if (!ym_tl_tab)
-    ym_tl_tab = rg_alloc(106496 * 2 * sizeof(UINT16), MEM_SLOW);
+    // TL_TAB_LEN is 106496 uint16_t entries (the old expression doubled it).
+    ym_tl_tab = rg_alloc(106496 * sizeof(UINT16), MEM_SLOW);
   if (!ym_tl_tab2)
     ym_tl_tab2 = rg_alloc(13 * 256 * sizeof(UINT16), MEM_SLOW);
   if (!PicoMem_ptr)
-    PicoMem_ptr = rg_alloc(sizeof(struct PicoMemory), MEM_SLOW);
+    PicoMem_ptr = rg_alloc(sizeof(struct PicoMemory), PICO_MEMORY_CAPS);
 
   // Allocate VDP Caches
-  if (!HighCacheA) HighCacheA = rg_alloc((41*2+1) * sizeof(u32), MEM_SLOW);
-  if (!HighCacheB) HighCacheB = rg_alloc((41*2+1) * sizeof(u32), MEM_SLOW);
-  if (!HighPreSpr) HighPreSpr = rg_alloc((128*2*2) * sizeof(s32), MEM_SLOW);
-  if (!VdpSATCache_ptr) VdpSATCache_ptr = rg_alloc(2*128 * sizeof(u32), MEM_SLOW);
-  if (!HighLnSpr) HighLnSpr = rg_alloc(240 * 32, MEM_SLOW);
+  if (!HighCacheA) HighCacheA = rg_alloc((41*2+1) * sizeof(u32), MEM_FAST);
+  if (!HighCacheB) HighCacheB = rg_alloc((41*2+1) * sizeof(u32), MEM_FAST);
+  if (!HighPreSpr) HighPreSpr = rg_alloc((128*2*2) * sizeof(s32), MEM_FAST);
+  if (!VdpSATCache_ptr) VdpSATCache_ptr = rg_alloc(2*128 * sizeof(u32), MEM_FAST);
+  if (!HighLnSpr) HighLnSpr = rg_alloc(240 * 32, MEM_FAST);
 
   if (!JumpTable || !ym_tl_tab || !ym_tl_tab2 || !PicoMem_ptr || 
       !HighCacheA || !HighCacheB || !HighPreSpr || !VdpSATCache_ptr || !HighLnSpr)
-    RG_PANIC("Failed to allocate core tables in PSRAM!");
+    RG_PANIC("Failed to allocate core tables!");
 
   // Blank space for state:
   memset(&Pico,0,sizeof(Pico));
@@ -125,7 +132,6 @@ void PicoPower(void)
   if (PicoIn.opt & POPT_EN_32X)
     PicoPower32x();
 
-  PicoIn.opt |= POPT_DIS_IDLE_DET; // Force idle detection OFF for stability
   PicoReset();
 
   // powerup default VDP register values from TMSS BIOS

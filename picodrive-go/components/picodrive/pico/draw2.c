@@ -748,7 +748,9 @@ void PicoDraw2SetOutBuf(void *dest, int incr)
 
 void PicoDraw2Init(void)
 {
+#ifndef ESP_PLATFORM
 	if (!PicoDraw2FB_) PicoDraw2FB_ = rg_alloc(328 * 240, MEM_FAST);
 	if (!PicoDraw2FB_) PicoDraw2FB_ = rg_alloc(328 * 240, MEM_SLOW);
+#endif
 	PicoDraw2SetOutBuf(NULL, 0);
 }

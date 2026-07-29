@@ -732,6 +732,7 @@ int io_ports_pack(void *buf, size_t size)
 
 void io_ports_unpack(const void *buf, size_t size)
 {
+  u32 cycles;
   size_t b, i;
   memcpy(PicoMem.ioports, buf, (b = sizeof(PicoMem.ioports)));
   for (i = 0; i < ARRAY_SIZE(Pico.m.padTHPhase); i++)
@@ -753,6 +754,24 @@ void io_ports_unpack(const void *buf, size_t size)
       padTHTimeout[i] = load_u32(buf, &b);
     else
       padTHTimeout[i] = SekCyclesDone() - (25-Pico.m.padDelay[i]) * 488;
+  }
+
+  /*
+   * The main CPU cycle counter is not serialized. On a cold state load the
+   * saved controller line-transition deadlines can consequently appear far
+   * in the future and hold TH/TL in the wrong state indefinitely. Genuine
+   * line delays are at most 100 cycles, so only discard an impossible
+   * timeline; an in-process load keeps its controller protocol state.
+   */
+  cycles = SekCyclesDone();
+  for (i = 0; i < ARRAY_SIZE(padTHLatency); i++) {
+    if (CYCLES_GT(padTHLatency[i], cycles + 1000) ||
+        CYCLES_GT(padTLLatency[i], cycles + 1000)) {
+      io_ports_reset();
+      memset(Pico.m.padTHPhase, 0, sizeof(Pico.m.padTHPhase));
+      memset(Pico.m.padDelay, 0, sizeof(Pico.m.padDelay));
+      break;
+    }
   }
 
   assert(b <= size);

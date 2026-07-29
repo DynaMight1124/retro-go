@@ -92,11 +92,18 @@ else()
     set(CD_DEFINES "-DNO_CD")
 endif()
 
+if(PICODRIVE_GO_PROFILE_LEVEL GREATER_EQUAL 2)
+    list(APPEND COMPONENT_SRCS
+        ${PICO_DIR}/platform/retro-go/pprof.c
+    )
+endif()
+
 set(COMPONENT_REQUIRES "retro-go")
 
 idf_component_register(SRCS "${COMPONENT_SRCS}"
                        INCLUDE_DIRS "${COMPONENT_ADD_INCLUDEDIRS}"
-                       REQUIRES "${COMPONENT_REQUIRES}")
+                       REQUIRES "${COMPONENT_REQUIRES}"
+                       PRIV_REQUIRES esp_hw_support)
 
 # These defines are critical to enable the logic in draw.c, sound.c and pico_cmn.c
 add_definitions(
@@ -109,6 +116,13 @@ add_definitions(
     -DPICODRIVE_HACKS
     -DEL_LOG_CONTENTS=0
 )
+
+if(PICODRIVE_GO_PROFILE_LEVEL GREATER_EQUAL 2)
+    add_definitions(
+        -DPPROF
+        -DPPROF_LEVEL=${PICODRIVE_GO_PROFILE_LEVEL}
+    )
+endif()
 
 set(PICO_COMPILE_OPTIONS 
     -O3 

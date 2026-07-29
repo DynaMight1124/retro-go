@@ -354,7 +354,9 @@ static size_t _pm_read_chd(void *ptr, size_t bytes, pm_file *stream, int is_audi
 
       // update hunk cache if needed
       if (hunknum != chd->hunknum) {
+        pprof_start(chd_hunk);
         chd_read(chd->chd, hunknum, chd->hunk);
+        pprof_end(chd_hunk);
         chd->hunknum = hunknum;
       }
       if (len > bytes)
@@ -367,10 +369,12 @@ static size_t _pm_read_chd(void *ptr, size_t bytes, pm_file *stream, int is_audi
         u8 *src = chd->hunk + hunkofs + offset;
         int i;
 
+        pprof_start(chd_audio_copy);
         for (i = 0; i < len; i += 4) {
           v = *src++ << 8; *dst++ = v | *src++;
           v = *src++ << 8; *dst++ = v | *src++;
         }
+        pprof_end(chd_audio_copy);
       } else
 #endif
         memcpy(ptr, chd->hunk + hunkofs + offset, len);

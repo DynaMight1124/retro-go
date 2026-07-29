@@ -155,6 +155,50 @@ static void ogg_free(int i)
 
 static off_t read_pos = -1;
 
+/*
+ * Separate uncompressed CUE tracks are opened on demand. This avoids holding
+ * one VFS descriptor per audio track while leaving single-file images, CHD,
+ * MP3 and OGG handling unchanged.
+ */
+static int cdd_open_pcm_track(int index)
+{
+  track_t *track;
+  int i;
+
+  if (index <= 0 || index >= cdd.toc.last)
+    return 0;
+
+  track = &cdd.toc.tracks[index];
+  if (track->fd != NULL || track->fname == NULL ||
+      (track->type != CT_RAW && track->type != CT_WAV))
+    return track->fd != NULL;
+
+  /* Only one separate PCM audio file needs to be open at a time. */
+  for (i = 1; i < cdd.toc.last; i++)
+  {
+    track_t *old = &cdd.toc.tracks[i];
+
+    if (i != index && old->fd != NULL && old->fname != NULL &&
+        (old->type == CT_RAW || old->type == CT_WAV))
+    {
+      if (Pico_mcd != NULL && Pico_mcd->cdda_stream == old->fd)
+        Pico_mcd->cdda_stream = NULL;
+      pm_close(old->fd);
+      old->fd = NULL;
+    }
+  }
+
+  track->fd = pm_open(track->fname);
+  if (track->fd == NULL)
+  {
+    elprintf(EL_STATUS, "track %2i (%s): can't open audio",
+      index + 1, track->fname);
+    return 0;
+  }
+
+  return 1;
+}
+
 void cdd_reset(void)
 {
   /* stop audio streaming */
@@ -191,6 +235,13 @@ void cdd_reset(void)
 void cdd_play_audio(int index, int lba)
 {
   int i, base, lba_offset, lb_len;
+
+  if (is_audio(index) && cdd.toc.tracks[index].fname != NULL &&
+      !cdd_open_pcm_track(index))
+  {
+    Pico_mcd->cdda_stream = NULL;
+    return;
+  }
 
   for (i = index; i >= 0; i--)
     if (cdd.toc.tracks[i].fd != NULL)
@@ -496,6 +547,8 @@ int cdd_unload(void)
 #endif
       if (cdd.toc.tracks[i].fd)
       {
+        void *closed_fd = cdd.toc.tracks[i].fd;
+
         /* close file */
         if (cdd.toc.tracks[i].type == CT_MP3)
           fclose(cdd.toc.tracks[i].fd);
@@ -504,17 +557,23 @@ int cdd_unload(void)
         else
           pm_close(cdd.toc.tracks[i].fd);
         cdd.toc.tracks[i].fd = NULL;
-        if (cdd.toc.tracks[i].fname)
-          free(cdd.toc.tracks[i].fname);
-        cdd.toc.tracks[i].fname = NULL;
 
         /* detect single file images */
-        if (cdd.toc.tracks[i+1].fd == cdd.toc.tracks[i].fd)
+        if (cdd.toc.tracks[i+1].fd == closed_fd)
         {
+          if (cdd.toc.tracks[i].fname)
+            free(cdd.toc.tracks[i].fname);
+          cdd.toc.tracks[i].fname = NULL;
+
           /* exit loop */
           i = cdd.toc.last;
+          continue;
         }
       }
+
+      if (cdd.toc.tracks[i].fname)
+        free(cdd.toc.tracks[i].fname);
+      cdd.toc.tracks[i].fname = NULL;
     }
 
     /* CD unloaded */
@@ -725,7 +784,7 @@ void cdd_read_audio(unsigned int samples)
 void cdd_update(void)
 {
 #ifdef LOG_CDD
-  error("LBA = %d (track n°%d)(latency=%d)\n", cdd.lba, cdd.index, cdd.latency);
+  error("LBA = %d (track nÂ°%d)(latency=%d)\n", cdd.lba, cdd.index, cdd.latency);
 #endif
   
   /* update decoder, depending on track type */

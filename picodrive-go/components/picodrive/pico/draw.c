@@ -137,12 +137,44 @@ void blockcpy_or(void *dst, void *src, size_t n, int pat);
 void blockcpy_or(void *dst, void *src, size_t n, int pat)
 {
   unsigned char *pd = dst, *ps = src;
-  if (dst > src) {
+
+  pprof_start(vdp_orcopy);
+
+  /*
+   * Mid-frame palette changes select one of the backed-up palettes by ORing
+   * its index into every pixel. ESP surfaces and PicoDrive scanlines are
+   * naturally word aligned, and their 256/320-pixel active widths are word
+   * sized. Handle that common path four pixels at a time while retaining the
+   * original overlap-safe byte path for unusual alignments and widths.
+   */
+  if ((((uptr)pd | (uptr)ps | n) & 3) == 0) {
+    typedef u32 alias_u32 __attribute__((may_alias));
+    alias_u32 *pd32 = (alias_u32 *)pd;
+    alias_u32 *ps32 = (alias_u32 *)ps;
+    size_t words = n >> 2;
+    u32 pat32 = (unsigned char)pat * 0x01010101u;
+
+    if ((uptr)pd > (uptr)ps) {
+      pd32 += words;
+      ps32 += words;
+      while (words--)
+        *--pd32 = *--ps32 | pat32;
+    } else {
+      while (words--)
+        *pd32++ = *ps32++ | pat32;
+    }
+    goto out;
+  }
+
+  if ((uptr)pd > (uptr)ps) {
     for (pd += n, ps += n; n; n--)
       *--pd = (unsigned char) (*--ps | pat);
   } else
     for (; n; n--)
       *pd++ = (unsigned char) (*ps++ | pat);
+
+out:
+  pprof_end(vdp_orcopy);
 }
 #define blockcpy memmove
 #endif
@@ -185,6 +217,16 @@ TileNormMaker_(pix_func,)
 static void funcname(unsigned char *pd, unsigned int pack, unsigned char pal) \
 TileFlipMaker_(pix_func,)
 
+#define TileNormMakerInline(funcname, pix_func) \
+static __attribute__((always_inline)) inline void \
+funcname(unsigned char *pd, unsigned int pack, unsigned char pal) \
+TileNormMaker_(pix_func,)
+
+#define TileFlipMakerInline(funcname, pix_func) \
+static __attribute__((always_inline)) inline void \
+funcname(unsigned char *pd, unsigned int pack, unsigned char pal) \
+TileFlipMaker_(pix_func,)
+
 #define TileNormMakerAS(funcname, pix_func) \
 static unsigned funcname(unsigned m, unsigned char *pd, unsigned int pack, unsigned char pal) \
 TileNormMaker_(pix_func,m)
@@ -199,6 +241,8 @@ TileFlipMaker_(pix_func,m)
 
 TileNormMaker(TileNorm, pix_just_write)
 TileFlipMaker(TileFlip, pix_just_write)
+TileNormMakerInline(TileNormInline, pix_just_write)
+TileFlipMakerInline(TileFlipInline, pix_just_write)
 
 #ifndef _ASM_DRAW_C
 
@@ -328,8 +372,8 @@ TileFlipMakerAS(TileFlipSH_AS_and, pix_sh_as_and)
   } else {								\
     if (cache) lflags |= LF_LPRIO;					\
     if (pack&mask) {							\
-      if (code & 0x0800) TileFlip(pd + dx, pack&mask, pal);		\
-      else               TileNorm(pd + dx, pack&mask, pal);		\
+      if (code & 0x0800) TileFlipInline(pd + dx, pack&mask, pal);	\
+      else               TileNormInline(pd + dx, pack&mask, pal);	\
     }									\
   }									\
 }
@@ -1657,6 +1701,7 @@ static int DrawDisplay(int sh)
     }
   }
 
+  pprof_start(vdp_planes_lo);
   /* - layer B low - */
   if (!(pvid->debug_p & PVD_KILL_B)) {
     lflags = LF_PLANE_B | (sh<<1);
@@ -1674,6 +1719,9 @@ static int DrawDisplay(int sh)
   }
   else
     DrawLayer(lflags | LF_LINE, HighCacheA, 0, maxcells, est);
+  pprof_end(vdp_planes_lo);
+
+  pprof_start(vdp_sprites_lo);
   /* - sprites low - */
   if (pvid->debug_p & PVD_KILL_S_LO)
     ;
@@ -1681,7 +1729,9 @@ static int DrawDisplay(int sh)
     DrawAllSpritesInterlace(0, sh);
   else if (sprited[1] & SPRL_HAVE_LO)
     DrawAllSprites(sprited, 0, sh, est);
+  pprof_end(vdp_sprites_lo);
 
+  pprof_start(vdp_planes_hi);
   /* - layer B hi - */
   if (!(pvid->debug_p & PVD_KILL_B) && HighCacheB[0])
     DrawTilesFromCache(HighCacheB, sh, maxw, est);
@@ -1697,6 +1747,9 @@ static int DrawDisplay(int sh)
   } else
     if (HighCacheA[0])
       DrawTilesFromCache(HighCacheA, sh, maxw, est);
+  pprof_end(vdp_planes_hi);
+
+  pprof_start(vdp_sprites_hi);
   /* - sprites hi - */
   if (pvid->debug_p & PVD_KILL_S_HI)
     ;
@@ -1709,6 +1762,7 @@ static int DrawDisplay(int sh)
     DrawSpritesSHi(sprited, est);
   else if (sprited[1] & SPRL_HAVE_HI)
     DrawAllSprites(sprited, 1, 0, est);
+  pprof_end(vdp_sprites_hi);
 
 #ifdef FORCE
   if (pvid->debug_p & PVD_FORCE_B) {
@@ -1818,8 +1872,11 @@ static void DrawBlankedLine(int line, int offs, int sh, int bgc)
 
   BackFill(bgc, sh, est);
 
-  if (FinalizeLine != NULL)
+  if (FinalizeLine != NULL) {
+    pprof_start(vdp_finish);
     FinalizeLine(sh, line, est);
+    pprof_end(vdp_finish);
+  }
 
   if (PicoScanEnd != NULL)
     skip_next_line = PicoScanEnd(line + offs);
@@ -1849,7 +1906,9 @@ static void PicoLine(int line, int offs, int sh, int bgc, int off, int on)
   BackFill(bgc, sh, est);
   if (est->Pico->video.reg[1]&0x40) {
     int width = (est->Pico->video.reg[12]&1) ? 320 : 256;
+    pprof_start(vdp_scene);
     DrawDisplay(sh);
+    pprof_end(vdp_scene);
     // partial line blanking (display on or off inside the line)
     if (unlikely(off|on)) {
       if (off > 0)
@@ -1859,8 +1918,11 @@ static void PicoLine(int line, int offs, int sh, int bgc, int off, int on)
     }
   }
 
-  if (FinalizeLine != NULL)
+  if (FinalizeLine != NULL) {
+    pprof_start(vdp_finish);
     FinalizeLine(sh, line, est);
+    pprof_end(vdp_finish);
+  }
 
   if (PicoScanEnd != NULL)
     skip_next_line = PicoScanEnd(line + offs);
@@ -1891,7 +1953,7 @@ void PicoDrawSync(int to, int off, int on)
     est->HighCol += count*HighColIncrement;
     est->DrawLineDest = (char *)est->DrawLineDest + count*DrawLineDestIncrement;
     est->DrawScanline = to+1;
-    return;
+    goto out;
   }
 
   for (line = est->DrawScanline; line < to; line++)
@@ -1914,6 +1976,7 @@ void PicoDrawSync(int to, int off, int on)
   }
   est->DrawScanline = line;
 
+out:
   pprof_end(draw);
 }
 

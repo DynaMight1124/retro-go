@@ -294,7 +294,9 @@ PICO_INTERNAL void PsndDoPSG(int cyc_to)
     stereo = 1;
     pos <<= 1;
   }
+  pprof_start(psg);
   SN76496Update(PicoIn.sndOut + pos, len, stereo);
+  pprof_end(psg);
 }
 
 PICO_INTERNAL void PsndDoSMSFM(int cyc_to)
@@ -363,8 +365,11 @@ PICO_INTERNAL void PsndDoFM(int cyc_to)
     stereo = 1;
     pos <<= 1;
   }
-  if (PicoIn.opt & POPT_EN_FM)
+  if (PicoIn.opt & POPT_EN_FM) {
+    pprof_start(fm);
     PsndFMUpdate(PsndBuffer + pos, len, stereo, 1);
+    pprof_end(fm);
+  }
 }
 
 PICO_INTERNAL void PsndDoPCM(int cyc_to)
@@ -411,13 +416,16 @@ static void cdda_raw_update(s32 *buffer, int length, int stereo)
   while (Pico_mcd->m.cdda_lba_offset >= 2352/4)
     Pico_mcd->m.cdda_lba_offset -= 2352/4;
 
+  pprof_start(cdda_read);
   ret = pm_read_audio(cdda_out_buffer, cdda_bytes, Pico_mcd->cdda_stream);
+  pprof_end(cdda_read);
   if (ret < cdda_bytes) {
     memset((char *)cdda_out_buffer + ret, 0, cdda_bytes - ret);
     Pico_mcd->cdda_stream = NULL;
   }
 
   // now mix
+  pprof_start(cdda_mix);
   if (stereo) switch (Pico.snd.cdda_mult) {
     case 0x10000: mix_16h_to_32(buffer, cdda_out_buffer, length*2);     break;
     case 0x20000: mix_16h_to_32_s1(buffer, cdda_out_buffer, length*2);  break;
@@ -425,6 +433,7 @@ static void cdda_raw_update(s32 *buffer, int length, int stereo)
     default: mix_16h_to_32_resample_stereo(buffer, cdda_out_buffer, length, Pico.snd.cdda_mult);
   } else
     mix_16h_to_32_resample_mono(buffer, cdda_out_buffer, length, Pico.snd.cdda_mult);
+  pprof_end(cdda_mix);
 }
 
 void cdda_start_play(int lba_base, int lba_offset, int lb_len)
@@ -501,15 +510,18 @@ static int PsndRender(int offset, int length)
   if (length-psglen > 0 && PicoIn.sndOut) {
     s16 *psgbuf = PicoIn.sndOut + (psglen << stereo);
     Pico.snd.psg_pos += (length-psglen) << 20;
-    if (PicoIn.opt & POPT_EN_PSG)
+    if (PicoIn.opt & POPT_EN_PSG) {
+      pprof_start(psg);
       SN76496Update(psgbuf, length-psglen, stereo);
+      pprof_end(psg);
+    }
   }
 
   if (PicoIn.AHW & PAHW_PICO) {
     // always need to render sound for interrupts
     s16 *buf16 = PicoIn.sndOut ? PicoIn.sndOut + (pcmlen<<stereo) : NULL;
     PicoPicoPCMUpdate(buf16, length-pcmlen, stereo);
-    return length;
+    goto out;
   }
 
   // Fill up DAC output in case of missing samples (Q rounding errors)
@@ -537,8 +549,11 @@ static int PsndRender(int offset, int length)
   if (length-fmlen > 0 && PicoIn.sndOut) {
     s32 *fmbuf = buf32 + ((fmlen-offset) << stereo);
     Pico.snd.fm_pos += (length-fmlen) << 20;
-    if (PicoIn.opt & POPT_EN_FM)
+    if (PicoIn.opt & POPT_EN_FM) {
+      pprof_start(fm);
       PsndFMUpdate(fmbuf, length-fmlen, stereo, 1);
+      pprof_end(fm);
+    }
   }
 
   // CD: PCM sound
@@ -552,21 +567,27 @@ static int PsndRender(int offset, int length)
       && Pico_mcd->cdda_stream != NULL
       && (!(Pico_mcd->s68k_regs[0x36] & 1) || Pico_msd.state == 3))
   {
+    pprof_start(cdda);
     if (Pico_mcd->cdda_type == CT_MP3)
       mp3_update(buf32, length-offset, stereo);
     else if (Pico_mcd->cdda_type == CT_OGG)
       ogg_update(buf32, length-offset, stereo);
     else
       cdda_raw_update(buf32, length-offset, stereo);
+    pprof_end(cdda);
   }
 
   if ((PicoIn.AHW & PAHW_32X) && (PicoIn.opt & POPT_EN_PWM))
     p32x_pwm_update(buf32, length-offset, stereo);
 
   // convert + limit to normal 16bit output
-  if (PicoIn.sndOut)
+  if (PicoIn.sndOut) {
+    pprof_start(mix);
     PsndMix_32_to_16(PicoIn.sndOut+(offset<<stereo), buf32, length-offset);
+    pprof_end(mix);
+  }
 
+out:
   pprof_end(sound);
 
   return length;

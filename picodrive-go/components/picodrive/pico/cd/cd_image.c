@@ -192,10 +192,15 @@ int load_cd_image(const char *cd_img_name, int *type)
         if (f != NULL)
         {
           // assume raw, ignore header for wav..
-          tracks[index].fd = f;
           tracks[index].fname = strdup(cue_data->tracks[n].fname);
           tracks[index].offset = cue_data->tracks[n].sector_offset;
           length = f->size / 2352;
+          /*
+           * Separate CUE tracks can easily exceed the small VFS descriptor
+           * limit on embedded targets. Keep their names and lengths, then
+           * open only the active PCM track from cdd_seek().
+           */
+          pm_close(f);
         }
         else
         {
