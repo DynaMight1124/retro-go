@@ -716,7 +716,7 @@ void level_get_state(void *dest) {
 }
 
 void level_set_state(const void *src) {
-    LevelState *s = (LevelState *)src;
+    const LevelState *s = (const LevelState *)src;
     memcpy(objects, s->objects, sizeof(objects));
     total_strawberries = s->total_strawberries;
     collected_strawberries = s->collected_strawberries;

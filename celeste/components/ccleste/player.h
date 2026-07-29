@@ -73,6 +73,9 @@ void player_set_max_dashes(int max_dashes);
 /* Get hair color based on dash state and frame */
 int player_hair_color(int frame_count);
 
+/* Synchronize edge-triggered controls after a reset or state load. */
+void player_sync_input_latches(void);
+
 /* Save State Support */
 size_t player_get_state_size(void);
 void player_get_state(void *dest);

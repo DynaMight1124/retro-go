@@ -32,6 +32,8 @@ extern void psfx(int id);
 
 /* Global player instance */
 static Player p;
+static bool jump_was_held = false;
+static bool dash_was_held = false;
 
 /* === MATH UTILS === */
 
@@ -181,12 +183,10 @@ bool player_update(int frame_count) {
     bool k_dash  = input_dash();
 
     /* Input buffering */
-    static bool p_jump = false;
-    static bool p_dash = false;
-    bool jump_pressed = k_jump && !p_jump;
-    bool dash_pressed = k_dash && !p_dash;
-    p_jump = k_jump;
-    p_dash = k_dash;
+    bool jump_pressed = k_jump && !jump_was_held;
+    bool dash_pressed = k_dash && !dash_was_held;
+    jump_was_held = k_jump;
+    dash_was_held = k_dash;
 
     int dir_x = (k_right ? 1 : 0) - (k_left ? 1 : 0);
     int dir_y = (k_down ? 1 : 0) - (k_up ? 1 : 0);
@@ -384,6 +384,11 @@ void player_draw(int cam_x, int cam_y, int frame_count) {
 }
 
 /* === SAVE STATE SUPPORT === */
+
+void player_sync_input_latches(void) {
+    jump_was_held = input_jump();
+    dash_was_held = input_dash();
+}
 
 size_t player_get_state_size(void) {
     return sizeof(Player);

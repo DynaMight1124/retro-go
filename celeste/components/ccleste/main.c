@@ -12,7 +12,6 @@
 #include <rg_system.h>
 
 /* === CONFIGURATION === */
-#define TARGET_FPS       30
 #define START_LVL_IDX    0
 #define SHOW_DEBUG       0
 
@@ -21,6 +20,12 @@
 #define COL_WHITE 7
 
 static int sfx_timer = 0;
+static int video_skip_frames = 0;
+static int gameplay_tick_accumulator = 0;
+static bool teleport_was_held = false;
+static bool restart_was_held = false;
+
+extern int celeste_get_gameplay_speed(void);
 
 void psfx(int id) {
     if (sfx_timer <= 0) {
@@ -120,8 +125,12 @@ static void game_init(void) {
     g.start_game_flash = 0;
     g.max_y = 99999;
     title_frames = 0;
+    memorial_idx = 0;
     alt_shown = -1;
     alt_timer = 0;
+    alt_fall_y = 0;
+    alt_fall_spd = 0;
+    alt_text[0] = '\0';
     audio_music_play(40, 0);
 }
 
@@ -181,10 +190,9 @@ static void update_game(void) {
     const Player* p = player_get();
 
     /* Input Debug */
-    static bool p_teleport = false;
     bool k_teleport = input_teleport();
 
-    if (k_teleport && !p_teleport) {
+    if (k_teleport && !teleport_was_held) {
         g.respawn_idx = (g.respawn_idx + 1) % NUM_CHECKPOINTS;
         float px = checkpoints[g.respawn_idx].x * 8;
         float py = checkpoints[g.respawn_idx].y * 8;
@@ -192,7 +200,7 @@ static void update_game(void) {
         player_respawn(px, py);
         g.max_y = (int)py;
     }
-    p_teleport = k_teleport;
+    teleport_was_held = k_teleport;
 
     if (g.mode == MODE_PLAY) {
         /* Timer (freeze once flag is reached) */
@@ -243,18 +251,17 @@ static void update_game(void) {
 
         /* Restart from victory */
         if (g.victory_flag) {
-            static bool p_restart = false;
             bool k_restart = input_restart();
-            if (k_restart && !p_restart) {
+            if (k_restart && !restart_was_held) {
                 level_init();
                 vfx_init();
                 game_init();
                 memorial_idx = 0;
                 begin_game();
-                p_restart = false;
+                restart_was_held = false;
                 return;
             }
-            p_restart = k_restart;
+            restart_was_held = k_restart;
         }
     }
 }
@@ -315,7 +322,7 @@ static const uint8_t logo_sprites[4][7] = {
     {121, 122, 123, 124, 125, 126, 127},
 };
 
-static void draw_title(void) {
+static int draw_title(bool *display_late) {
     gfx_clear(0);
 
     /* Start-game flash: palette fade */
@@ -360,10 +367,10 @@ static void draw_title(void) {
     }
 
     gfx_pal_reset();
-    gfx_flip();
+    return gfx_flip(display_late);
 }
 
-static void draw_game(void) {
+static int draw_game(bool *display_late) {
     const Player* p = player_get();
 
     gfx_clear(COL_BLACK);
@@ -454,7 +461,51 @@ static void draw_game(void) {
     gfx_print_num(30,2, (int)p->y/8, 6);
 #endif
 
-    gfx_flip();
+    return gfx_flip(display_late);
+}
+
+static void sync_runtime_after_load(void) {
+    rg_app_t *app = rg_system_get_app();
+    if (app && app->speed == 1.0f)
+        app->frameskip = 0;
+
+    video_skip_frames = 0;
+    gameplay_tick_accumulator = 0;
+    sfx_timer = 0;
+    input_sync();
+    player_sync_input_latches();
+    teleport_was_held = input_teleport();
+    restart_was_held = input_restart();
+
+    audio_stop_all();
+    audio_music_play(g.mode == MODE_TITLE ? 40 : 0, 0);
+}
+
+void celeste_after_state_load(void) {
+    sync_runtime_after_load();
+}
+
+bool celeste_reset(bool hard) {
+    (void)hard;
+
+    audio_stop_all();
+    level_init();
+    vfx_init();
+    game_init();
+
+    video_skip_frames = 0;
+    gameplay_tick_accumulator = 0;
+    sfx_timer = 0;
+    input_sync();
+    player_sync_input_latches();
+    teleport_was_held = input_teleport();
+    restart_was_held = input_restart();
+
+    rg_app_t *app = rg_system_get_app();
+    if (app && app->speed == 1.0f)
+        app->frameskip = 0;
+
+    return true;
 }
 
 int celeste_game_main(int argc, char* argv[]) {
@@ -462,49 +513,86 @@ int celeste_game_main(int argc, char* argv[]) {
 
     if (gfx_init() != 0) return 1;
     audio_init(22050);
-    if (gfx_load_sprites("data/gfx.bmp") != 0) { audio_stop_all(); gfx_quit(); return 1; }
 
     level_init();
     vfx_init();
     game_init();
 
     rg_app_t *app = rg_system_get_app();
+    if (app)
+        app->frameskip = 0;
+
     if (app && (app->bootFlags & RG_BOOT_RESUME)) {
         rg_emu_load_state(app->saveSlot);
     }
-
-    int64_t last_tick = rg_system_timer();
-    const int frame_time_us = 1000000 / TARGET_FPS;
 
     extern bool celeste_is_running(void);
 
     while (celeste_is_running()) {
         int64_t frame_start = rg_system_timer();
-        rg_system_tick(frame_start - last_tick);
-        last_tick = frame_start;
 
-        input_update();
-        if (sfx_timer > 0) sfx_timer--;
+        if (input_update()) {
+            gameplay_tick_accumulator = 0;
+            continue;
+        }
 
-        /* Freeze Frame Logic */
-        vfx_update();
-        if (vfx_freeze > 0) {
-            draw_game();
-        } else {
-            update_game();
-            if (g.mode == MODE_TITLE) {
-                draw_title();
-            } else {
-                update_camera();
-                draw_game();
+        bool draw_frame = video_skip_frames == 0;
+        bool display_late = false;
+        int display_wait_us = 0;
+
+        /*
+         * Turbo advances gameplay in exact quarter-tick steps while display and
+         * audio remain paced by Retro-Go at their normal rates.
+         */
+        static const int speed_quarters[] = {4, 5, 6};
+        int speed_mode = celeste_get_gameplay_speed();
+        if (speed_mode < 0 || speed_mode > 2)
+            speed_mode = 0;
+
+        int tick_quarters = g.mode == MODE_PLAY ? speed_quarters[speed_mode] : 4;
+        gameplay_tick_accumulator += tick_quarters;
+        int simulation_ticks = gameplay_tick_accumulator / 4;
+        gameplay_tick_accumulator %= 4;
+
+        bool frozen = false;
+        for (int tick = 0; tick < simulation_ticks; tick++) {
+            if (sfx_timer > 0)
+                sfx_timer--;
+
+            /* Freeze Frame Logic */
+            vfx_update();
+            frozen = vfx_freeze > 0;
+            if (!frozen) {
+                update_game();
+                if (g.mode != MODE_TITLE)
+                    update_camera();
             }
         }
 
-        int64_t frame_end = rg_system_timer();
-        int64_t elapsed = frame_end - frame_start;
-        if (elapsed < frame_time_us) {
-            rg_task_delay((frame_time_us - elapsed) / 1000);
+        if (draw_frame) {
+            if (!frozen && g.mode == MODE_TITLE)
+                display_wait_us = draw_title(&display_late);
+            else
+                display_wait_us = draw_game(&display_late);
         }
+
+        int64_t work_end = rg_system_timer();
+        int frame_time_us = app ? app->frameTime : (1000000 / 30);
+        int busy_us = (int)(work_end - frame_start) - display_wait_us;
+        if (busy_us < 0) busy_us = 0;
+        rg_system_tick(busy_us);
+
+        if (video_skip_frames > 0) {
+            video_skip_frames--;
+        } else if (app && app->frameskip > 0) {
+            video_skip_frames = app->frameskip;
+        } else if (display_late || busy_us > frame_time_us + 1500) {
+            video_skip_frames = 1;
+        }
+
+        int64_t remaining_us = frame_start + frame_time_us - work_end;
+        if (remaining_us > 0)
+            rg_usleep((uint32_t)remaining_us);
     }
 
     audio_deinit();
@@ -542,7 +630,7 @@ void game_get_state(void *dest) {
 }
 
 void game_set_state(const void *src) {
-    GameState *s = (GameState *)src;
+    const GameState *s = (const GameState *)src;
     g = s->g;
     memorial_idx = s->memorial_idx;
     title_frames = s->title_frames;

@@ -4,12 +4,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <math.h>
-
-#ifdef ESP_PLATFORM
-#include <freertos/FreeRTOS.h>
-#include <freertos/task.h>
-#endif
 
 #define MAX_SFX 64
 #define MAX_CHANNELS 8
@@ -34,18 +28,16 @@ typedef struct {
     uint32_t data_size;
     uint32_t position;
     bool active;
-    float volume;
-    float target_volume;
-    float fade_step;
 } music_t;
 
 static sfx_t *loaded_sfx[MAX_SFX] = {NULL};
 static channel_t channels[MAX_CHANNELS];
 static music_t current_music;
-static int system_sample_rate = 22050;
-static volatile rg_task_t *audio_task_handle = NULL;
+static rg_task_t *audio_task_handle = NULL;
+static rg_mutex_t *audio_lock = NULL;
 static volatile bool task_running = false;
-static volatile int pending_music_index = -2;
+static volatile bool task_alive = false;
+static int pending_music_index = -2;
 
 static void audio_task(void *arg);
 
@@ -65,17 +57,29 @@ static void load_sfx(int id) {
 
     int bit_depth = *(uint16_t *)(ptr + 34);
     int channels = *(uint16_t *)(ptr + 22);
+    if (bit_depth != 16 || (channels != 1 && channels != 2)) {
+        free(data);
+        return;
+    }
 
     uint8_t *data_ptr = ptr + 12;
     while (data_ptr < ptr + size - 8) {
         if (memcmp(data_ptr, "data", 4) == 0) {
             uint32_t data_size = *(uint32_t *)(data_ptr + 4);
             if (data_ptr + 8 + data_size > ptr + size) data_size = (ptr + size) - (data_ptr + 8);
-            
+            if (data_size == 0) break;
+
             sfx_t *sfx = malloc(sizeof(sfx_t));
+            if (!sfx) break;
+
             sfx->length = data_size / (bit_depth / 8) / channels;
             sfx->channels = channels;
-            sfx->data = rg_alloc(data_size, MEM_SLOW); 
+            sfx->data = rg_alloc(data_size, MEM_SLOW | MEM_NOPANIC);
+            if (!sfx->data) {
+                free(sfx);
+                break;
+            }
+
             memcpy(sfx->data, data_ptr + 8, data_size);
             loaded_sfx[id] = sfx;
             break;
@@ -86,12 +90,18 @@ static void load_sfx(int id) {
 }
 
 void audio_init(int sample_rate) {
-    if (audio_task_handle) return;
+    if (audio_task_handle || task_alive) return;
 
-    system_sample_rate = sample_rate;
+    (void)sample_rate;
     current_music.active = false;
     current_music.file = NULL;
     pending_music_index = -2;
+
+    audio_lock = rg_mutex_create();
+    if (!audio_lock) {
+        RG_LOGE("Unable to create audio command lock.");
+        return;
+    }
 
     for (int i = 0; i < MAX_CHANNELS; i++) {
         channels[i].active = false;
@@ -103,7 +113,14 @@ void audio_init(int sample_rate) {
     }
 
     task_running = true;
-    audio_task_handle = rg_task_create("audio_task", audio_task, NULL, 4096, 1, RG_TASK_PRIORITY_7, 1);
+    task_alive = true;
+    audio_task_handle = rg_task_create("audio_task", audio_task, NULL, 4096, 1, RG_TASK_PRIORITY_2, 1);
+    if (!audio_task_handle) {
+        task_running = false;
+        task_alive = false;
+        rg_mutex_free(audio_lock);
+        audio_lock = NULL;
+    }
 }
 
 void audio_shutdown(void) {
@@ -111,14 +128,19 @@ void audio_shutdown(void) {
 }
 
 void audio_deinit(void) {
-    if (!task_running) return;
-
     task_running = false;
-    
+
     int timeout = 100;
-    while (audio_task_handle && timeout-- > 0) {
+    while (task_alive && timeout-- > 0) {
         rg_task_delay(10);
     }
+
+    if (task_alive) {
+        RG_LOGW("Audio task did not stop in time; keeping its buffers alive.");
+        return;
+    }
+
+    audio_task_handle = NULL;
 
     for (int i = 0; i < MAX_SFX; i++) {
         if (loaded_sfx[i]) {
@@ -127,51 +149,89 @@ void audio_deinit(void) {
             loaded_sfx[i] = NULL;
         }
     }
+
+    rg_mutex_free(audio_lock);
+    audio_lock = NULL;
 }
 
 void audio_sfx_play(int id) {
-    if (id < 0 || id >= MAX_SFX || !loaded_sfx[id] || !task_running) return;
+    if (id < 0 || id >= MAX_SFX || !loaded_sfx[id] ||
+        !task_running || !audio_lock) return;
+
+    if (!rg_mutex_take(audio_lock, -1)) return;
     for (int i = 0; i < MAX_CHANNELS; i++) {
         if (!channels[i].active) {
             channels[i].sfx = loaded_sfx[id];
             channels[i].position = 0;
             channels[i].active = true;
-            return;
+            break;
         }
     }
+    rg_mutex_give(audio_lock);
 }
 
 void audio_music_play(int index, int fade_ms) {
-    if (!task_running) return;
+    (void)fade_ms;
+    if (!task_running || !audio_lock) return;
+
+    if (!rg_mutex_take(audio_lock, -1)) return;
     pending_music_index = index;
+    rg_mutex_give(audio_lock);
 }
 
 void audio_stop_all(void) {
+    if (!audio_lock) return;
+
+    if (!rg_mutex_take(audio_lock, -1)) return;
     for (int i = 0; i < MAX_CHANNELS; i++) channels[i].active = false;
-    audio_music_play(-1, 0);
+    pending_music_index = -1;
+    rg_mutex_give(audio_lock);
 }
 
 static void audio_task(void *arg) {
     const int buffer_frames = 512;
-    rg_audio_frame_t *buffer = malloc(buffer_frames * sizeof(rg_audio_frame_t));
-    int16_t *mus_buffer = malloc(buffer_frames * sizeof(int16_t));
+    /*
+     * These small buffers are touched for every output sample. Request internal
+     * memory explicitly, while allowing a clean task-start failure if the
+     * allocation cannot be satisfied anywhere.
+     */
+    rg_audio_frame_t *buffer =
+        rg_alloc(buffer_frames * sizeof(*buffer), MEM_FAST | MEM_NOPANIC);
+    int16_t *mus_buffer =
+        rg_alloc(buffer_frames * sizeof(*mus_buffer), MEM_FAST | MEM_NOPANIC);
+    int32_t *mix_buffer =
+        rg_alloc(buffer_frames * sizeof(*mix_buffer), MEM_FAST | MEM_NOPANIC);
+
+    if (!buffer || !mus_buffer || !mix_buffer) {
+        RG_LOGE("Unable to allocate audio mix buffers.");
+        free(buffer);
+        free(mus_buffer);
+        free(mix_buffer);
+        task_running = false;
+        task_alive = false;
+        return;
+    }
 
     RG_LOGI("Audio task started.\n");
 
     while (task_running) {
-        if (pending_music_index != -2) {
+        int music_index = -2;
+        if (rg_mutex_take(audio_lock, -1)) {
+            music_index = pending_music_index;
+            pending_music_index = -2;
+            rg_mutex_give(audio_lock);
+        }
+
+        if (music_index != -2) {
             if (current_music.file) {
                 fclose(current_music.file);
                 current_music.file = NULL;
             }
             current_music.active = false;
-            
-            int index = pending_music_index;
-            pending_music_index = -2;
 
-            if (index >= 0) {
+            if (music_index >= 0) {
                 char path[256];
-                snprintf(path, sizeof(path), MUS_PATH, index);
+                snprintf(path, sizeof(path), MUS_PATH, music_index);
                 FILE *f = fopen(path, "rb");
                 if (f) {
                     uint8_t header[1024];
@@ -185,10 +245,8 @@ static void audio_task(void *arg) {
                                 current_music.file = f;
                                 fseek(f, current_music.data_start, SEEK_SET);
                                 current_music.position = 0;
-                                current_music.volume = 1.0f;
-                                current_music.target_volume = 1.0f;
                                 current_music.active = true;
-                                RG_LOGI("Music %d started (offset %u, size %u)\n", index, (unsigned int)current_music.data_start, (unsigned int)current_music.data_size);
+                                RG_LOGI("Music %d started (offset %u, size %u)\n", music_index, (unsigned int)current_music.data_start, (unsigned int)current_music.data_size);
                                 break;
                             }
                             ptr += 8 + *(uint32_t *)(ptr + 4);
@@ -199,9 +257,10 @@ static void audio_task(void *arg) {
             }
         }
 
-        memset(buffer, 0, buffer_frames * sizeof(rg_audio_frame_t));
+        memset(mix_buffer, 0, buffer_frames * sizeof(int32_t));
 
         if (current_music.active && current_music.file) {
+            memset(mus_buffer, 0, buffer_frames * sizeof(int16_t));
             size_t read = fread(mus_buffer, sizeof(int16_t), buffer_frames, current_music.file);
             current_music.position += read * sizeof(int16_t);
 
@@ -213,35 +272,40 @@ static void audio_task(void *arg) {
                     current_music.position += read2 * sizeof(int16_t);
                 }
             }
-            
+
             for (int f = 0; f < buffer_frames; f++) {
-                int32_t sample = (int32_t)(mus_buffer[f] * current_music.volume);
-                buffer[f].left = sample;
-                buffer[f].right = sample;
+                mix_buffer[f] = mus_buffer[f];
             }
         }
 
-        for (int i = 0; i < MAX_CHANNELS; i++) {
-            if (!channels[i].active) continue;
-            sfx_t *sfx = channels[i].sfx;
-            for (int f = 0; f < buffer_frames; f++) {
-                if (channels[i].position >= sfx->length) {
-                    channels[i].active = false;
-                    break;
+        if (rg_mutex_take(audio_lock, -1)) {
+            for (int i = 0; i < MAX_CHANNELS; i++) {
+                if (!channels[i].active) continue;
+                sfx_t *sfx = channels[i].sfx;
+                for (int f = 0; f < buffer_frames; f++) {
+                    if (channels[i].position >= sfx->length) {
+                        channels[i].active = false;
+                        break;
+                    }
+                    int16_t sample = (sfx->channels == 1) ? sfx->data[channels[i].position] : sfx->data[channels[i].position * 2];
+                    mix_buffer[f] += sample;
+                    channels[i].position++;
                 }
-                int16_t sample = (sfx->channels == 1) ? sfx->data[channels[i].position] : sfx->data[channels[i].position * 2];
-                int32_t l = (int32_t)buffer[f].left + sample;
-                int32_t r = (int32_t)buffer[f].right + sample;
-                buffer[f].left = (l > 32767) ? 32767 : (l < -32768 ? -32768 : l);
-                buffer[f].right = (r > 32767) ? 32767 : (r < -32768 ? -32768 : r);
-                channels[i].position++;
             }
+            rg_mutex_give(audio_lock);
+        }
+
+        for (int f = 0; f < buffer_frames; f++) {
+            int32_t sample = mix_buffer[f];
+            if (sample > INT16_MAX) sample = INT16_MAX;
+            else if (sample < INT16_MIN) sample = INT16_MIN;
+            buffer[f].left = sample;
+            buffer[f].right = sample;
         }
 
         rg_audio_submit(buffer, buffer_frames);
-        rg_task_delay(1); 
     }
-    
+
     if (current_music.file) {
         fclose(current_music.file);
         current_music.file = NULL;
@@ -249,11 +313,9 @@ static void audio_task(void *arg) {
 
     free(buffer);
     free(mus_buffer);
-    
+    free(mix_buffer);
+
     RG_LOGI("Audio task finished.\n");
-    
-    audio_task_handle = NULL;
-#ifdef ESP_PLATFORM
-    vTaskDelete(NULL);
-#endif
+
+    task_alive = false;
 }

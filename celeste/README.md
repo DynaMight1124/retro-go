@@ -8,7 +8,8 @@ This is a port of [Celeste Classic](https://www.celeste_game.com/classic/) to th
 - **Audio Support**: Full SFX and background music support streamed from the SD card.
 - **Save States & Auto-Resume**: Full support for Retro-Go save slots and the "Resume" feature from the launcher.
 - **Unified Controls**: Fully integrated with Retro-Go's gamepad abstraction.
-- **Native Performance**: Optimised triple-buffering and 16-bit rendering for smooth gameplay.
+- **Gameplay Turbo**: Optional 1.25x and 1.5x gameplay speeds without changing music or sound pitch.
+- **Native Performance**: Optimised double-buffered indexed rendering for smooth gameplay and low memory use.
 - **Retro-Go Menu**: Standard access to system settings, volume, and quitting via the Retro-Go overlay.
 
 ## Installation
@@ -49,6 +50,16 @@ You can toggle between video modes in the **Retro-Go Options** menu (Menu > Opti
 - **Widescreen (256x150)**: Based on the "Scrolleste" map. Provides a wider field of view and smooth camera scrolling.
 
 *Note: You must restart the game for Video Mode changes to take effect.*
+
+## Gameplay Speed
+
+The **Gameplay Speed** option is available in the Retro-Go Options menu (Menu > Options > Emulator options):
+
+- **Normal**: Original Celeste Classic gameplay speed.
+- **1.25x**: Moderately accelerates gameplay.
+- **1.5x**: Provides a faster gameplay mode.
+
+Turbo modes accelerate gameplay simulation while keeping rendering capped at 30 FPS. Music and sound effects continue to play at their normal speed and pitch. Gameplay Speed changes apply immediately and are remembered for future launches.
 
 ## Controls
 

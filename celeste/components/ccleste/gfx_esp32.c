@@ -5,26 +5,28 @@
 #include <math.h>
 
 #include <rg_system.h>
+#include <rg_utils.h>
 
 int SCREEN_W = 256;
 int SCREEN_H = 150;
 
 #if RG_SCREEN_PIXEL_FORMAT == 0
-#define FB_PIXEL_FORMAT RG_PIXEL_565_BE
+#define FB_PIXEL_FORMAT RG_PIXEL_PAL565_BE
 #else
-#define FB_PIXEL_FORMAT RG_PIXEL_565_LE
+#define FB_PIXEL_FORMAT RG_PIXEL_PAL565_LE
 #endif
 
-/* Triple buffering */
-static rg_surface_t *fb_surfaces[3] = {NULL, NULL, NULL};
+/* Retro-Go's display queue has depth one, so two complete surfaces are enough. */
+static rg_surface_t *fb_surfaces[2] = {NULL, NULL};
 static int current_fb_idx = 0;
 static rg_surface_t *fb_surface = NULL;
+static rg_surface_t *last_complete_surface = NULL;
 
 /* Input state */
 static uint32_t keys_held = 0;
 static uint32_t keys_prev = 0;
 
-/* PICO-8 palette in RGB565 format (LE) */
+/* PICO-8 palette in host-order RGB565. */
 static const uint16_t pico8_palette[16] = {
     0x0000,  /* 0  black */
     0x194A,  /* 1  dark blue */
@@ -43,9 +45,6 @@ static const uint16_t pico8_palette[16] = {
     0xFBB5,  /* 14 pink */
     0xFE75,  /* 15 peach */
 };
-
-/* Internal palette ready for the current screen format */
-static uint16_t local_palette[16];
 
 /* Palette remap table (for palette swapping like PICO-8's pal()) */
 static uint8_t pal_remap[16] = {0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15};
@@ -114,52 +113,54 @@ int gfx_init(void) {
         SCREEN_H = 150;
     }
 
-    for (int i = 0; i < 3; i++) {
+    for (int i = 0; i < 2; i++) {
         fb_surfaces[i] = rg_surface_create(SCREEN_W, SCREEN_H, FB_PIXEL_FORMAT, MEM_FAST);
-        if (!fb_surfaces[i]) return -1;
-        rg_surface_fill(fb_surfaces[i], NULL, 0);
+        if (!fb_surfaces[i]) {
+            gfx_quit();
+            return -1;
+        }
+
+        memset(fb_surfaces[i]->data, 0, fb_surfaces[i]->stride * fb_surfaces[i]->height);
+        for (int color_index = 0; color_index < 16; color_index++) {
+            uint16_t color = pico8_palette[color_index];
+            if (FB_PIXEL_FORMAT == RG_PIXEL_PAL565_BE)
+                color = (color << 8) | (color >> 8);
+            fb_surfaces[i]->palette[color_index] = color;
+        }
+
+        RG_LOGI("Framebuffer %d: %dx%d indexed, %s", i, SCREEN_W, SCREEN_H,
+                PTR_IN_SPIRAM(fb_surfaces[i]->data) ? "PSRAM" : "internal");
     }
-    
+
     current_fb_idx = 0;
     fb_surface = fb_surfaces[current_fb_idx];
+    last_complete_surface = NULL;
 
-    /* Set up internal palette */
-    for (int i = 0; i < 16; i++) {
-        uint16_t color = pico8_palette[i];
-        if (FB_PIXEL_FORMAT == RG_PIXEL_565_BE)
-            color = (color << 8) | (color >> 8);
-        local_palette[i] = color;
-    }
-
-    return 0;
-}
-
-int gfx_load_sprites(const char* path) {
-    (void)path;
     return 0;
 }
 
 void gfx_quit(void) {
-    for (int i = 0; i < 3; i++) {
+    while (rg_display_is_busy())
+        rg_task_yield();
+
+    for (int i = 0; i < 2; i++) {
         if (fb_surfaces[i]) {
             rg_surface_free(fb_surfaces[i]);
             fb_surfaces[i] = NULL;
         }
     }
     fb_surface = NULL;
+    last_complete_surface = NULL;
 }
 
 void gfx_clear(uint8_t color) {
-    uint16_t c16 = local_palette[color & 0xF];
-    uint16_t *data = (uint16_t *)fb_surface->data;
-    int count = SCREEN_W * SCREEN_H;
-    while (count--) *data++ = c16;
+    memset(fb_surface->data, color & 0xF, fb_surface->stride * SCREEN_H);
 }
 
 void gfx_pixel(int x, int y, uint8_t color) {
     if (x < 0 || x >= SCREEN_W || y < 0 || y >= SCREEN_H) return;
-    uint16_t *fb = (uint16_t *)fb_surface->data;
-    fb[y * (fb_surface->stride / 2) + x] = local_palette[color & 0xF];
+    uint8_t *fb = fb_surface->data;
+    fb[y * fb_surface->stride + x] = color & 0xF;
 }
 
 /* User noticed "black long boxes". level.c uses gfx_rect for Ice Borders.
@@ -175,24 +176,22 @@ void gfx_rectfill(int x0, int y0, int x1, int y1, uint8_t color) {
     if (x1 >= SCREEN_W) x1 = SCREEN_W - 1;
     if (y0 < 0) y0 = 0;
     if (y1 >= SCREEN_H) y1 = SCREEN_H - 1;
-    
+
     if (x0 > x1 || y0 > y1) return;
 
-    uint16_t *fb = (uint16_t *)fb_surface->data;
-    int pitch = fb_surface->stride / 2;
-    uint16_t c16 = local_palette[color & 0xF];
-    
+    uint8_t *fb = fb_surface->data;
+    int pitch = fb_surface->stride;
+    uint8_t color_index = color & 0xF;
+
     for (int y = y0; y <= y1; y++) {
-        uint16_t *row = &fb[y * pitch + x0];
-        for (int x = x0; x <= x1; x++) {
-            *row++ = c16;
-        }
+        uint8_t *row = &fb[y * pitch + x0];
+        memset(row, color_index, x1 - x0 + 1);
     }
 }
 
 void gfx_blit(const uint8_t* data, int x, int y, int w, int h, int key_color) {
-    uint16_t *fb = (uint16_t *)fb_surface->data;
-    int pitch = fb_surface->stride / 2;
+    uint8_t *fb = fb_surface->data;
+    int pitch = fb_surface->stride;
     for (int py = 0; py < h; py++) {
         int dy = y + py;
         if (dy < 0 || dy >= SCREEN_H) continue;
@@ -200,15 +199,15 @@ void gfx_blit(const uint8_t* data, int x, int y, int w, int h, int key_color) {
             int dx = x + px;
             if (dx < 0 || dx >= SCREEN_W) continue;
             uint8_t c = data[py * w + px];
-            if (c != (uint8_t)key_color) fb[dy * pitch + dx] = local_palette[c & 0xF];
+            if (c != (uint8_t)key_color) fb[dy * pitch + dx] = c & 0xF;
         }
     }
 }
 
 void gfx_blit_ex(const uint8_t* data, int x, int y, int w, int h,
                  int key_color, bool flip_x, bool flip_y) {
-    uint16_t *fb = (uint16_t *)fb_surface->data;
-    int pitch = fb_surface->stride / 2;
+    uint8_t *fb = fb_surface->data;
+    int pitch = fb_surface->stride;
     for (int py = 0; py < h; py++) {
         int dy = y + py;
         if (dy < 0 || dy >= SCREEN_H) continue;
@@ -218,15 +217,15 @@ void gfx_blit_ex(const uint8_t* data, int x, int y, int w, int h,
             if (dx < 0 || dx >= SCREEN_W) continue;
             int src_px = flip_x ? (w - 1 - px) : px;
             uint8_t c = data[src_py * w + src_px];
-            if (c != (uint8_t)key_color) fb[dy * pitch + dx] = local_palette[c & 0xF];
+            if (c != (uint8_t)key_color) fb[dy * pitch + dx] = c & 0xF;
         }
     }
 }
 
 void gfx_spr(int id, int x, int y, bool flip_x, bool flip_y) {
     if (id < 0 || id >= SHEET_COLS * SHEET_ROWS) return;
-    uint16_t *fb = (uint16_t *)fb_surface->data;
-    int pitch = fb_surface->stride / 2;
+    uint8_t *fb = fb_surface->data;
+    int pitch = fb_surface->stride;
 
     int sx = (id % SHEET_COLS) * SPRITE_SIZE;
     int sy = (id / SHEET_COLS) * SPRITE_SIZE;
@@ -243,17 +242,16 @@ void gfx_spr(int id, int x, int y, bool flip_x, bool flip_y) {
 
             uint8_t c = sprite_sheet[(sy + src_py) * SPRITE_SHEET_W + (sx + src_px)];
             if (c != 0) {
-                uint8_t color = pal_remap[c & 0xF];
-                fb[dy * pitch + dx] = local_palette[color & 0xF];
+                fb[dy * pitch + dx] = pal_remap[c & 0xF] & 0xF;
             }
         }
     }
 }
 
-static void draw_digit(uint16_t *fb, int x, int y, int digit, uint8_t color) {
+static void draw_digit(uint8_t *fb, int x, int y, int digit, uint8_t color) {
     if (digit < 0 || digit > 9) return;
-    int pitch = fb_surface->stride / 2;
-    uint16_t c16 = local_palette[color & 0xF];
+    int pitch = fb_surface->stride;
+    uint8_t color_index = color & 0xF;
     for (int row = 0; row < 5; row++) {
         int dy = y + row;
         if (dy < 0 || dy >= SCREEN_H) continue;
@@ -262,16 +260,16 @@ static void draw_digit(uint16_t *fb, int x, int y, int digit, uint8_t color) {
             if (bits & (4 >> col)) {
                 int dx = x + col;
                 if (dx >= 0 && dx < SCREEN_W)
-                    fb[dy * pitch + dx] = c16;
+                    fb[dy * pitch + dx] = color_index;
             }
         }
     }
 }
 
-static void draw_letter(uint16_t *fb, int x, int y, int index, uint8_t color) {
+static void draw_letter(uint8_t *fb, int x, int y, int index, uint8_t color) {
     if (index < 0 || index > 33) return;
-    int pitch = fb_surface->stride / 2;
-    uint16_t c16 = local_palette[color & 0xF];
+    int pitch = fb_surface->stride;
+    uint8_t color_index = color & 0xF;
     for (int row = 0; row < 5; row++) {
         int dy = y + row;
         if (dy < 0 || dy >= SCREEN_H) continue;
@@ -280,14 +278,14 @@ static void draw_letter(uint16_t *fb, int x, int y, int index, uint8_t color) {
             if (bits & (4 >> col)) {
                 int dx = x + col;
                 if (dx >= 0 && dx < SCREEN_W)
-                    fb[dy * pitch + dx] = c16;
+                    fb[dy * pitch + dx] = color_index;
             }
         }
     }
 }
 
 int gfx_print_num(int x, int y, int num, uint8_t color) {
-    uint16_t *fb = (uint16_t *)fb_surface->data;
+    uint8_t *fb = fb_surface->data;
     int start_x = x;
     if (num < 0) {
         gfx_pixel(x, y, color);
@@ -308,7 +306,7 @@ int gfx_print_num(int x, int y, int num, uint8_t color) {
 }
 
 int gfx_print(int x, int y, const char* text, uint8_t color) {
-    uint16_t *fb = (uint16_t *)fb_surface->data;
+    uint8_t *fb = fb_surface->data;
     int start_x = x;
     while (*text) {
         char c = *text++;
@@ -334,10 +332,27 @@ int gfx_print(int x, int y, const char* text, uint8_t color) {
     return x - start_x;
 }
 
-void gfx_flip(void) {
+int gfx_flip(bool *display_late) {
+    if (display_late)
+        *display_late = rg_display_is_busy();
+
+    int64_t submit_start = rg_system_timer();
+    last_complete_surface = fb_surface;
     rg_display_submit(fb_surface, 0);
-    current_fb_idx = (current_fb_idx + 1) % 3;
+    int submit_time = (int)(rg_system_timer() - submit_start);
+    current_fb_idx ^= 1;
     fb_surface = fb_surfaces[current_fb_idx];
+    return submit_time;
+}
+
+void gfx_redraw(void) {
+    if (last_complete_surface)
+        rg_display_submit(last_complete_surface, 0);
+}
+
+bool gfx_screenshot(const char *filename, int width, int height) {
+    return last_complete_surface &&
+           rg_surface_save_image_file(last_complete_surface, filename, width, height);
 }
 
 void gfx_pal(uint8_t from, uint8_t to) {
@@ -348,18 +363,29 @@ void gfx_pal_reset(void) {
     for (int i = 0; i < 16; i++) pal_remap[i] = i;
 }
 
-void input_update(void) {
-    keys_prev = keys_held;
-    keys_held = rg_input_read_gamepad();
+bool input_update(void) {
+    uint32_t raw_keys = rg_input_read_gamepad();
+    uint32_t keys_pressed = raw_keys & ~keys_prev;
+    keys_prev = raw_keys;
+    keys_held = raw_keys & ~(RG_KEY_MENU | RG_KEY_OPTION);
+    bool menu_opened = false;
 
-    if (keys_held & RG_KEY_MENU) {
+    if (keys_pressed & RG_KEY_MENU) {
         rg_gui_game_menu();
-        keys_held = 0;
+        menu_opened = true;
     }
-    if (keys_held & RG_KEY_OPTION) {
+    if (keys_pressed & RG_KEY_OPTION) {
         rg_gui_options_menu();
-        keys_held = 0;
+        menu_opened = true;
     }
+
+    return menu_opened;
+}
+
+void input_sync(void) {
+    uint32_t raw_keys = rg_input_read_gamepad();
+    keys_prev = raw_keys;
+    keys_held = raw_keys & ~(RG_KEY_MENU | RG_KEY_OPTION);
 }
 
 bool input_left(void)     { return (keys_held & RG_KEY_LEFT) != 0; }
@@ -370,7 +396,7 @@ bool input_jump(void)     { return (keys_held & RG_KEY_A) != 0; }
 bool input_dash(void)     { return (keys_held & RG_KEY_B) != 0; }
 bool input_quit(void)     { return false; }
 bool input_restart(void)  { return (keys_held & RG_KEY_START) != 0; }
-bool input_teleport(void) { return (keys_held & RG_KEY_OPTION) != 0; }
+bool input_teleport(void) { return false; }
 
 float p8sin(float x) {
     return -sinf(x * 6.28318530718f);

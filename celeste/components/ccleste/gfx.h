@@ -22,9 +22,6 @@ extern int SCREEN_H;
 /* Initialize the graphics system. Returns 0 on success. */
 int gfx_init(void);
 
-/* Load sprite sheet from BMP file. Returns 0 on success. */
-int gfx_load_sprites(const char* path);
-
 /* Shutdown and cleanup. */
 void gfx_quit(void);
 
@@ -47,8 +44,12 @@ void gfx_blit_ex(const uint8_t* data, int x, int y, int w, int h,
 /* Draw sprite from sheet by ID (0-127). Transparent color 0. */
 void gfx_spr(int id, int x, int y, bool flip_x, bool flip_y);
 
-/* Present the frame buffer to screen. */
-void gfx_flip(void);
+/* Present the frame buffer and return time blocked on display ownership. */
+int gfx_flip(bool *display_late);
+void gfx_redraw(void);
+
+/* Save the last complete frame. */
+bool gfx_screenshot(const char *filename, int width, int height);
 
 /* Draw a number at position. Returns width in pixels. */
 int gfx_print_num(int x, int y, int num, uint8_t color);
@@ -70,8 +71,11 @@ bool input_quit(void);
 bool input_restart(void);   /* R key - restart game */
 bool input_teleport(void);  /* T key - debug teleport */
 
-/* Process input events. Call once per frame. */
-void input_update(void);
+/* Process input events. Returns true when a Retro-Go menu was opened. */
+bool input_update(void);
+
+/* Synchronize held/edge state after a reset or state load. */
+void input_sync(void);
 
 /* PICO-8 style sin (input 0-1 maps to full cycle, output -1 to 1) */
 float p8sin(float x);

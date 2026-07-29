@@ -6,6 +6,7 @@
 #include "gfx.h"
 #include <stdlib.h>
 #include <math.h>
+#include <string.h>
 
 /* Effect toggles */
 bool snow_enabled = true;
@@ -101,6 +102,20 @@ typedef struct {
 
 static OrbState orb = {false, 0, 0, 0, 0};
 
+typedef struct {
+    bool snow_enabled;
+    bool clouds_enabled;
+    int freeze;
+    int shake;
+    SnowParticle snow[SNOW_COUNT];
+    Cloud clouds[CLOUD_COUNT];
+    SmokeParticle smoke[SMOKE_COUNT];
+    DeathParticle death_particles[DEATH_PARTICLE_COUNT];
+    DashParticle dash_particles[DASH_PARTICLE_COUNT];
+    LifeupText lifeups[LIFEUP_COUNT];
+    OrbState orb;
+} VfxState;
+
 /* Random float in range [0, max) */
 static float rnd(float max) {
     return ((float)rand() / (float)RAND_MAX) * max;
@@ -112,6 +127,10 @@ static float flr(float v) {
 }
 
 void vfx_init(void) {
+    vfx_freeze = 0;
+    vfx_shake = 0;
+    orb = (OrbState){0};
+
     /* Initialize snow */
     for (int i = 0; i < SNOW_COUNT; i++) {
         snow[i].x = rnd(SCREEN_W);
@@ -448,4 +467,40 @@ bool vfx_orb_check_player(int px, int py, int pw, int ph) {
         orb.active = false;  /* Consumed */
     }
     return hit;
+}
+
+/* === SAVE STATE SUPPORT === */
+
+size_t vfx_get_state_size(void) {
+    return sizeof(VfxState);
+}
+
+void vfx_get_state(void *dest) {
+    VfxState *state = (VfxState *)dest;
+    state->snow_enabled = snow_enabled;
+    state->clouds_enabled = clouds_enabled;
+    state->freeze = vfx_freeze;
+    state->shake = vfx_shake;
+    memcpy(state->snow, snow, sizeof(snow));
+    memcpy(state->clouds, clouds, sizeof(clouds));
+    memcpy(state->smoke, smoke, sizeof(smoke));
+    memcpy(state->death_particles, death_particles, sizeof(death_particles));
+    memcpy(state->dash_particles, dash_particles, sizeof(dash_particles));
+    memcpy(state->lifeups, lifeups, sizeof(lifeups));
+    state->orb = orb;
+}
+
+void vfx_set_state(const void *src) {
+    const VfxState *state = (const VfxState *)src;
+    snow_enabled = state->snow_enabled;
+    clouds_enabled = state->clouds_enabled;
+    vfx_freeze = state->freeze;
+    vfx_shake = state->shake;
+    memcpy(snow, state->snow, sizeof(snow));
+    memcpy(clouds, state->clouds, sizeof(clouds));
+    memcpy(smoke, state->smoke, sizeof(smoke));
+    memcpy(death_particles, state->death_particles, sizeof(death_particles));
+    memcpy(dash_particles, state->dash_particles, sizeof(dash_particles));
+    memcpy(lifeups, state->lifeups, sizeof(lifeups));
+    orb = state->orb;
 }

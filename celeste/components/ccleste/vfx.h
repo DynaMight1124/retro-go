@@ -6,6 +6,7 @@
 #define VFX_H
 
 #include <stdbool.h>
+#include <stddef.h>
 
 /* Set to false to disable effects for performance */
 extern bool snow_enabled;
@@ -56,5 +57,10 @@ void vfx_orb_update(void);
 void vfx_orb_draw(int cam_x, int cam_y);
 bool vfx_orb_active(void);
 bool vfx_orb_check_player(int px, int py, int pw, int ph);
+
+/* Save state support */
+size_t vfx_get_state_size(void);
+void vfx_get_state(void *dest);
+void vfx_set_state(const void *src);
 
 #endif /* VFX_H */
