@@ -9,19 +9,29 @@ SDL_Surface* primary_surface = NULL;
 static rg_surface_t *rg_screen = NULL;
 static uint16_t shadow_palette[256];
 static int64_t last_frame_time = 0;
+static uint32_t frame_wait_us;
 
 static bool surface_uses_rg_buffer(const SDL_Surface *surface)
 {
     return surface && rg_screen && surface->pixels == rg_screen->data;
 }
 
-static void wait_for_rg_buffer(const SDL_Surface *surface)
+static uint32_t wait_for_display(void)
 {
-    if (!surface_uses_rg_buffer(surface)) return;
-
+    int64_t start = rg_system_timer();
     while (rg_display_is_busy()) {
         rg_task_yield();
     }
+    return (uint32_t)(rg_system_timer() - start);
+}
+
+static uint32_t wait_for_rg_buffer(const SDL_Surface *surface)
+{
+    if (!surface_uses_rg_buffer(surface)) return 0;
+
+    uint32_t elapsed = wait_for_display();
+    frame_wait_us += elapsed;
+    return elapsed;
 }
 
 void SDL_RG_SetSurface(rg_surface_t *surf)
@@ -35,6 +45,7 @@ int SDL_LockSurface(SDL_Surface *surface)
     // keeps a separate backbuffer, so wait immediately before that buffer is
     // copied or a transition writes directly into the display surface.
     wait_for_rg_buffer(surface);
+
     return 0;
 }
 
@@ -213,8 +224,8 @@ SDL_Surface *SDL_SetVideoMode(int width, int height, int bpp, Uint32 flags)
             pixels = rg_screen->data;
         }
 
-        // This SDL implementation has no hardware or double-buffered surface;
-        // Wolf supplies its own backbuffer and Retro-Go owns the display buffer.
+        // SDL's hardware flag remains disabled. Retro-Go output buffering is
+        // managed separately from Wolf's engine backbuffer.
         flags &= ~(SDL_HWSURFACE | SDL_DOUBLEBUF);
         primary_surface = create_rgb_surface(flags, width, height, bpp, pixels);
     }
@@ -245,10 +256,6 @@ int SDL_UpperBlit (SDL_Surface *src, SDL_Rect *srcrect,
        if ( ! src || ! dst ) {
                return(-1);
        }
-
-       // The primary SDL surface aliases Retro-Go's asynchronous submission
-       // buffer. Acquire it before the engine backbuffer is copied into it.
-       wait_for_rg_buffer(dst);
 
        if ( src->locked || dst->locked ) {
                return(-1);
@@ -324,7 +331,12 @@ int SDL_UpperBlit (SDL_Surface *src, SDL_Rect *srcrect,
                sr.y = srcy;
                sr.w = dstrect->w = w;
                sr.h = dstrect->h = h;
-               return SDL_SoftBlit(src, &sr, dst, dstrect);
+               // The primary SDL surface aliases Retro-Go's asynchronous
+               // submission buffer. Acquire it before writing into it.
+               wait_for_rg_buffer(dst);
+
+               int result = SDL_SoftBlit(src, &sr, dst, dstrect);
+               return result;
        }
        dstrect->w = dstrect->h = 0;
        return 0;
@@ -341,10 +353,13 @@ int SDL_Flip(SDL_Surface *screen)
 {
     if (!rg_screen || !screen) return -1;
     
-    // Heartbeat for performance monitoring
+    // Report active work separately from display wait time.
     int64_t now = rg_system_timer();
     if (last_frame_time == 0) last_frame_time = now;
-    rg_system_tick(now - last_frame_time);
+    int64_t elapsed_us = now - last_frame_time;
+    int busy_us = elapsed_us > frame_wait_us
+            ? (int)(elapsed_us - frame_wait_us) : 0;
+    rg_system_tick(busy_us);
 
     // Frame limiter (70 FPS = 14285 microseconds)
     int64_t target = last_frame_time + 14285;
@@ -354,9 +369,7 @@ int SDL_Flip(SDL_Surface *screen)
     last_frame_time = rg_system_timer();
 
     // Wait for display to be ready
-    while (rg_display_is_busy()) {
-        rg_task_yield();
-    }
+    frame_wait_us += wait_for_display();
 
     // Update palette from shadow
     memcpy(rg_screen->palette, shadow_palette, 256 * 2);
@@ -366,5 +379,8 @@ int SDL_Flip(SDL_Surface *screen)
     }
     
     rg_display_submit(rg_screen, 0);
+
+    frame_wait_us = 0;
+
     return 0;
 }

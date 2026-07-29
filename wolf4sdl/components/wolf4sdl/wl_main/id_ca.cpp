@@ -58,7 +58,7 @@ typedef struct
 */
 
 #define BUFFERSIZE 0x1000
-static int32_t bufferseg[BUFFERSIZE/4];
+static int32_t *bufferseg;
 
 int     mapon;
 
@@ -750,6 +750,9 @@ void CA_CannotOpen(const char *string)
 
 void AllocGlobals_CA(void)
 {
+    // Resource decompression is dominated by storage and occurs outside the
+    // gameplay hot path, so its scratch buffer does not need internal RAM.
+    bufferseg = (int32_t *) rg_alloc(BUFFERSIZE, MEM_SLOW);
     grsegs = (memptr *) rg_alloc(NUMCHUNKS * sizeof(memptr), MEM_SLOW);
     mapsegs = (word **) rg_alloc(MAPPLANES * sizeof(word *), MEM_SLOW);
     audiosegs = (byte **) rg_alloc(NUMSNDCHUNKS * sizeof(byte *), MEM_SLOW);

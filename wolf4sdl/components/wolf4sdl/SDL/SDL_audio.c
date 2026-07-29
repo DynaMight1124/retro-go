@@ -20,13 +20,11 @@ static void audio_task(void *arg)
             
             as.callback(as.userdata, sdl_mix_buffer, as.samples * 2);
             SDL_UnlockAudio();
-            
             // Wolf4SDL usually uses 16-bit mono or stereo. 
             // Retro-Go expects rg_audio_sample_t (int16_t stereo pairs).
             int num_samples = as.samples;
             int out_samples = 0;
             int16_t *src = (int16_t *)sdl_mix_buffer;
-            
             for (int i = 0; i < num_samples; i++) {
                 int16_t left, right;
                 if (as.channels == 2) {
@@ -47,13 +45,7 @@ static void audio_task(void *arg)
                     out_samples++;
                 }
             }
-            
             rg_audio_submit(audio_buffer, out_samples);
-            
-            // Backpressure: wait a bit if we're ahead. 
-            // 23ms for 512 samples at 22050Hz.
-            // rg_audio_submit blocks, but let's yield just in case.
-            vTaskDelay(1);
         }
         else
         {

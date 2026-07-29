@@ -133,7 +133,6 @@ Victory (void)
     CA_CacheGrChunk (BJCOLLAPSE3PIC);
     CA_CacheGrChunk (BJCOLLAPSE4PIC);
 
-    VL_ClearScreen(0);
     VWB_Bar (0, 0, 320, 200, VIEWCOLOR);
     VWB_DrawPic (124, 44, BJCOLLAPSE1PIC);
     VW_UpdateScreen ();

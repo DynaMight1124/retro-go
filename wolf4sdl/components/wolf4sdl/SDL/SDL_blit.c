@@ -165,6 +165,16 @@ static __inline__ void SDL_memcpySSE(Uint8 *to, const Uint8 *from, int len)
 	srcskip = w+info->s_skip;
 	dstskip = w+info->d_skip;
 
+	/*
+	 * Wolf's gameplay backbuffer and Retro-Go display surface are both
+	 * tightly packed. Copy contiguous surfaces in one operation instead of
+	 * issuing one memcpy per scanline.
+	 */
+	if (info->s_skip == 0 && info->d_skip == 0) {
+		SDL_memcpy(dst, src, (size_t)w * h);
+		return;
+	}
+
 #ifdef SSE_ASMBLIT
 	if(SDL_HasSSE())
 	{
@@ -385,4 +395,3 @@ int SDL_CalculateBlit(SDL_Surface *surface)
 	}
 	return(0);
 }
-

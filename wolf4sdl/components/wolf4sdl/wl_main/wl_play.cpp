@@ -36,7 +36,8 @@ objtype *newobj, *obj, *player, *lastobj, *objfreelist, *killerobj;
 
 void AllocGlobals(void)
 {
-    objlist = (objtype *) rg_alloc(MAXACTORS * sizeof(objtype), MEM_SLOW);
+    // Actor state is pointer-chased by both simulation and sprite rendering.
+    objlist = (objtype *) rg_alloc(MAXACTORS * sizeof(objtype), MEM_FAST);
     tilemap = (byte (*)[MAPSIZE]) rg_alloc(MAPSIZE * MAPSIZE, MEM_SLOW);
     spotvis = (byte (*)[MAPSIZE]) rg_alloc(MAPSIZE * MAPSIZE, MEM_SLOW);
     actorat = (objtype *(*)[MAPSIZE]) rg_alloc(MAPSIZE * MAPSIZE * sizeof(objtype *), MEM_SLOW);
@@ -962,8 +963,8 @@ IRAM_ATTR void ContinueMusic (int offs)
 #define WHITETICS       6
 
 
-SDL_Color redshifts[NUMREDSHIFTS][256];
-SDL_Color whiteshifts[NUMWHITESHIFTS][256];
+static SDL_Color (*redshifts)[256];
+static SDL_Color (*whiteshifts)[256];
 
 int damagecount, bonuscount;
 boolean palshifted;
@@ -981,6 +982,15 @@ void InitRedShifts (void)
     SDL_Color *workptr, *baseptr;
     int i, j, delta;
 
+    if (!redshifts)
+    {
+        // These tables are generated once and read only during brief palette
+        // flashes, so preserve internal RAM for per-tick actor state.
+        redshifts = (SDL_Color (*)[256]) rg_alloc(
+            (NUMREDSHIFTS + NUMWHITESHIFTS) * sizeof(*redshifts), MEM_SLOW);
+        CHECKMALLOCRESULT(redshifts);
+        whiteshifts = redshifts + NUMREDSHIFTS;
+    }
 
 //
 // fade through intermediate frames
@@ -1356,7 +1366,6 @@ IRAM_ATTR void PlayLoop (void)
         }
 
             taskYIELD();
-            vTaskDelay( 2 );  // Feed WDT and give audio thread some time to run
     }
     while (!playstate && !startgame);
 

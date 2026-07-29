@@ -49,8 +49,8 @@ fixed *costable;
 
 void AllocGlobals_Draw(void)
 {
-    finetangent = (int32_t *) rg_alloc((FINEANGLES/4) * sizeof(int32_t), MEM_SLOW);
-    sintable = (fixed *) rg_alloc((ANGLES + ANGLES/4) * sizeof(fixed), MEM_SLOW);
+    finetangent = (int32_t *) rg_alloc((FINEANGLES/4) * sizeof(int32_t), MEM_FAST);
+    sintable = (fixed *) rg_alloc((ANGLES + ANGLES/4) * sizeof(fixed), MEM_FAST);
     costable = sintable + (ANGLES/4);
 }
 
@@ -896,7 +896,6 @@ IRAM_ATTR void DrawScaleds (void)
     objtype   *obj;
 
     visptr = &vislist[0];
-
 //
 // place static objects
 //
@@ -989,7 +988,6 @@ IRAM_ATTR void DrawScaleds (void)
 // draw from back to front
 //
     numvisable = (int) (visptr-&vislist[0]);
-
     if (!numvisable)
         return;                                                                 // no visable objects
 

@@ -27,6 +27,8 @@
 static rg_surface_t *update;
 static rg_app_t *app;
 
+extern "C" void SDL_RG_SetSurface(rg_surface_t *surf);
+
 // Standard Retro-Go button mapping
 typedef struct {
     int rg_key;
@@ -138,7 +140,6 @@ extern "C" void app_main()
 
     update = rg_surface_create(width, height, FB_PIXEL_FORMAT, MEM_FAST);
 
-    extern void SDL_RG_SetSurface(rg_surface_t *surf);
     SDL_RG_SetSurface(update);
 
     char current_datadir[350];

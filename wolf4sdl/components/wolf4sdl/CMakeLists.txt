@@ -57,7 +57,7 @@ set(COMPONENT_ADD_INCLUDEDIRS "SDL" "SDL_mixer-1.2.12" "wl_main")
 set(COMPONENT_REQUIRES "retro-go")
 
 register_component()
-rg_setup_compile_options()
+rg_setup_compile_options(-O2)
 
 target_compile_definitions(${COMPONENT_LIB} PRIVATE 
     PLATFORM_ESP32

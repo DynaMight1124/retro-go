@@ -1612,7 +1612,6 @@ static void DemoLoop()
             CA_CacheGrChunk (TITLEPALETTE);
             VL_ConvertPalette((byte *)grsegs[TITLEPALETTE], pal, 256);
 
-            VL_ClearScreen(0);
             CA_CacheGrChunk (TITLE1PIC);
             VWB_DrawPic (0,0,TITLE1PIC);
             UNCACHEGRCHUNK (TITLE1PIC);
