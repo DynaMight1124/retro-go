@@ -93,12 +93,7 @@ static inline bool _adc_setup_channel(adc_unit_t unit, adc_channel_t channel, ad
 
 
     // The Battery needs 12-bit (Default).
-    // The Potentiometer needs 11-bit.
     adc_bitwidth_t target_width = ADC_BITWIDTH_DEFAULT; 
-    
-    if (channel == RG_POTENTIOMETER_ADC_CHANNEL) {
-        target_width = ADC_BITWIDTH_11; 
-    }
 
     const adc_oneshot_chan_cfg_t config = {
         .atten = atten,

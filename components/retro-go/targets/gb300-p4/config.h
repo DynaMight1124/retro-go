@@ -55,10 +55,8 @@
 #define RG_GPIO_SND_AMP_ENABLE      GPIO_NUM_47
 // #define RG_GPIO_SND_AMP_ENABLE_INVERT // Uncomment if the mute = HIGH
 
-
-#define RG_POTENTIOMETER_ADC {ADC_UNIT_2, ADC_CHANNEL_4, ADC_ATTEN_DB_11, 4095, 1775} // Last two numbers are RAW_MIN, RAW_MAX
-// You can use serial log to confirm the highest and lowest, also min & max can be swapped to invert the action.
-#define RG_POTENTIOMETER_UPDATE_THRESHOLD 5   // Percentage threshold to prevent volume changes from small ADC fluctuations
+#define RG_POTENTIOMETER_ADC {ADC_UNIT_2, ADC_CHANNEL_2, ADC_ATTEN_DB_12, 3300, 0} // Last two numbers are RAW_MIN, RAW_MAX
+#define RG_POTENTIOMETER_UPDATE_THRESHOLD 10   // Percentage threshold to prevent volume changes from small ADC fluctuations
 #define RG_POTENTIOMETER_UPDATE_INTERVAL  (100 * 1000)   // Update interval in microseconds (update every 100ms)
 
 
