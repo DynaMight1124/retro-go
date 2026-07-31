@@ -39,6 +39,12 @@ void SDL_RG_SetSurface(rg_surface_t *surf)
     rg_screen = surf;
 }
 
+void SDL_RG_ResetTiming(void)
+{
+    last_frame_time = rg_system_timer();
+    frame_wait_us = 0;
+}
+
 int SDL_LockSurface(SDL_Surface *surface)
 {
     // Retro-Go consumes its submitted surface asynchronously. Wolf's engine

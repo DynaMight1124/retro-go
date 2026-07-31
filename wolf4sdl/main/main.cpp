@@ -17,6 +17,8 @@
 #include "wl_main.h"
 
 #define AUDIO_SAMPLE_RATE 22050
+#define SYSTEM_MENU_HOLD_US 500000
+#define NATIVE_TAP_MIN_US 1000
 
 #if RG_SCREEN_PIXEL_FORMAT == 0
 #define FB_PIXEL_FORMAT RG_PIXEL_PAL565_BE
@@ -28,6 +30,7 @@ static rg_surface_t *update;
 static rg_app_t *app;
 
 extern "C" void SDL_RG_SetSurface(rg_surface_t *surf);
+extern "C" void SDL_RG_ResetTiming();
 
 // Standard Retro-Go button mapping
 typedef struct {
@@ -49,25 +52,113 @@ static rg_bind_t binds[] = {
     {RG_KEY_R, SDL_SCANCODE_PERIOD, SDLK_PERIOD}, // Strafe right
     {RG_KEY_START, SDL_SCANCODE_SPACE, SDLK_SPACE}, // Open/Use
     {RG_KEY_SELECT, SDL_SCANCODE_Y, SDLK_y},      // Weapon Cycle
-    {RG_KEY_OPTION, SDL_SCANCODE_LSHIFT, SDLK_LSHIFT}, // Run
-    {RG_KEY_MENU, SDL_SCANCODE_ESCAPE, SDLK_ESCAPE}, // Menu
     {0, SDL_SCANCODE_UNKNOWN, (SDLKey)0}
 };
 
 static uint32_t last_input = 0;
+static uint32_t suppressed_input = 0;
+static int64_t menu_press_time = 0;
+static int64_t option_press_time = 0;
+static bool menu_pressed = false;
+static bool option_pressed = false;
+static bool pending_menu_keyup = false;
+static int64_t menu_keydown_time = 0;
+
+static void set_key_event(SDL_Event *event, bool pressed,
+                          SDL_Scancode scancode, SDL_Keycode keycode)
+{
+    event->type = pressed ? SDL_KEYDOWN : SDL_KEYUP;
+    event->key.keysym.scancode = scancode;
+    event->key.keysym.sym = keycode;
+    event->key.state = pressed ? SDL_PRESSED : SDL_RELEASED;
+}
+
+static void clear_native_input()
+{
+    memset((void *)Keyboard, 0, SDLK_LAST * sizeof(Keyboard[0]));
+    LastScan = sc_None;
+    LastASCII = key_None;
+    last_input = 0;
+    menu_pressed = false;
+    option_pressed = false;
+    pending_menu_keyup = false;
+}
+
+static void open_system_menu(bool options)
+{
+    // Retro-Go's dialogs are blocking. Release every native key before
+    // entering, then discard any buttons still held when the dialog closes.
+    clear_native_input();
+    if (options)
+        rg_gui_options_menu();
+    else
+        rg_gui_game_menu();
+
+    clear_native_input();
+    suppressed_input = rg_input_read_gamepad();
+    lasttimecount = GetTimeCount();
+    SDL_RG_ResetTiming();
+}
 
 extern "C" int SDL_RG_PollEvent(SDL_Event *event)
 {
-    uint32_t current_input = rg_input_read_gamepad();
+    uint32_t raw_input = rg_input_read_gamepad();
+    suppressed_input &= raw_input;
+    uint32_t current_input = raw_input & ~suppressed_input;
+    int64_t now = rg_system_timer();
+
+    // A short MENU press remains Wolf3D Escape. Defer it until release so a
+    // long hold cannot open both Wolf's menu and Retro-Go's game menu.
+    if (pending_menu_keyup) {
+        if (now - menu_keydown_time < NATIVE_TAP_MIN_US)
+            return 0;
+
+        pending_menu_keyup = false;
+        set_key_event(event, false, SDL_SCANCODE_ESCAPE, SDLK_ESCAPE);
+        return 1;
+    }
+
+    if (current_input & RG_KEY_MENU) {
+        if (!menu_pressed) {
+            menu_pressed = true;
+            menu_press_time = now;
+        } else if (now - menu_press_time >= SYSTEM_MENU_HOLD_US) {
+            open_system_menu(false);
+            return 0;
+        }
+    } else if (menu_pressed) {
+        menu_pressed = false;
+        pending_menu_keyup = true;
+        menu_keydown_time = now;
+        set_key_event(event, true, SDL_SCANCODE_ESCAPE, SDLK_ESCAPE);
+        return 1;
+    }
+
+    // OPTION is Wolf3D's hold-to-run key, so assert Shift immediately. If it
+    // becomes a long hold, clear Shift before opening Retro-Go's options.
+    if (current_input & RG_KEY_OPTION) {
+        if (!option_pressed) {
+            option_pressed = true;
+            option_press_time = now;
+            set_key_event(event, true, SDL_SCANCODE_LSHIFT, SDLK_LSHIFT);
+            return 1;
+        } else if (now - option_press_time >= SYSTEM_MENU_HOLD_US) {
+            open_system_menu(true);
+            return 0;
+        }
+    } else if (option_pressed) {
+        option_pressed = false;
+        set_key_event(event, false, SDL_SCANCODE_LSHIFT, SDLK_LSHIFT);
+        return 1;
+    }
+
     uint32_t changed = current_input ^ last_input;
     
     if (changed) {
         for (int i = 0; binds[i].rg_key; i++) {
             if (changed & binds[i].rg_key) {
-                event->type = (current_input & binds[i].rg_key) ? SDL_KEYDOWN : SDL_KEYUP;
-                event->key.keysym.scancode = binds[i].scancode;
-                event->key.keysym.sym = binds[i].keycode;
-                event->key.state = (current_input & binds[i].rg_key) ? SDL_PRESSED : SDL_RELEASED;
+                set_key_event(event, current_input & binds[i].rg_key,
+                              binds[i].scancode, binds[i].keycode);
                 
                 last_input ^= binds[i].rg_key;
                 return 1;
@@ -96,6 +187,8 @@ static bool load_state_handler(const char *filename)
 
 static bool reset_handler(bool hard)
 {
+    (void)hard;
+    rg_gui_alert("Not implemented", "Please use the in-game menu");
     return false;
 }
 
@@ -135,8 +228,10 @@ extern "C" void app_main()
     int width = 320;
     int height = 240;
 
-    // Force display to stretch and fill the screen (ignoring aspect ratio).
-    rg_display_set_scaling(RG_DISPLAY_SCALING_FULL);
+    // Use full scaling as the initial preset, while preserving the user's
+    // selection from Retro-Go's Options menu on subsequent launches.
+    if (!rg_settings_exists(NS_APP, "DispScaling"))
+        rg_display_set_scaling(RG_DISPLAY_SCALING_FULL);
 
     update = rg_surface_create(width, height, FB_PIXEL_FORMAT, MEM_FAST);
 

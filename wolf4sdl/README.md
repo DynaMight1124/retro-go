@@ -62,8 +62,11 @@ The engine uses compile-time defines so while the loader can technically read da
 | **X** / **Start** | Open / Use |
 | **Y** / **Select** | Next Weapon (Cycle) |
 | **L** / **R** | Strafe Left / Right |
-| **Option** | Run (Hold) |
-| **Menu** | Main Menu / Escape |
+| **Option** | Run (Hold); hold for 0.5 seconds for Retro-Go Options |
+| **Menu** | Main Menu / Escape; hold for 0.5 seconds for the Retro-Go game menu |
+
+Full-screen scaling is the default on first launch. It can be changed from the
+Retro-Go Options menu, and the selected display mode is retained.
 
 ## Developer Section: Recompiling for Other Versions
 

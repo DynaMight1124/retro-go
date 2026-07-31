@@ -151,6 +151,7 @@ int SDL_VideoModeOK(int width, int height, int bpp, Uint32 flags);
 int SDL_LockSurface(SDL_Surface *surface);
 void SDL_UnlockSurface(SDL_Surface* surface);
 void SDL_UpdateRect(SDL_Surface *screen, Sint32 x, Sint32 y, Sint32 w, Sint32 h);
+void SDL_RG_ResetTiming(void);
 SDL_Rect **SDL_ListModes(SDL_PixelFormat *format, Uint32 flags);
 SDL_VideoInfo *SDL_GetVideoInfo(void);
 char *SDL_VideoDriverName(char *namebuf, int maxlen);
