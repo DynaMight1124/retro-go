@@ -98,7 +98,7 @@ def build_image(apps, output_file, img_type="odroid", fatsize=0, target="unknown
         args += [str(part[0]), str(subtype), str(part[2]), app, os.path.join(app, "build", app + ".bin")]
         
     if 'bootstrap' in apps:
-        args += ["0", str(ota_next_id), "1048576", "bootstrapped", "none"] //Edit bootstrap partition size here.
+        args += ["0", str(ota_next_id), "1048576", "bootstrapped", "none"]  # Edit bootstrap partition size here.
         ota_next_id += 1
 
     if fatsize:
