@@ -697,10 +697,17 @@ void applications_init(void)
     application("Coleco ColecoVision", "col", "col rom zip", "retro-core", 0);
     application("NEC PC Engine", "pce", "pce zip", "retro-core", 0);
     application("Atari Lynx", "lnx", "lnx zip", "retro-core", 64);
-    // application("Atari 2600", "a26", "a26 zip", "stella-go", 0);
+    application("Atari 2600", "a26", "a26 bin zip", "stella", 0);
     // application("Neo Geo Pocket Color", "ngp", "ngp ngc zip", "ngpocket-go", 0);
     application("DOOM", "doom", "wad zip", "prboom-go", 0);
+    application("Duke Nukem 3D", "duke3d", "grp zip", "duke3d-go", 0);
+    application("Quake", "quake", "pak", "quake-go", 0);
+    application("Wolf3D", "wolf3d", "wl1 wl6 sod", "wolf4sdl", 0);
+    application("Rise of the Triad", "rott", "wad zip", "rott", 0);
     application("MSX", "msx", "rom mx1 mx2 dsk", "fmsx", 0);
+    application("Celeste", "celeste", "p8", "celeste", 0);
+    application("Outrun", "cannonball", "ball", "cannonball", 0);
+    application("Tomb Raider", "openlara", "tr1", "openlara", 0);
 
     // Special app to bootstrap native esp32 binaries from the SD card
     // application("Bootstrap", "apps", "bin elf", "bootstrap", 0);

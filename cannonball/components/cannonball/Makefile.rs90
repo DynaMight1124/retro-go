@@ -1,0 +1,35 @@
+CHAINPREFIX=/opt/rs90-toolchain
+CROSS_COMPILE=$(CHAINPREFIX)/usr/bin/mipsel-linux-
+CC = $(CROSS_COMPILE)gcc
+CXX = $(CROSS_COMPILE)g++
+STRIP = $(CROSS_COMPILE)strip
+SYSROOT     := $(CHAINPREFIX)/usr/mipsel-rs90-linux-musl/sysroot
+SDL_CFLAGS  := $(shell $(SYSROOT)/usr/bin/sdl-config --cflags)
+SDL_LIBS    := $(shell $(SYSROOT)/usr/bin/sdl-config --libs)
+
+CFLAGS = -I./ -I./engine/audio -I./src -I./hwvideo -I./engine -I./directx -I./frontend -I./hwaudio -I./sdl
+CFLAGS += -Ofast -mplt -mno-shared -mframe-header-opt -fno-common -march=mips32 -mtune=mips32 -fdata-sections -ffunction-sections -flto -mplt -Wall $(FFLAGS) $(SDL_CFLAGS) -DSDL -DCOMPILE_SOUND_CODE -DHOME_SUPPORT -DRS90_PORT
+LDFLAGS = $(SDL_LIBS) -lm -Wl,--as-needed -Wl,--gc-sections -flto=auto -s
+OUTPUT = cannonball.elf
+
+SOURCES = main.c sdl/music.c xmlutils.c romloader.c roms.c trackloader.c utils.c video.c thirdparty/crc/crc.c thirdparty/sxmlc/sxmlc.c thirdparty/sxmlc/sxmlsearch.c
+SOURCES += engine/oentry.c engine/oanimseq.c engine/oattractai.c engine/obonus.c engine/ocrash.c engine/oferrari.c engine/ohiscore.c engine/ohud.c engine/oinitengine.c engine/oinputs.c engine/olevelobjs.c engine/ologo.c engine/omap.c engine/omusic.c
+SOURCES += engine/ooutputs.c engine/opalette.c engine/oroad.c engine/osmoke.c engine/osprite.c engine/osprites.c engine/ostats.c engine/otiles.c
+SOURCES += engine/otraffic.c engine/outils.c engine/outrun.c engine/audio/osound.c engine/audio/osoundint.c frontend/config.c
+SOURCES += frontend/menu.c frontend/ttrial.c
+SOURCES += hwaudio/segapcm.c hwaudio/ym2151.c
+SOURCES += hwvideo/hwroad.c hwvideo/hwsprites.c hwvideo/hwtiles.c cannonboard/interface.c cannonboard/asyncserial.c
+SOURCES += sdl/audio.c sdl/input.c sdl/rendersw.c sdl/timer.c
+OBJS = ${SOURCES:.c=.o}
+
+all: $(OUTPUT)
+
+%.o:	%.c
+		$(CC) ${CFLAGS} -c -o $@ $?
+		
+$(OUTPUT):	${OBJS}
+		$(CC) -o $@ $+ ${LDFLAGS}
+	
+clean:
+	rm *.o src/*.o engine/audio/*.o engine/*.o hwvideo/*.o engine/*.o directx/*.o frontend/*.o hwaudio/*.o sdl/*.o sdl/*.o thirdparty/crc/*.o thirdparty/sxmlc/*.o cannonboard/*.o
+	rm ${OUTPUT}

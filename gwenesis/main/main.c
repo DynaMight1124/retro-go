@@ -273,7 +273,7 @@ void app_main(void)
     app->frameskip = 2;
 
     yfm_enabled = rg_settings_get_number(NS_APP, SETTING_YFM_EMULATION, 1);
-    sn76489_enabled = rg_settings_get_number(NS_APP, SETTING_SN76489_EMULATION, 0);
+    sn76489_enabled = rg_settings_get_number(NS_APP, SETTING_SN76489_EMULATION, 1);
     z80_enabled = rg_settings_get_number(NS_APP, SETTING_Z80_EMULATION, 1);
 
     updates[0] = rg_surface_create(320, 241, FB_PIXEL_FORMAT , MEM_FAST);
@@ -329,7 +329,11 @@ void app_main(void)
     extern unsigned int screen_width, screen_height;
     extern int hint_pending;
 
+#if defined(RG_TARGET_GB300_P4)
+    uint32_t keymap[8] = {RG_KEY_UP, RG_KEY_DOWN, RG_KEY_LEFT, RG_KEY_RIGHT, RG_KEY_B, RG_KEY_A, RG_KEY_Y, RG_KEY_START};
+#else
     uint32_t keymap[8] = {RG_KEY_UP, RG_KEY_DOWN, RG_KEY_LEFT, RG_KEY_RIGHT, RG_KEY_A, RG_KEY_B, RG_KEY_SELECT, RG_KEY_START};
+#endif
     uint32_t joystick_old = -1;
 
     int skipFrames = 0;
@@ -491,7 +495,17 @@ void app_main(void)
 
         rg_system_tick(rg_system_timer() - startTime);
 
-        // TODO: Mix in gwenesis_sn76489_buffer
+        // Mix in gwenesis_sn76489_buffer
+        if (sn76489_enabled)
+        {
+            for (int i = 0; i < AUDIO_BUFFER_LENGTH; i++)
+            {
+                int32_t sample = gwenesis_ym2612_buffer[i] + gwenesis_sn76489_buffer[i];
+                if (sample > 32767) sample = 32767;
+                else if (sample < -32768) sample = -32768;
+                gwenesis_ym2612_buffer[i] = (int16_t)sample;
+            }
+        }
         rg_audio_submit((void *)gwenesis_ym2612_buffer, AUDIO_BUFFER_LENGTH >> 1);
 
         if (skipFrames == 0)

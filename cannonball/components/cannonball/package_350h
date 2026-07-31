@@ -1,0 +1,30 @@
+#!/bin/sh
+
+make -f Makefile.350h clean
+make -f Makefile.350h
+
+mkdir -p opk/
+cp ./cannonball opk/
+cp ./res/cannonball.png opk/cannonball.png
+
+# https://unix.stackexchange.com/questions/219268/how-to-add-new-lines-when-using-echo
+print()
+	case    ${IFS- } in
+	(\ *)   printf  %b\\n "$*";;
+	(*)     IFS=\ $IFS
+	printf  %b\\n "$*"
+	IFS=${IFS#?}
+esac
+
+# Create GMenu2X entry file plus other things
+
+print '[Desktop Entry]
+Name=CannonBall
+Comment=Enhanced OutRun engine v0.3
+Exec=cannonball
+Icon=cannonball
+Categories=games' > opk/cannonball.gcw0.desktop
+
+mksquashfs ./opk cannonball_v0.3_gcw0.opk -all-root -noappend -no-exports -no-xattrs
+
+rm -rf opk/

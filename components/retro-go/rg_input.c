@@ -1,11 +1,14 @@
 #include "rg_system.h"
 #include "rg_input.h"
+#include "rg_audio.h"
 
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
 
-// #define USE_ADC_DRIVER_NG
+#if CONFIG_IDF_TARGET_ESP32P4
+#define USE_ADC_DRIVER_NG
+#endif
 
 #ifdef ESP_PLATFORM
 #include <driver/gpio.h>
@@ -22,9 +25,22 @@ static esp_adc_cal_characteristics_t adc_chars;
 #endif
 // This is a lazy way to silence deprecation notices on esp-idf 5.2+ stating
 // that ADC_ATTEN_DB_12 should be used instead (which is the same value)
+#ifndef ADC_ATTEN_DB_11
 #define ADC_ATTEN_DB_11 3 /* ADC_ATTEN_DB_12 */
+#endif
 #else
 #include <SDL2/SDL.h>
+#endif
+
+#ifdef RG_POTENTIOMETER_ADC
+typedef struct { int unit, channel, atten, min, max; } rg_pot_cfg_t;
+static const rg_pot_cfg_t pot_cfg = RG_POTENTIOMETER_ADC;
+#define RG_POTENTIOMETER_ENABLED 1
+#define RG_POTENTIOMETER_ADC_UNIT pot_cfg.unit
+#define RG_POTENTIOMETER_ADC_CHANNEL pot_cfg.channel
+#define RG_POTENTIOMETER_ADC_ATTEN pot_cfg.atten
+#define RG_POTENTIOMETER_RAW_MIN pot_cfg.min
+#define RG_POTENTIOMETER_RAW_MAX pot_cfg.max
 #endif
 
 #ifdef RG_GAMEPAD_ADC_MAP
@@ -59,25 +75,45 @@ static inline bool _adc_setup_channel(adc_unit_t unit, adc_channel_t channel, ad
 {
     RG_ASSERT(unit == ADC_UNIT_1 || unit == ADC_UNIT_2, "Invalid ADC unit");
     esp_err_t err = ESP_FAIL;
+
 #ifdef USE_ADC_DRIVER_NG
+    // --- New Driver  ---
     if (!adc_handles[unit])
-    {
-        adc_oneshot_unit_init_cfg_t config = {.unit_id = unit, .clk_src = 0, .ulp_mode = ADC_ULP_MODE_DISABLE};
+{
+        adc_oneshot_unit_init_cfg_t config = {
+            .unit_id = unit,
+            .clk_src = 0, 
+            .ulp_mode = ADC_ULP_MODE_DISABLE,
+        };
         err = adc_oneshot_new_unit(&config, &adc_handles[unit]);
+        
+        if (err != ESP_OK) {
+        }
     }
-    const adc_oneshot_chan_cfg_t config = {.atten = atten, .bitwidth = ADC_BITWIDTH_DEFAULT};
+
+
+    // The Battery needs 12-bit (Default).
+    adc_bitwidth_t target_width = ADC_BITWIDTH_DEFAULT; 
+
+    const adc_oneshot_chan_cfg_t config = {
+        .atten = atten,
+        .bitwidth = target_width
+    };
+    
     err = adc_oneshot_config_channel(adc_handles[unit], channel, &config);
 #else
-    if (RG_BATTERY_ADC_UNIT == ADC_UNIT_1)
+    // --- Legacy Driver ---
+    if (unit == ADC_UNIT_1)
     {
         adc1_config_width(ADC_WIDTH_MAX - 1);
         err = adc1_config_channel_atten(channel, atten);
     }
-    else if (RG_BATTERY_ADC_UNIT == ADC_UNIT_2)
+    else if (unit == ADC_UNIT_2)
     {
         err = adc2_config_channel_atten(channel, atten);
     }
 #endif
+
     if (err != ESP_OK)
     {
         RG_LOGE("Failed to configure ADC_UNIT_%d channel:%d atten:%d error:0x%02X",
@@ -92,14 +128,14 @@ static inline bool _adc_setup_channel(adc_unit_t unit, adc_channel_t channel, ad
         const adc_cali_curve_fitting_config_t config = {
             .unit_id = unit,
             .atten = atten,
-            .bitwidth = ADC_BITWIDTH_DEFAULT,
+            .bitwidth = target_width, 
         };
         err = adc_cali_create_scheme_curve_fitting(&config, &adc_cali_handles[unit]);
     #elif ADC_CALI_SCHEME_LINE_FITTING_SUPPORTED
         const adc_cali_line_fitting_config_t config = {
             .unit_id = unit,
             .atten = atten,
-            .bitwidth = ADC_BITWIDTH_DEFAULT,
+            .bitwidth = target_width, 
             #if CONFIG_IDF_TARGET_ESP32
             .default_vref = 1100,
             #endif
@@ -113,7 +149,8 @@ static inline bool _adc_setup_channel(adc_unit_t unit, adc_channel_t channel, ad
 #endif
         if (err != ESP_OK)
         {
-            RG_LOGW("Failed to calibrate ADC_UNIT_%d atten:%d error:0x%02X",
+            // Calibration often fails on P4 for bitwidths != 12, but raw reading will still work
+            RG_LOGW("Calibration warning ADC_UNIT_%d atten:%d error:0x%02X",
                     (int)unit, (int)atten, (int)err);
         }
     }
@@ -189,6 +226,51 @@ bool rg_input_read_battery_raw(rg_battery_t *out)
     return true;
 }
 
+#ifdef RG_POTENTIOMETER_ENABLED
+
+#ifndef RG_POTENTIOMETER_RAW_MIN
+#define RG_POTENTIOMETER_RAW_MIN 0
+#endif
+
+#ifndef RG_POTENTIOMETER_RAW_MAX
+#define RG_POTENTIOMETER_RAW_MAX 4095
+#endif
+
+#ifndef RG_POTENTIOMETER_CALC_VOLUME
+#define RG_POTENTIOMETER_CALC_VOLUME(raw) \
+    ((((int32_t)(raw)) - RG_POTENTIOMETER_RAW_MIN) * 100 / (RG_POTENTIOMETER_RAW_MAX - RG_POTENTIOMETER_RAW_MIN))
+#endif
+
+bool rg_input_read_potentiometer_raw(int *out)
+{
+    int raw_value = 0;
+
+#ifdef ESP_PLATFORM
+    // Read the potentiometer multiple times and average for stability
+    for (int i = 0; i < 4; ++i)
+    {
+#ifdef USE_ADC_DRIVER_NG
+        // New Driver
+        int value = _adc_get_raw(RG_POTENTIOMETER_ADC_UNIT, RG_POTENTIOMETER_ADC_CHANNEL);
+#else
+        // Legacy Driver
+        int value = _adc_get_raw(RG_POTENTIOMETER_ADC_UNIT, RG_POTENTIOMETER_ADC_CHANNEL);
+#endif
+        if (value < 0)
+            return false;
+        raw_value += value;
+    }
+    raw_value /= 4;
+#else
+    return false;
+#endif
+
+    if (out)
+        *out = raw_value;
+    return true;
+}
+#endif
+
 bool rg_input_read_gamepad_raw(uint32_t *out)
 {
     uint32_t state = 0;
@@ -203,8 +285,6 @@ bool rg_input_read_gamepad_raw(uint32_t *out)
         {
             if (abs(old_adc_values[i] - value) < RG_GAMEPAD_ADC_FILTER_WINDOW)
                 state |= mapping->key;
-            // else
-            //     RG_LOGD("Rejected input: %d", old_adc_values[i] - value);
             old_adc_values[i] = value;
         }
     }
@@ -223,7 +303,7 @@ bool rg_input_read_gamepad_raw(uint32_t *out)
     uint32_t buttons = 0;
 #if defined(RG_I2C_GPIO_DRIVER)
     int data0 = rg_i2c_gpio_read_port(0), data1 = rg_i2c_gpio_read_port(1);
-    if (data0 > -1) // && data1 > -1)
+    if (data0 > -1)
     {
         buttons = (data1 << 8) | (data0);
 #elif defined(RG_TARGET_T_DECK_PLUS)
@@ -258,8 +338,6 @@ bool rg_input_read_gamepad_raw(uint32_t *out)
         if (keys[mapping->src])
             state |= mapping->key;
     }
-#else
-#warning "not implemented"
 #endif
 #endif
 
@@ -305,7 +383,11 @@ static void input_task(void *arg)
     uint32_t state;
     int64_t next_battery_update = 0;
 
-    // Start the task with debounce history full to allow a button held during boot to be detected
+#ifdef RG_POTENTIOMETER_ENABLED
+    int64_t next_potentiometer_update = 0;
+    int last_potentiometer_volume = -1000;
+#endif
+
     memset(debounce, 0xFF, sizeof(debounce));
     input_task_running = true;
 
@@ -320,11 +402,11 @@ static void input_task(void *arg)
 
                 if ((val & ((1 << RG_GAMEPAD_DEBOUNCE_PRESS) - 1)) == ((1 << RG_GAMEPAD_DEBOUNCE_PRESS) - 1))
                 {
-                    local_gamepad_state |= (1 << i); // Pressed
+                    local_gamepad_state |= (1 << i);
                 }
                 else if ((val & ((1 << RG_GAMEPAD_DEBOUNCE_RELEASE) - 1)) == 0)
                 {
-                    local_gamepad_state &= ~(1 << i); // Released
+                    local_gamepad_state &= ~(1 << i);
                 }
             }
             gamepad_state = local_gamepad_state;
@@ -341,9 +423,30 @@ static void input_task(void *arg)
                     temp.volts = battery_state.volts;
             }
             battery_state = temp;
-            next_battery_update = rg_system_timer() + 2 * 1000000; // update every 2 seconds
+            next_battery_update = rg_system_timer() + 2 * 1000000;
         }
 
+#ifdef RG_POTENTIOMETER_ENABLED
+        if (rg_system_timer() >= next_potentiometer_update)
+        {
+            int raw_value = 0;
+            if (rg_input_read_potentiometer_raw(&raw_value))
+            {
+                int potentiometer_volume = RG_POTENTIOMETER_CALC_VOLUME(raw_value);
+                if (abs(potentiometer_volume - last_potentiometer_volume) >= RG_POTENTIOMETER_UPDATE_THRESHOLD)
+                {
+                    int volume = RG_MAX(0, RG_MIN(100, potentiometer_volume));
+                    if (rg_audio_get_driver() != NULL)
+                    {
+                        rg_audio_set_volume(volume);
+                        last_potentiometer_volume = volume;
+                        RG_LOGD("Potentiometer adjusted volume to %d%% (raw: %d)\n", volume, raw_value);
+                    }
+                }
+            }
+            next_potentiometer_update = rg_system_timer() + RG_POTENTIOMETER_UPDATE_INTERVAL;
+        }
+#endif
         rg_task_delay(10);
     }
 
@@ -414,10 +517,38 @@ void rg_input_init(void)
     UPDATE_GLOBAL_MAP(keymap_serial);
 #endif
 
-
 #if RG_BATTERY_DRIVER == 1 /* ADC */
     RG_LOGI("Initializing ADC battery driver...");
     _adc_setup_channel(RG_BATTERY_ADC_UNIT, RG_BATTERY_ADC_CHANNEL, ADC_ATTEN_DB_11, true);
+#endif
+
+#ifdef RG_POTENTIOMETER_ENABLED
+    RG_LOGI("Initializing ADC potentiometer driver...");
+
+#ifdef USE_ADC_DRIVER_NG
+    // --- New Driver ---
+    if (!_adc_setup_channel(RG_POTENTIOMETER_ADC_UNIT, RG_POTENTIOMETER_ADC_CHANNEL, RG_POTENTIOMETER_ADC_ATTEN, false))
+    {
+        RG_LOGE("Failed to init Potentiometer ADC (NG Driver)");
+    }
+
+#else
+    // --- Legacy Driver ---
+    if (RG_POTENTIOMETER_ADC_UNIT == ADC_UNIT_1)
+    {
+        adc1_config_width(ADC_WIDTH_MAX - 1);
+        adc1_config_channel_atten(RG_POTENTIOMETER_ADC_CHANNEL, RG_POTENTIOMETER_ADC_ATTEN);
+    }
+    else if (RG_POTENTIOMETER_ADC_UNIT == ADC_UNIT_2)
+    {
+        adc2_config_channel_atten(RG_POTENTIOMETER_ADC_CHANNEL, RG_POTENTIOMETER_ADC_ATTEN);
+    }
+    else
+    {
+        RG_LOGE("Only ADC1 and ADC2 are supported for potentiometer driver!");
+    }
+#endif
+
 #endif
 
     // The first read returns bogus data in some drivers, waste it.
@@ -433,8 +564,6 @@ void rg_input_init(void)
 void rg_input_deinit(void)
 {
     input_task_running = false;
-    // while (gamepad_state != -1)
-    //     rg_task_yield();
     RG_LOGI("Input terminated.\n");
 }
 
