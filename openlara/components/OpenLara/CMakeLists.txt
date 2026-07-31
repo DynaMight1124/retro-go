@@ -12,7 +12,7 @@ set(COMPONENT_ADD_INCLUDEDIRS
     "src/platform/retrogo"
 )
 
-set(COMPONENT_REQUIRES retro-go)
+set(COMPONENT_REQUIRES retro-go esp_hw_support)
 
 register_component()
 
@@ -21,10 +21,10 @@ if(RG_BUILD_TARGET)
 endif()
 
 target_compile_definitions(${COMPONENT_LIB} PRIVATE "-D__RETROGO__" "-D_GAPI_SW")
-target_compile_options(${COMPONENT_LIB} PRIVATE 
+target_compile_options(${COMPONENT_LIB} PRIVATE
     "-std=gnu++17"
-    "-fno-exceptions" 
-    "-fno-rtti" 
-    "-O3" 
+    "-fno-exceptions"
+    "-fno-rtti"
+    "-O3"
     "-w"
 )

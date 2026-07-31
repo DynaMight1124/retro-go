@@ -3,6 +3,10 @@
 
 #include "core.h"
 
+#ifdef __RETROGO__
+    #include <retro-go.h>
+#endif
+
 #define PROFILE_MARKER(title)
 #define PROFILE_LABEL(id, name, label)
 #define PROFILE_TIMING(time)
@@ -18,18 +22,21 @@
 #ifdef COLOR_16
     #if defined(_OS_LINUX) || defined(_OS_TNS) || defined(__RETROGO__)
         #define COLOR_FMT_565
-        #define CONV_COLOR(r,g,b) (((r >> 3) << 11) | ((g >> 2) << 5) | (b >> 3))
+        #define PACK_COLOR_565(r,g,b) ((((uint16)(r) >> 3) << 11) | (((uint16)(g) >> 2) << 5) | ((uint16)(b) >> 3))
+        #if defined(__RETROGO__) && RG_SCREEN_PIXEL_FORMAT == 0
+            // ESP32 stores uint16 values little-endian. Swap the packed value
+            // so framebuffer and texture bytes are native RGB565 big-endian.
+            #define CONV_COLOR(r,g,b) __builtin_bswap16(PACK_COLOR_565(r,g,b))
+        #else
+            #define CONV_COLOR(r,g,b) PACK_COLOR_565(r,g,b)
+        #endif
     #else
         #define COLOR_FMT_555
         #define CONV_COLOR(r,g,b) (((uint16(r) >> 3) << 10) | ((uint16(g) >> 3) << 5) | (uint16(b) >> 3))
     #endif
-#else 
+#else
     #define COLOR_FMT_888
     #define CONV_COLOR(r,g,b) ((uint32(r) << 16) | (uint32(g) << 8) | uint32(b))
-#endif
-
-#ifdef __RETROGO__
-    #include <retro-go.h>
 #endif
 
 #define SW_MAX_DIST  (20.0f * 1024.0f)
@@ -211,7 +218,7 @@ namespace GAPI {
     short4  swViewport;
 
     struct VertexSW {
-        int32 x, y, z, w;
+        int32 x, y, z;
         int32 u, v, l;
 
         inline VertexSW operator + (const VertexSW &p) const {
@@ -219,7 +226,6 @@ namespace GAPI {
             ret.x = x + p.x;
             ret.y = y;
             ret.z = z + p.z;
-            ret.w = w + p.w;
             ret.u = u + p.u;
             ret.v = v + p.v;
             ret.l = l + p.l;
@@ -231,7 +237,6 @@ namespace GAPI {
             ret.x = x - p.x;
             ret.y = y;
             ret.z = z - p.z;
-            ret.w = w - p.w;
             ret.u = u - p.u;
             ret.v = v - p.v;
             ret.l = l - p.l;
@@ -243,7 +248,6 @@ namespace GAPI {
             ret.x = x * s;
             ret.y = y;
             ret.z = z * s;
-            ret.w = w * s;
             ret.u = u * s;
             ret.v = v * s;
             ret.l = l * s;
@@ -255,7 +259,6 @@ namespace GAPI {
             ret.x = x / s;
             ret.y = y;
             ret.z = z / s;
-            ret.w = w / s;
             ret.u = u / s;
             ret.v = v / s;
             ret.l = l / s;
@@ -408,14 +411,12 @@ namespace GAPI {
     }
 
     inline void step(VertexSW &v, const VertexSW &d) {
-        //v.w += d.w;
         v.u += d.u;
         v.v += d.v;
         v.l += d.l;
     }
 
     inline void step(VertexSW &v, const VertexSW &d, int32 count) {
-        //v.w += d.w * count;
         v.u += d.u * count;
         v.v += d.v * count;
         v.l += d.l * count;
@@ -643,15 +644,24 @@ namespace GAPI {
     }
 
     void applyLighting(VertexSW &result, const Vertex &vertex, float depth) {
-        vec3 coord  = vec3(float(vertex.coord.x), float(vertex.coord.y), float(vertex.coord.z));
-        vec3 normal = vec3(float(vertex.normal.x), float(vertex.normal.y), float(vertex.normal.z)).normal();
+        if (lightsCount == 0 && depth <= SW_FOG_START) {
+            result.l = (255 - min(255, result.l)) << 16;
+            return;
+        }
+
         float lighting = 0.0f;
-        for (int i = 0; i < lightsCount; i++) {
-            LightSW &light = lightsRel[i];
-            vec3 dir = (light.pos - coord) * light.radius;
-            float att = dir.length2();
-            float lum = normal.dot(dir / sqrtf(att));
-            lighting += (max(0.0f, lum) * max(0.0f, 1.0f - att)) * light.intensity;
+
+        if (lightsCount > 0) {
+            vec3 coord  = vec3(float(vertex.coord.x), float(vertex.coord.y), float(vertex.coord.z));
+            vec3 normal = vec3(float(vertex.normal.x), float(vertex.normal.y), float(vertex.normal.z)).normal();
+
+            for (int i = 0; i < lightsCount; i++) {
+                LightSW &light = lightsRel[i];
+                vec3 dir = (light.pos - coord) * light.radius;
+                float att = dir.length2();
+                float lum = normal.dot(dir / sqrtf(att));
+                lighting += (max(0.0f, lum) * max(0.0f, 1.0f - att)) * light.intensity;
+            }
         }
 
         lighting += result.l;
@@ -709,9 +719,10 @@ namespace GAPI {
                 continue;
             }
 
-            c.x /= c.w;
-            c.y /= c.w;
-            c.z /= c.w;
+            const float invW = 1.0f / c.w;
+            c.x *= invW;
+            c.y *= invW;
+            c.z *= invW;
             c.x = clamp(c.x, -16384.0f, 16384.0f);
             c.y = clamp(c.y, -16384.0f, 16384.0f);
 
@@ -719,16 +730,14 @@ namespace GAPI {
             result.x = int32(c.x) << 16;
             result.y = int32(c.y);
             result.z = uint32(clamp(c.z, 0.0f, 1.0f) * 65535.0f) << 16;
-            result.w = int32(c.w);
 
             if (colored) {
                 result.u = vertex.color.x << 16;
                 result.v = 0;
             } else {
-                result.u = (vertex.texCoord.x << 16);// / result.w;
-                result.v = (vertex.texCoord.y << 16);// / result.w;
+                result.u = vertex.texCoord.x << 16;
+                result.v = vertex.texCoord.y << 16;
             }
-            result.w = result.w << 16;
             result.l = ((vertex.light.x * ambient) >> 8);
 
             applyLighting(result, vertex, c.w);
@@ -748,6 +757,9 @@ namespace GAPI {
     }
 
     void transformLights() {
+        if (lightsCount == 0)
+            return;
+
         memcpy(lightsRel, lights, sizeof(LightSW) * lightsCount);
 
         mat4 mModelInv = mModel.inverseOrtho();
