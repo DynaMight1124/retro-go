@@ -393,6 +393,52 @@ void ScaleTransparentClippedPost (byte * src, byte * buf, int level)
 }
 
 
+#ifndef DOS
+static void ScaleMaskedPostWidth(byte *src, byte *buf, int width)
+{
+   int offset;
+
+   whereami=30;
+   offset=*(src++);
+   while (offset != 255)
+      {
+      const int length=*(src++);
+      const int topscreen=sprtopoffset+(dc_invscale*offset);
+      const int bottomscreen=topscreen+(dc_invscale*length);
+      int yl=(topscreen+SFRACUNIT)>>SFRACBITS;
+      int yh=(bottomscreen-1)>>SFRACBITS;
+
+      if (yh >= viewheight)
+         yh=viewheight-1;
+      if (yl < 0)
+         yl=0;
+
+      if (yl <= yh)
+         {
+         byte *source=src-offset;
+         byte *dest=buf+ylookup[yl];
+         int frac=dc_texturemid+(yl-centery)*dc_iscale;
+         int count=yh-yl+1;
+
+         while (count--)
+            {
+            const byte color=shadingtable[source[frac>>SFRACBITS]];
+            int column;
+
+            for (column=0;column<width;column++)
+               dest[column]=color;
+
+            dest+=320;
+            frac+=dc_iscale;
+            }
+         }
+
+      src+=length;
+      offset=*(src++);
+      }
+}
+#endif
+
 void ScaleMaskedWidePost (byte * src, byte * buf, int x, int width)
 {
 #ifdef DOS
@@ -418,11 +464,11 @@ void ScaleMaskedWidePost (byte * src, byte * buf, int x, int width)
    ScaleMaskedPost(src,buf);
 #else
 	buf += x;
-	
-	while (width--) {
-		ScaleMaskedPost(src,buf);
-		buf++;
-	}
+
+   if (width == 1)
+      ScaleMaskedPost(src,buf);
+   else
+      ScaleMaskedPostWidth(src,buf,width);
 #endif
 }
 
@@ -1421,6 +1467,31 @@ void R_DrawWallColumn (byte * buf)
 	while (count--) {
 		//*dest = 6;
 		*dest = shadingtable[dc_source[(((unsigned)frac)>>26)]];
+		dest += 320;
+		frac += fracstep;
+	}
+}
+
+void R_DrawWallColumnWide (byte * buf)
+{
+	int count;
+	int frac, fracstep;
+	byte *dest;
+
+	count = dc_yh - dc_yl;
+	if (count < 0) return;
+
+	dest = buf + ylookup[dc_yl];
+
+	fracstep = dc_iscale;
+	frac = dc_texturemid + (dc_yl-centery)*fracstep;
+	frac <<= 10;
+	fracstep <<= 10;
+
+	while (count--) {
+		const byte color = shadingtable[dc_source[(((unsigned)frac)>>26)]];
+		dest[0] = color;
+		dest[1] = color;
 		dest += 320;
 		frac += fracstep;
 	}

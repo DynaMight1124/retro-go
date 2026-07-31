@@ -30,7 +30,7 @@ typedef struct
    signed   char Velocity;
    } TIMBRE;
 
-TIMBRE ADLIB_TimbreBank[ 256 ] =
+const TIMBRE ADLIB_TimbreBank[ 256 ] =
    {
       { { 33, 33 }, { 143, 6 }, { 242, 242 }, { 69, 118 }, { 0, 0 }, 8, 0 },
       { { 49, 33 }, { 75, 0 }, { 242, 242 }, { 84, 86 }, { 0, 0 }, 8, 0 },

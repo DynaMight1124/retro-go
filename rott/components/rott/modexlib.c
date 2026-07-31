@@ -71,14 +71,21 @@ void VL_ClearBuffer (byte *buf, byte color) {
 
 void VL_ClearVideo (byte color) {
     SDL_Surface *surface = SDL_GetVideoSurface();
-    if (surface && surface->pixels)
+    if (surface && surface->pixels) {
+        while (rg_display_is_busy())
+            rg_task_yield();
         memset (surface->pixels, color, 64000); 
+    }
 }
 
 void VH_UpdateScreen (void)
 { 
     SDL_Surface *surface = SDL_GetVideoSurface();
     if (surface && surface->pixels && page1start) {
+        // Keep the single internal staging surface stable while Retro-Go owns it.
+        while (rg_display_is_busy())
+            rg_task_yield();
+
         // Direct copy to the 320x200 SDL surface.
         // Retro-Go will then scale this to fill the physical screen.
         memcpy(surface->pixels, page1start, 64000);

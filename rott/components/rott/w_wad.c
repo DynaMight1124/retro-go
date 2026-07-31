@@ -47,6 +47,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 int             numlumps;
 void            **lumpcache;
+static byte     *lumpcachetags;
 
 //=============
 // STATICS
@@ -248,6 +249,10 @@ void W_InitMultipleFiles (char **filenames)
         if (!lumpcache)
            Error("W_InitFiles: lumpcache malloc failed size=%d\n",numlumps*sizeof(*lumpcache));
         memset(lumpcache, 0, numlumps * sizeof(*lumpcache));
+        lumpcachetags = rg_alloc(numlumps * sizeof(*lumpcachetags), MEM_SLOW);
+        if (!lumpcachetags)
+           Error("W_InitFiles: lumpcachetags malloc failed size=%d\n",numlumps);
+        memset(lumpcachetags, 0, numlumps * sizeof(*lumpcachetags));
 
         if (!quiet)
            printf("W_Wad: Wad Manager Started NUMLUMPS=%ld\n",(long int)numlumps);
@@ -505,6 +510,7 @@ void    *W_CacheLumpNum (int lump, int tag, converter_t converter, int numrec)
                 Debug("Invoking endian converter on %p, %i records\n", lumpcache[lump], numrec);
                 converter(lumpcache[lump], numrec);
 #endif
+                lumpcachetags[lump]=(byte)tag;
         }
         else
            {
@@ -528,7 +534,11 @@ void    *W_CacheLumpNum (int lump, int tag, converter_t converter, int numrec)
                      Error("Data corruption lump=%ld\n",lump);
                   }
 #endif
-               Z_ChangeTag (lumpcache[lump],tag);
+               if (lumpcachetags[lump] != (byte)tag)
+                  {
+                  Z_ChangeTag (lumpcache[lump],tag);
+                  lumpcachetags[lump]=(byte)tag;
+                  }
            }
 
         return lumpcache[lump];

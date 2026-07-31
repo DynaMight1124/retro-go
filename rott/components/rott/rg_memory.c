@@ -3,7 +3,7 @@
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <assert.h>
+#include <stdint.h>
 #include <rg_system.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
@@ -48,6 +48,16 @@ typedef struct memblock_s {
     void **user;
     struct memblock_s *next;
 } memblock_t;
+
+typedef struct {
+    memblock_t *block;
+    uint32_t magic;
+} zone_header_t;
+
+#define ZONE_HEADER_MAGIC 0x524F5454u
+#define ZONE_ALIGNMENT 16u
+#define ZONE_HEADER_SIZE \
+    ((sizeof(zone_header_t) + ZONE_ALIGNMENT - 1) & ~(ZONE_ALIGNMENT - 1))
 
 #define MAX_MEM_BLOCKS 4096
 static memblock_t *block_pool = NULL;
@@ -96,7 +106,6 @@ objtype  *new;
 byte     *TRIGGER;
 misc_stuff *MISCVARS;
 
-signed short (*MV_VolumeTable)[ 256 ];
 Pan (*MV_PanTable)[ 63 + 1 ];
 
 maskedwallobj_t **maskobjlist;
@@ -531,8 +540,11 @@ void allocate_rott_memory() {
     LightsInArea = rg_alloc((NUMAREAS + 1) * sizeof(int), MEM_SLOW);
     memset(LightsInArea, 0, (NUMAREAS + 1) * sizeof(int));
 
-    posts = rg_alloc(800 * sizeof(wallcast_t), MEM_SLOW);
-    memset(posts, 0, 800 * sizeof(wallcast_t));
+    // This structure is touched by wall casting, plane clipping, and sprite
+    // occlusion on every rendered frame. Keep the fixed 320-wide working set
+    // internal; the former 800-entry PSRAM allocation was a desktop remnant.
+    posts = rg_alloc(ROTT_POST_COUNT * sizeof(wallcast_t), MEM_FAST);
+    memset(posts, 0, ROTT_POST_COUNT * sizeof(wallcast_t));
 
     animwalls = rg_alloc(MAXANIMWALLS * sizeof(animwall_t), MEM_SLOW);
     memset(animwalls, 0, MAXANIMWALLS * sizeof(animwall_t));
@@ -562,9 +574,6 @@ void allocate_rott_memory() {
 
     MISCVARS = rg_alloc(sizeof(misc_stuff), MEM_SLOW);
     memset(MISCVARS, 0, sizeof(misc_stuff));
-
-    MV_VolumeTable = rg_alloc(64 * 256 * sizeof(signed short), MEM_SLOW);
-    memset(MV_VolumeTable, 0, 64 * 256 * sizeof(signed short));
 
     MV_PanTable = rg_alloc(MV_NumPanPositions * 64 * sizeof(Pan), MEM_SLOW);
     memset(MV_PanTable, 0, MV_NumPanPositions * 64 * sizeof(Pan));
@@ -620,12 +629,24 @@ void Z_Realloc(void **ptr, int size) {
     memblock_t *curr = first_block;
     while (curr) {
         if (curr->ptr == *ptr) {
-            void *newptr = rg_alloc(size, MEM_SLOW);
-            if (newptr) {
-                memcpy(newptr, *ptr, curr->size < size ? curr->size : size);
-                free(curr->ptr);
+            int alloc_size = (size > 0) ? size : 1;
+            size_t total_size = ZONE_HEADER_SIZE + (size_t)alloc_size;
+            zone_header_t *header =
+                (zone_header_t *)((byte *)curr->ptr - ZONE_HEADER_SIZE);
+            if (header->magic != ZONE_HEADER_MAGIC || header->block != curr)
+                Error("Z_Realloc: invalid zone allocation header");
+
+            zone_header_t *new_header = heap_caps_realloc(
+                header, total_size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+
+            if (new_header) {
+                void *newptr = (byte *)new_header + ZONE_HEADER_SIZE;
+                new_header->block = curr;
+                new_header->magic = ZONE_HEADER_MAGIC;
                 curr->ptr = newptr;
-                curr->size = size;
+                curr->size = alloc_size;
+                if (curr->user)
+                    *curr->user = newptr;
                 *ptr = newptr;
             }
             return;
@@ -646,13 +667,16 @@ void *Z_Malloc (int size, int tag, void *user)
     if ((++alloc_count & 31) == 0) vTaskDelay(1);
 
     int alloc_size = (size > 0) ? size : 1;
+    size_t total_size = ZONE_HEADER_SIZE + (size_t)alloc_size;
 
-    void *ptr = heap_caps_calloc(1, alloc_size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
-    if (!ptr) {
+    zone_header_t *header =
+        heap_caps_calloc(1, total_size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (!header) {
         Z_FreeTags(100, 255);
-        ptr = heap_caps_calloc(1, alloc_size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+        header =
+            heap_caps_calloc(1, total_size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
     }
-    if (!ptr) {
+    if (!header) {
         size_t free_psram = heap_caps_get_free_size(MALLOC_CAP_SPIRAM);
         printf("Z_Malloc FAILED: size=%d tag=%d (PSRAM free: %d)\n", 
                alloc_size, tag, (int)free_psram);
@@ -668,9 +692,13 @@ void *Z_Malloc (int size, int tag, void *user)
     }
 
     if (!block) {
+        free(header);
         Error("Z_Malloc: failed to allocate tracking block");
     }
 
+    void *ptr = (byte *)header + ZONE_HEADER_SIZE;
+    header->block = block;
+    header->magic = ZONE_HEADER_MAGIC;
     block->ptr = ptr;
     block->size = alloc_size;
     block->tag = tag;
@@ -684,8 +712,16 @@ void *Z_Malloc (int size, int tag, void *user)
 
 static void Z_Free_Internal(memblock_t *block)
 {
+    zone_header_t *header =
+        (zone_header_t *)((byte *)block->ptr - ZONE_HEADER_SIZE);
+
+    if (header->magic != ZONE_HEADER_MAGIC || header->block != block)
+        Error("Z_Free: invalid zone allocation header");
+
     if (block->user) *(block->user) = NULL;
-    free(block->ptr);
+    header->magic = 0;
+    header->block = NULL;
+    free(header);
     
     if (block >= block_pool && block < block_pool + MAX_MEM_BLOCKS) {
         block->next = free_blocks;
@@ -779,8 +815,17 @@ void *Z_LevelMalloc (int size, int tag, void *user)
 
 void Z_ChangeTag (void *ptr, int tag)
 {
-    // Stubbed: O(N) search per-frame destroys performance on ESP32.
-    // Retro-Go does not use Carmack's Z_Purge, so dynamic tag changing is unnecessary.
+    if (!ptr)
+        return;
+
+    zone_header_t *header =
+        (zone_header_t *)((byte *)ptr - ZONE_HEADER_SIZE);
+    memblock_t *block = header->block;
+
+    if (header->magic != ZONE_HEADER_MAGIC || !block || block->ptr != ptr)
+        Error("Z_ChangeTag: pointer is not a zone allocation");
+
+    block->tag = tag;
 }
 
 void Z_Init (int size, int min)

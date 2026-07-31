@@ -54,7 +54,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #define MV_MaxPanPosition  31
 #define MV_NumPanPositions ( MV_MaxPanPosition + 1 )
 #define MV_MaxTotalVolume  255
-//#define MV_MaxVolume       63
+#define MV_MaxVolume       63
 #define MV_NumVoices       8
 
 #define MIX_VOLUME( volume ) \
@@ -125,8 +125,8 @@ typedef struct VoiceNode
 
    void          ( *DemandFeed )( char **ptr, unsigned long *length );
 
-   short        *LeftVolume;
-   short        *RightVolume;
+   unsigned char LeftVolume;
+   unsigned char RightVolume;
 
    unsigned long callbackval;
 
@@ -213,7 +213,7 @@ static void       MV_ServiceRecord( void );
 static VoiceNode *MV_GetVoice( int handle );
 static VoiceNode *MV_AllocVoice( int priority );
 
-static short     *MV_GetVolumeTable( int vol );
+static unsigned char MV_GetVolumeLevel( int vol );
 
 static void       MV_SetVoiceMixMode( VoiceNode *voice );
 
@@ -270,9 +270,9 @@ void MV_Mix8BitStereo16( unsigned long position,
 void MV_Mix16BitStereo16( unsigned long position,
    unsigned long rate, const char *start, unsigned long length );
 
-void MV_16BitReverb( const char *src, char *dest, const VOLUME16 *volume, int count );
+void MV_16BitReverb( const char *src, char *dest, int volume, int count );
 
-void MV_8BitReverb( const signed char *src, signed char *dest, const VOLUME16 *volume, int count );
+void MV_8BitReverb( const signed char *src, signed char *dest, int volume, int count );
 
 void MV_16BitReverbFast( const char *src, char *dest, int count, int shift );
 

@@ -29,6 +29,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 **********************************************************************/
 
 #include "rt_def.h"
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 #include "dpmi.h"
@@ -168,13 +169,16 @@ int DPMI_GetDOSMemory( void **ptr, long *descriptor, unsigned length )
 	*ptr = (void *)rg_alloc(length, MEM_SLOW);
     if (*ptr) memset(*ptr, 0, length);
 	
-	*descriptor = (long) *ptr;
+	*descriptor = (long)(intptr_t)*ptr;
 	
 	return (*ptr == NULL) ? DPMI_Error : DPMI_Ok;
 }
 
 int DPMI_FreeDOSMemory( long descriptor )
 {
-    // Retro-Go memory isn't usually freed during runtime, but we'll leave it as a stub.
+    if (descriptor != 0) {
+        free((void *)(intptr_t)descriptor);
+    }
+
 	return DPMI_Ok;
 }

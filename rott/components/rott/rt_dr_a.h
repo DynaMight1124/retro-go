@@ -31,6 +31,9 @@ void RefreshClear(void);
 void DrawPost (int height, char * column, char * buf);
 void  DrawHeightPost (int height, byte * src, byte * buf); // IN rt_dr_a.asm
 void R_DrawWallColumn (byte * buf);
+#ifndef DOS
+void R_DrawWallColumnWide (byte * buf);
+#endif
 void  DrawMenuPost (int height, byte * src, byte * buf); // IN rt_dr_a.asm
 void  DrawMapPost (int height, byte * src, byte * buf); // IN rt_dr_a.asm
 

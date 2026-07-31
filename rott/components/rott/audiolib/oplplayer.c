@@ -28,6 +28,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <esp_attr.h>
 #include <rg_system.h>
 
 #include "opl.h"
@@ -93,7 +94,7 @@ typedef struct
     signed   char Velocity;
 } PACKEDATTR TIMBRE;
 
-extern TIMBRE ADLIB_TimbreBank[ 256 ];
+extern const TIMBRE ADLIB_TimbreBank[ 256 ];
 
 static void LoadOperatorData(int operator, const genmidi_op_t *data, boolean max_level);
 
@@ -207,13 +208,15 @@ static uint32_t division = 192;
 static int32_t render_timer = 0;
 static int32_t render_tempo = 0; // Ticks per second
 
-static genmidi_instr_t converted_instrs[256];
+// Generated once during music startup and only read on instrument/note changes.
+// Keep it out of scarce internal DRAM; it is not used by the per-sample OPL path.
+static EXT_RAM_BSS_ATTR genmidi_instr_t converted_instrs[256];
 
 static boolean LoadInstrumentTable(void)
 {
     for (int i = 0; i < 256; i++) {
         genmidi_instr_t *out = &converted_instrs[i];
-        TIMBRE *in = &ADLIB_TimbreBank[i];
+        const TIMBRE *in = &ADLIB_TimbreBank[i];
         memset(out, 0, sizeof(genmidi_instr_t));
         out->voices[0].modulator.tremolo = in->SAVEK[0];
         out->voices[0].modulator.attack = in->Env1[0];

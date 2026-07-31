@@ -543,8 +543,6 @@ void SetFCLightLevel (int height)
       }
 }
 
-
-
 void DrawHLine (int xleft, int xright, int yp)
 {
    int plane;
@@ -669,7 +667,7 @@ void DrawHLine (int xleft, int xright, int yp)
         mr_xstep >>= 2;
         mr_ystep >>= 2;
         
-        mr_count = xright-xleft+1;
+         mr_count = xright-xleft+1;
 #endif
 
          if (mr_count)

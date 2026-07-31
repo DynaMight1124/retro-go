@@ -72,6 +72,17 @@
 volatile int    oldtime;
 volatile int    gametime;
 
+// CalcTics deliberately waits for ROTT's 35 Hz clock. Track that pacing
+// separately so Retro-Go's BUSY statistic reports active engine work.
+static int64_t retrogo_pacing_wait_us;
+
+static void CalcTicsMeasured(void)
+{
+   const int64_t wait_started_us = rg_system_timer();
+   CalcTics();
+   retrogo_pacing_wait_us += rg_system_timer() - wait_started_us;
+}
+
 boolean         tedlevel;
 int             tedlevelnum;
 int             tedx=0;
@@ -83,6 +94,34 @@ int             warpa=0;
 int             NoSound;
 int             polltime;
 int             oldpolltime;
+static boolean  retrogo_restore_controls;
+
+void ROTT_SuspendForSystemMenu (void)
+{
+   // ROTT's native ControlPanel uses the same lifecycle. Remember whether the
+   // gameplay control producer was active so dialogs opened elsewhere do not
+   // accidentally start it.
+   retrogo_restore_controls = (controlupdatestarted != 0);
+   if (retrogo_restore_controls)
+      ShutdownClientControls();
+   IN_ClearKeysDown();
+}
+
+void ROTT_ResumeFromSystemMenu (int64_t paused_us)
+{
+   // A Retro-Go dialog blocks the engine loop. Do not turn that wall-clock
+   // pause into a burst of catch-up simulation or reported engine work.
+   oldtime = oldpolltime = GetTicCount();
+   if (paused_us > 0)
+      retrogo_pacing_wait_us += paused_us;
+
+   if (retrogo_restore_controls)
+   {
+      retrogo_restore_controls = false;
+      StartupClientControls();
+   }
+}
+
 boolean         fizzlein = false;
 int             pheight;
 
@@ -1781,7 +1820,7 @@ void UpdateGameObjects ( void )
    if (demoplayback == false)
        PollControls ();
 
-   CalcTics ();
+   CalcTicsMeasured ();
 
    UpdateClientControls ();
 
@@ -1907,7 +1946,7 @@ void PauseLoop ( void )
          }
 		}
 
-   CalcTics ();
+   CalcTicsMeasured ();
    if (demoplayback==false)
       PollControls ();
 
@@ -1932,6 +1971,7 @@ void PlayLoop
 
    boolean canquit = true;
    int     quittime = 0;
+   int     skipframes = 0;
 
    wami(3);
 
@@ -1944,6 +1984,7 @@ void PlayLoop
 
 fromloadedgame:
 
+   skipframes = 0;
    GamePaused = false;
 
 	if ( loadedgame == false )
@@ -1989,6 +2030,12 @@ fromloadedgame:
 
 	while( playstate == ex_stillplaying )
       {
+      const int64_t frame_started_us = rg_system_timer();
+      const boolean drawframe =
+         (skipframes == 0) || fizzlein || (controlupdatestarted == 0);
+      boolean allow_frameskip = !fizzlein && (controlupdatestarted != 0);
+      retrogo_pacing_wait_us = 0;
+
       UpdateClientControls();
 
       if ( GamePaused )
@@ -2013,7 +2060,8 @@ fromloadedgame:
 
          atime = GetFastTics();
 
-         ThreeDRefresh();
+         if (drawframe)
+            ThreeDRefresh();
          }
 
       SyncToServer();
@@ -2054,6 +2102,7 @@ fromloadedgame:
       if ( ( !BATTLEMODE ) && ( CP_CheckQuick( LastScan ) ) )
 			{
          boolean escaped=false;
+         allow_frameskip = false;
 
          if (LastScan == sc_Escape)
             {
@@ -2169,6 +2218,30 @@ fromloadedgame:
                   }
                }
             }
+         }
+
+      const int64_t frame_elapsed_us = rg_system_timer() - frame_started_us;
+      const int64_t frame_busy_us = frame_elapsed_us - retrogo_pacing_wait_us;
+      const int64_t reported_busy_us = allow_frameskip ? frame_busy_us : 0;
+      rg_system_tick((int)(reported_busy_us > 0 ? reported_busy_us : 0));
+
+      // Skip video only: simulation, controls, sound state, and game
+      // bookkeeping above continue to run on every 35 Hz engine tick.
+      if (GamePaused || !allow_frameskip)
+         {
+         skipframes = 0;
+         }
+      else if (skipframes > 0)
+         {
+         skipframes--;
+         }
+      else if (rg_system_get_app()->frameskip > 0)
+         {
+         skipframes = rg_system_get_app()->frameskip;
+         }
+      else if (frame_busy_us > (rg_system_get_app()->frameTime + 1500))
+         {
+         skipframes = 1;
          }
       }
    waminot();

@@ -141,6 +141,8 @@ extern int programlocation;
 extern  int polltime;
 extern  int oldpolltime;
 extern  volatile int oldtime;
+void ROTT_SuspendForSystemMenu (void);
+void ROTT_ResumeFromSystemMenu (int64_t paused_us);
 void PauseLoop ( void );
 #if SAVE_SCREEN
 extern boolean inhmenu;

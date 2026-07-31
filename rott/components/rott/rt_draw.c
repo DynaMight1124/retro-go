@@ -1807,7 +1807,7 @@ void SetWallLightLevel (wallcast_t * post)
 ====================
 */
 
-void DrawWallPost ( wallcast_t * post, byte * buf)
+static void DrawWallPostWidth (wallcast_t *post, byte *buf, int width)
 {
    int ht;
    int topscreen;
@@ -1887,6 +1887,11 @@ void DrawWallPost ( wallcast_t * post, byte * buf)
    post->ceilingclip=dc_yl;
    post->floorclip=dc_yh-1;
    dc_source=src2+((post->texture>>4)&0xfc0);
+#ifndef DOS
+   if (width == 2)
+      R_DrawWallColumnWide(buf);
+   else
+#endif
    R_DrawWallColumn (buf);
 
 bottomcheck:
@@ -1910,7 +1915,17 @@ bottomcheck:
       dc_yh = viewheight;
    post->floorclip=dc_yh-1;
    dc_source=src+((post->texture>>4)&0xfc0);
+#ifndef DOS
+   if (width == 2)
+      R_DrawWallColumnWide(buf);
+   else
+#endif
    R_DrawWallColumn (buf);
+}
+
+void DrawWallPost (wallcast_t *post, byte *buf)
+{
+   DrawWallPostWidth(post,buf,1);
 }
 
 /*
@@ -1946,9 +1961,10 @@ void   DrawWalls (void)
 #endif
             {
             SetWallLightLevel(post);
+#ifdef DOS
             DrawWallPost(post,buf);
-#ifndef DOS            
-            DrawWallPost(post,buf+1); 
+#else
+            DrawWallPostWidth(post,buf,2);
 #endif
             (post+1)->ceilingclip=post->ceilingclip;
             (post+1)->floorclip=post->floorclip;
@@ -2709,6 +2725,7 @@ void DrawPlayerLocation ( void )
 
 
 int playerview=0;
+
 void      ThreeDRefresh (void)
 {
    objtype * tempptr;
@@ -5483,7 +5500,6 @@ void DoInBetweenCinematic (int yoffset, int lump, int delay, char * string )
    y=190-height;
    US_ClippedPrint (x, y, string);
    FlipPage();
-   VL_SetPalette(origpal);
    VL_FadeIn(0,255,origpal,20);
    I_Delay (delay);
    VL_FadeOut (0, 255, 0, 0, 0, 20);

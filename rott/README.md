@@ -49,8 +49,10 @@ The following default mapping is used across most Retro-Go handhelds:
 | **Open / Use** | Button X / Start |
 | **Weapon Swap** | Button Y / Select |
 | **Strafe Left / Right** | L / R Shoulders |
-| **Menu** | Menu Button |
-| **Map** | Option Button |
+| **ROTT Menu** | Short press Menu |
+| **Retro-Go Menu** | Hold Menu |
+| **Map** | Short press Option |
+| **Retro-Go Options** | Hold Option |
 
 ## Credits & Acknowledgements
 - **Original Developers**: [Apogee Software, Ltd.](https://www.apogeesoftware.com/) for creating this legendary title.

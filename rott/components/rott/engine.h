@@ -38,6 +38,13 @@ typedef struct
   int      posttype;
   int      alttile;
 } wallcast_t;
+
+// Refresh() casts the inclusive right-edge sentinel at viewwidth, and a few
+// paired-column paths inspect the following entry. Retro-Go is fixed to the
+// native 320-pixel renderer, so the desktop-era 800-entry allocation only
+// wastes cache and prevents this renderer working set from fitting internally.
+#define ROTT_POST_COUNT (MAXVIEWWIDTH + 2)
+
 extern wallcast_t *posts;
 
 extern int lasttilex;

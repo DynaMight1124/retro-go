@@ -70,20 +70,16 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
           ) >> (bits)                           \
         )
 
-#define IS_QUIET( ptr )  ( ( void * )( ptr ) == ( void * )&MV_VolumeTable[ 0 ] )
+#define IS_QUIET( volume ) ( ( volume ) == 0 )
 
 static int       MV_ReverbLevel;
 static int       MV_ReverbDelay;
-static VOLUME16 *MV_ReverbTable = NULL;
+static int       MV_UseVolumeReverb = FALSE;
+static unsigned char MV_VolumeScale[ MV_MaxVolume + 1 ];
 
 #ifndef RETRO_GO
-//static signed short MV_VolumeTable[ MV_MaxVolume + 1 ][ 256 ];
-static signed short MV_VolumeTable[ 63 + 1 ][ 256 ];
-
-//static Pan MV_PanTable[ MV_NumPanPositions ][ MV_MaxVolume + 1 ];
-static Pan MV_PanTable[ MV_NumPanPositions ][ 63 + 1 ];
+static Pan MV_PanTable[ MV_NumPanPositions ][ MV_MaxVolume + 1 ];
 #else
-extern signed short (*MV_VolumeTable)[ 256 ];
 extern Pan (*MV_PanTable)[ 63 + 1 ];
 #endif
 
@@ -133,12 +129,10 @@ static void ( *MV_CallBackFunc )( unsigned long ) = NULL;
 static void ( *MV_RecordFunc )( char *ptr, int length ) = NULL;
 static void ( *MV_MixFunction )( VoiceNode *voice, int buffer );
 
-static int MV_MaxVolume = 63;
-
 char  *MV_HarshClipTable;
 char  *MV_MixDestination;
-short *MV_LeftVolume;
-short *MV_RightVolume;
+int MV_LeftVolume;
+int MV_RightVolume;
 
 unsigned long MV_MixPosition;
 
@@ -301,8 +295,8 @@ static void MV_Mix
    FixedPointBufferSize = voice->FixedPointBufferSize;
 
    MV_MixDestination    = MV_MixBuffer[ buffer ];
-   MV_LeftVolume        = voice->LeftVolume;
-   MV_RightVolume       = voice->RightVolume;
+   MV_LeftVolume        = MV_VolumeScale[ voice->LeftVolume ];
+   MV_RightVolume       = MV_VolumeScale[ voice->RightVolume ];
 
    if ( ( MV_Channels == 2 ) && ( IS_QUIET( MV_LeftVolume ) ) )
       {
@@ -489,13 +483,15 @@ void MV_ServiceVoc
 
          if ( MV_Bits == 16 )
             {
-            if ( MV_ReverbTable != NULL )
+            if ( MV_UseVolumeReverb )
                {
-               MV_16BitReverb( source, dest, (const VOLUME16 *)MV_ReverbTable, count / 2 );
+               MV_16BitReverb( source, dest,
+                  MV_VolumeScale[ MV_ReverbLevel ], count / 2 );
                if ( ( MV_SoundCard == UltraSound ) && ( MV_Channels == 2 ) )
                   {
                   MV_16BitReverb( source + MV_RightChannelOffset,
-                     dest + MV_RightChannelOffset, (const VOLUME16 *)MV_ReverbTable, count / 2 );
+                     dest + MV_RightChannelOffset,
+                     MV_VolumeScale[ MV_ReverbLevel ], count / 2 );
                   }
                }
             else
@@ -510,13 +506,15 @@ void MV_ServiceVoc
             }
          else
             {
-            if ( MV_ReverbTable != NULL )
+            if ( MV_UseVolumeReverb )
                {
-               MV_8BitReverb( source, dest, (const VOLUME16 *)MV_ReverbTable, count );
+               MV_8BitReverb( source, dest,
+                  MV_VolumeScale[ MV_ReverbLevel ], count );
                if ( ( MV_SoundCard == UltraSound ) && ( MV_Channels == 2 ) )
                   {
                   MV_8BitReverb( source + MV_RightChannelOffset,
-                     dest + MV_RightChannelOffset, (const VOLUME16 *)MV_ReverbTable, count );
+                     dest + MV_RightChannelOffset,
+                     MV_VolumeScale[ MV_ReverbLevel ], count );
                   }
                }
             else
@@ -1431,26 +1429,18 @@ int MV_SetFrequency
 
 
 /*---------------------------------------------------------------------
-   Function: MV_GetVolumeTable
+   Function: MV_GetVolumeLevel
 
-   Returns a pointer to the volume table associated with the specified
-   volume.
+   Returns the compact volume level associated with the specified volume.
 ---------------------------------------------------------------------*/
 
-static short *MV_GetVolumeTable
+static unsigned char MV_GetVolumeLevel
    (
    int vol
    )
 
    {
-   int volume;
-   short *table;
-
-   volume = MIX_VOLUME( vol );
-
-   table = (short *)&MV_VolumeTable[ volume ];
-
-   return( table );
+   return( MIX_VOLUME( vol ) );
    }
 
 
@@ -1604,13 +1594,13 @@ void MV_SetVoiceVolume
    if ( MV_SwapLeftRight )
       {
       // SBPro uses reversed panning
-      voice->LeftVolume  = MV_GetVolumeTable( right );
-      voice->RightVolume = MV_GetVolumeTable( left );
+      voice->LeftVolume  = MV_GetVolumeLevel( right );
+      voice->RightVolume = MV_GetVolumeLevel( left );
       }
    else
       {
-      voice->LeftVolume  = MV_GetVolumeTable( left );
-      voice->RightVolume = MV_GetVolumeTable( right );
+      voice->LeftVolume  = MV_GetVolumeLevel( left );
+      voice->RightVolume = MV_GetVolumeLevel( right );
       }
 
    MV_SetVoiceMixMode( voice );
@@ -1751,7 +1741,7 @@ void MV_SetReverb
 
    {
    MV_ReverbLevel = MIX_VOLUME( reverb );
-   MV_ReverbTable = &MV_VolumeTable[ MV_ReverbLevel ];
+   MV_UseVolumeReverb = TRUE;
    }
 
 
@@ -1768,7 +1758,7 @@ void MV_SetFastReverb
 
    {
    MV_ReverbLevel = max( 0, min( 16, reverb ) );
-   MV_ReverbTable = NULL;
+   MV_UseVolumeReverb = FALSE;
    }
 
 
@@ -2790,8 +2780,8 @@ static void MV_LockEnd
 /*---------------------------------------------------------------------
    Function: MV_CreateVolumeTable
 
-   Create the table used to convert sound data to a specific volume
-   level.
+   Create the compact scale used to convert sound data to a specific
+   volume level.
 ---------------------------------------------------------------------*/
 
 void MV_CreateVolumeTable
@@ -2802,31 +2792,10 @@ void MV_CreateVolumeTable
    )
 
    {
-   int val;
    int level;
-   int i;
 
    level = ( volume * MaxVolume ) / MV_MaxTotalVolume;
-   if ( MV_Bits == 16 )
-      {
-      for( i = 0; i < 65536; i += 256 )
-         {
-         val   = i - 0x8000;
-         val  *= level;
-         val  /= MV_MaxVolume;
-         MV_VolumeTable[ index ][ i / 256 ] = val;
-         }
-      }
-   else
-      {
-      for( i = 0; i < 256; i++ )
-         {
-         val   = i - 0x80;
-         val  *= level;
-         val  /= MV_MaxVolume;
-         MV_VolumeTable[ volume ][ i ] = val;
-         }
-      }
+   MV_VolumeScale[ index ] = level;
    }
 
 
@@ -2919,13 +2888,18 @@ void MV_SetVolume
    )
 
    {
+   unsigned flags;
+
    volume = max( 0, volume );
    volume = min( volume, MV_MaxTotalVolume );
 
+   flags = DisableInterrupts();
    MV_TotalVolume = volume;
 
-   // Calculate volume table
+   // Calculate compact per-row scales. The mixer applies the original
+   // integer formula directly, avoiding random PSRAM table reads.
    MV_CalcVolume( volume );
+   RestoreInterrupts( flags );
    }
 
 
@@ -3268,7 +3242,7 @@ int MV_Init
    MV_RecordFunc   = NULL;
    MV_Recording    = FALSE;
    MV_ReverbLevel  = 0;
-   MV_ReverbTable  = NULL;
+   MV_UseVolumeReverb = FALSE;
 
    // Set the sampling rate
    MV_RequestedMixRate = MixRate;
@@ -3428,7 +3402,7 @@ void MV_UnlockMemory
    PITCH_UnlockMemory();
 
    DPMI_UnlockMemoryRegion( MV_LockStart, MV_LockEnd );
-   DPMI_Unlock( MV_VolumeTable );
+   DPMI_Unlock( MV_VolumeScale );
    DPMI_Unlock( MV_PanTable );
    DPMI_Unlock( MV_Installed );
    DPMI_Unlock( MV_SoundCard );
@@ -3467,7 +3441,7 @@ void MV_UnlockMemory
    DPMI_Unlock( MV_BuffShift );
    DPMI_Unlock( MV_ReverbLevel );
    DPMI_Unlock( MV_ReverbDelay );
-   DPMI_Unlock( MV_ReverbTable );
+   DPMI_Unlock( MV_UseVolumeReverb );
    }
 
 
@@ -3487,7 +3461,7 @@ int MV_LockMemory
    int pitchstatus;
 
    status  = DPMI_LockMemoryRegion( MV_LockStart, MV_LockEnd );
-   status |= DPMI_Lock( MV_VolumeTable );
+   status |= DPMI_Lock( MV_VolumeScale );
    status |= DPMI_Lock( MV_PanTable );
    status |= DPMI_Lock( MV_Installed );
    status |= DPMI_Lock( MV_SoundCard );
@@ -3526,7 +3500,7 @@ int MV_LockMemory
    status |= DPMI_Lock( MV_BuffShift );
    status |= DPMI_Lock( MV_ReverbLevel );
    status |= DPMI_Lock( MV_ReverbDelay );
-   status |= DPMI_Lock( MV_ReverbTable );
+   status |= DPMI_Lock( MV_UseVolumeReverb );
 
    pitchstatus = PITCH_LockMemory();
    if ( ( pitchstatus != PITCH_Ok ) || ( status != DPMI_Ok ) )
