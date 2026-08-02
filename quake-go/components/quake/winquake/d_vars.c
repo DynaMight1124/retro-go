@@ -38,6 +38,7 @@ float	d_sdivzstepv, d_tdivzstepv, d_zistepv;
 float	d_sdivzorigin, d_tdivzorigin, d_ziorigin;
 
 fixed16_t	sadjust, tadjust, bbextents, bbextentt;
+void		(*prealspandrawer)(void);
 
 pixel_t			*cacheblock;
 int				cachewidth;
@@ -47,4 +48,3 @@ unsigned int	d_zrowbytes;
 unsigned int	d_zwidth;
 
 #endif	// !id386
-

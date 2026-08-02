@@ -29,9 +29,16 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #define	MAXVERTS	16					// max points in a surface polygon
 #define MAXWORKINGVERTS	(MAXVERTS+4)	// max points in an intermediate
 										//  polygon (while processing)
-// !!! if this is changed, it must be changed in d_ifacea.h too !!!
-#define	MAXHEIGHT		1024
-#define	MAXWIDTH		1280
+// The Retro-Go video adapter never exceeds 320x240. Right-size the software
+// renderer's scanline scratch storage instead of retaining desktop-era bounds.
+// !!! if MAXHEIGHT is changed, it must be changed in d_ifacea.h too !!!
+#ifdef ESP32_QUAKE
+#define MAXHEIGHT		240
+#define MAXWIDTH		320
+#else
+#define MAXHEIGHT		1024
+#define MAXWIDTH		1280
+#endif
 #define MAXDIMENSION	((MAXHEIGHT > MAXWIDTH) ? MAXHEIGHT : MAXWIDTH)
 
 #define SIN_BUFFER_SIZE	(MAXDIMENSION+CYCLE)

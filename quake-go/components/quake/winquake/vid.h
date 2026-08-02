@@ -19,6 +19,8 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 */
 // vid.h -- video driver defs
 
+#include <stdint.h>
+
 #define VID_CBITS	6
 #define VID_GRADES	(1 << VID_CBITS)
 
@@ -83,10 +85,16 @@ void	VID_Shutdown (void);
 void	VID_Update (vrect_t *rects);
 // flushes the given rectangles from the view buffer to the screen
 
+#ifdef ESP32_QUAKE
+void VID_SetSkipFrame (qboolean skip);
+qboolean VID_ShouldSkipFrame (void);
+qboolean VID_ConsumeDisplayLate (void);
+uint32_t VID_ConsumeDisplayTime (void);
+#endif
+
 int VID_SetMode (int modenum, unsigned char *palette);
 // sets the mode; only used by the Quake engine for resetting to mode 0 (the
 // base mode) on memory allocation failures
 
 void VID_HandlePause (qboolean pause);
 // called only on Win32, when pause happens, so the mouse can be released
-

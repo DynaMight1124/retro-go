@@ -8,8 +8,8 @@
 
 #define FATFS_PROXY_TASK_NAME       ("fatfs_task")
 #define FATFS_PROXY_TASK_STACK_SIZE (4096)
-#define FATFS_PROXY_TASK_PRIORITY   (5) // Prioritize over Quake (2)
-#define FATFS_PROXY_TASK_CORE       (0) // Quake is on Core 1
+#define FATFS_PROXY_TASK_PRIORITY   (5) // Owner blocks until each request completes
+#define FATFS_PROXY_TASK_CORE       (0) // Internal stack remains usable during FATFS cache operations
 
 typedef enum 
 {

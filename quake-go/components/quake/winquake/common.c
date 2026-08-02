@@ -59,6 +59,19 @@ char	com_cmdline[CMDLINE_LENGTH];
 
 qboolean		standard_quake = true, rogue, hipnotic;
 
+#ifdef ESP32_QUAKE
+static const char *com_selected_paks[2];
+struct pack_s;
+static struct pack_s *com_active_pack;
+
+void COM_SetSelectedPaks (const char *pak0_path, const char *pak1_path)
+{
+    com_selected_paks[0] = pak0_path;
+    com_selected_paks[1] = pak1_path;
+    com_active_pack = NULL;
+}
+#endif
+
 // this graphic needs to be in the pak file to use registered features
 unsigned short pop[] =
 {
@@ -1363,6 +1376,28 @@ void COM_CopyFile (char *netpath, char *cachepath)
 
 const void* Sys_FileGetMmapBase(int handle);
 
+static qboolean COM_ActivatePack(pack_t *pak)
+{
+    int handle;
+
+    if (com_active_pack == pak && pak->handle >= 0)
+        return true;
+
+    if (com_active_pack && com_active_pack->handle >= 0)
+    {
+        Sys_FileClose (com_active_pack->handle);
+        com_active_pack->handle = -1;
+    }
+    com_active_pack = NULL;
+
+    if (Sys_FileOpenRead (pak->filename, &handle) < 0)
+        return false;
+
+    pak->handle = handle;
+    com_active_pack = pak;
+    return true;
+}
+
 static int COM_FindFile_ESP32(char *filename, int *handle, QUAKE_FILE **file, const void **mmap)
 {
     searchpath_t    *search;
@@ -1390,10 +1425,10 @@ static int COM_FindFile_ESP32(char *filename, int *handle, QUAKE_FILE **file, co
             for (i=0 ; i<pak->numfiles ; i++)
                 if (!strcmp (pak->files[i].name, filename))
                 {       // found it!
-                    Sys_Printf("PackFile: %s : %s\n",pak->filename, filename);
-
                     if (handle)
                     {
+                        if (!COM_ActivatePack (pak))
+                            continue;
                         *handle = pak->handle;
                         Sys_FileSeek (pak->handle, pak->files[i].filepos);
                     }
@@ -1405,6 +1440,8 @@ static int COM_FindFile_ESP32(char *filename, int *handle, QUAKE_FILE **file, co
                     }
                     else //mmap
                     {
+                        if (!COM_ActivatePack (pak))
+                            continue;
                         const uint8_t *mmapBase = Sys_FileGetMmapBase(pak->handle);
 
                         if (mmapBase == NULL)
@@ -1529,7 +1566,6 @@ int COM_FindFile (char *filename, int *handle, QUAKE_FILE **file)
             for (i=0 ; i<pak->numfiles ; i++)
                 if (!strcmp (pak->files[i].name, filename))
                 {       // found it!
-                    Sys_Printf ("PackFile: %s : %s\n",pak->filename, filename);
                     if (handle)
                     {
                         *handle = pak->handle;
@@ -1831,6 +1867,14 @@ pack_t *COM_LoadPackFile (char *packfile)
     pack->handle = packhandle;
     pack->numfiles = numpackfiles;
     pack->files = newfiles;
+
+#ifdef ESP32_QUAKE
+    // Keep only the currently-read PAK open. Registered mission packs require
+    // three PAKs, while FATFS must retain a descriptor for transient engine
+    // I/O. Their directories remain resident, so switching is inexpensive.
+    Sys_FileClose (packhandle);
+    pack->handle = -1;
+#endif
     
     free(info);
 
@@ -1847,6 +1891,18 @@ Sets com_gamedir, adds the directory to the head of the path,
 then loads and adds pak1.pak pak2.pak ... 
 ================
 */
+static void COM_AddSearchDirectory (char *dir)
+{
+    searchpath_t *search;
+
+    strcpy (com_gamedir, dir);
+
+    search = Hunk_Alloc (sizeof(searchpath_t));
+    strcpy (search->filename, dir);
+    search->next = com_searchpaths;
+    com_searchpaths = search;
+}
+
 void COM_AddGameDirectory (char *dir)
 {
     int                             i;
@@ -1856,15 +1912,7 @@ void COM_AddGameDirectory (char *dir)
 
     Con_Printf("COM_AddGameDirectory: %s\n", dir);
 
-    strcpy (com_gamedir, dir);
-
-//
-// add the directory to the search path
-//
-    search = Hunk_Alloc (sizeof(searchpath_t));
-    strcpy (search->filename, dir);
-    search->next = com_searchpaths;
-    com_searchpaths = search;
+    COM_AddSearchDirectory (dir);
 
 //
 // add any pak files in the format pak0.pak pak1.pak, ...
@@ -1886,6 +1934,44 @@ void COM_AddGameDirectory (char *dir)
 //
 
 }
+
+#ifdef ESP32_QUAKE
+static void COM_AddSelectedPaks (void)
+{
+    int i;
+    searchpath_t *search;
+    pack_t *pak;
+
+    // Paths resolved by the launcher adapter preserve the directory entry's
+    // real case. Load pak0 first and pak1 second so pak1 has normal override
+    // precedence, while avoiding files already found by the sequential scan.
+    for (i = 0; i < 2; ++i)
+    {
+        if (!com_selected_paks[i] || !*com_selected_paks[i])
+            continue;
+
+        for (search = com_searchpaths; search; search = search->next)
+            // FAT may return an upper-case directory entry while accepting a
+            // lower-case open path. Those names identify the same pack and
+            // must not consume two persistent file descriptors.
+            if (search->pack && !Q_strcasecmp(search->pack->filename,
+                                              (char *)com_selected_paks[i]))
+                break;
+        if (search)
+            continue;
+
+        pak = COM_LoadPackFile ((char *)com_selected_paks[i]);
+        if (!pak)
+            Sys_Error ("Couldn't load selected packfile: %s",
+                       com_selected_paks[i]);
+
+        search = Hunk_Alloc (sizeof(searchpath_t));
+        search->pack = pak;
+        search->next = com_searchpaths;
+        com_searchpaths = search;
+    }
+}
+#endif
 
 /*
 ================
@@ -1937,9 +2023,30 @@ void COM_InitFilesystem (void)
 //
 // start up with basedir, GAMENAME and configdir by default
 //
+#ifdef ESP32_QUAKE
+    // Base launches use exactly the selected directory. Add-ons require one
+    // registered base layer: prefer conventional id1, falling back to root.
+    // Loading both wastes memory and makes identical installations ambiguous.
+    if (COM_CheckParm ("-rogue") || COM_CheckParm ("-hipnotic") ||
+        COM_CheckParm ("-game"))
+    {
+        char basepak[MAX_OSPATH];
+        sprintf (basepak, "%s/"GAMENAME"/pak0.pak", basedir);
+        if (Sys_FileTime (basepak) != -1)
+            COM_AddGameDirectory (va("%s/"GAMENAME, basedir) );
+        else
+            COM_AddGameDirectory (basedir);
+    }
+    else
+        COM_AddGameDirectory (basedir);
+#else
     COM_AddGameDirectory (basedir);
     COM_AddGameDirectory (va("%s/"GAMENAME, basedir) );
-    COM_AddGameDirectory (com_configdir);
+#endif
+    // Retro-Go's config location contains loose writable files, never game
+    // data. Adding it as a search directory avoids a pointless pak0 probe and
+    // its expected missing-file warning on every launch.
+    COM_AddSearchDirectory (com_configdir);
 
     if (COM_CheckParm ("-rogue"))
         COM_AddGameDirectory (va("%s/rogue", basedir) );
@@ -1987,4 +2094,10 @@ void COM_InitFilesystem (void)
 
     if (COM_CheckParm ("-proghack"))
         proghack = true;
+
+#ifdef ESP32_QUAKE
+    // Launcher content is authoritative. Insert the exact selected PAK after
+    // the generated search path so a non-standard filename is still honored.
+    COM_AddSelectedPaks ();
+#endif
 }
