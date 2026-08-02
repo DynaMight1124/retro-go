@@ -158,8 +158,6 @@ void app_main(void)
     };
 
     rg_system_init(&config);
-    // Keep Retro-Go's periodic STACK/HEAP/BUSY/FPS status line enabled.
-    rg_system_set_log_level(RG_LOG_DEBUG);
     if (!rg_settings_exists(NS_APP, "DispScaling")) {
         rg_display_set_scaling(RG_DISPLAY_SCALING_FULL);
     }

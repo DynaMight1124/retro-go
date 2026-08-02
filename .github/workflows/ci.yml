@@ -1,12 +1,71 @@
-name: ci
+name: Build Retro-Go
 
 on:
-  workflow_dispatch:      # Start a workflow
-  push:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: 'Target device(s) to build (e.g., cyd, "cyd, gb300-p4", or "all")'
+        required: true
+        default: 'all'
+        type: string
+      project_ver:
+        description: 'PROJECT_VER version string (e.g., 1.4x-MEGAPACK)'
+        required: true
+        default: '1.4x-MEGAPACK'
+        type: string
+      create_release:
+        description: 'Create a GitHub Draft Release and attach all image files?'
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: write
 
 jobs:
-  build:
+  generate-matrix:
     runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.set-matrix.outputs.matrix }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Generate target matrix
+        id: set-matrix
+        run: |
+          INPUT_TARGETS="${{ inputs.target }}"
+          if [ "$INPUT_TARGETS" = "all" ]; then
+            TARGET_LIST=()
+            for target_path in components/retro-go/targets/*/; do
+              t=$(basename "$target_path")
+              if [ "$t" != "sdl2" ]; then
+                TARGET_LIST+=("$t")
+              fi
+            done
+          else
+            # Replace commas with spaces and parse targets
+            CLEAN_INPUT=$(echo "$INPUT_TARGETS" | tr ',' ' ')
+            TARGET_LIST=()
+            for t in $CLEAN_INPUT; do
+              t=$(echo "$t" | xargs)
+              if [ -n "$t" ]; then
+                TARGET_LIST+=("$t")
+              fi
+            done
+          fi
+
+          # Format list into JSON array string
+          JSON_ARRAY=$(jq -c -n '$ARGS.positional' --args "${TARGET_LIST[@]}")
+          echo "matrix={\"target\": $JSON_ARRAY}" >> $GITHUB_OUTPUT
+
+  build:
+    needs: generate-matrix
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.generate-matrix.outputs.matrix) }}
 
     steps:
     # Remove ~18 GiB of preinstalled software to have more disk space during the build
@@ -22,7 +81,7 @@ jobs:
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v3
 
-    - name: Build
+    - name: Build Docker environment
       uses: docker/build-push-action@v6
       with:
         context: .
@@ -31,12 +90,64 @@ jobs:
         cache-to: type=gha,mode=max
         load: true
 
-    - name: Extract binaries from docker image
+    - name: Compile target firmware image
       run: |
-        docker run --rm -v $(pwd)/build:/build retro-go:latest sh -c "cp /app/*.fw /build"
+        mkdir -p output
+        t="${{ matrix.target }}"
+        
+        # Detect if target is ESP32-P4 (which lacks Wi-Fi/networking)
+        NO_NETWORKING=""
+        if grep -q "esp32p4" "components/retro-go/targets/$t/env.py" 2>/dev/null; then
+          NO_NETWORKING="--no-networking"
+        fi
 
-    - name: Upload artifacts
+        echo "=========================================="
+        echo "Building target: $t (PROJECT_VER=${{ inputs.project_ver }}) $NO_NETWORKING"
+        echo "=========================================="
+        docker run --rm -e PROJECT_VER="${{ inputs.project_ver }}" -v $(pwd)/output:/output retro-go:latest bash -c ". /opt/esp/idf/export.sh && python rg_tool.py --target=$t $NO_NETWORKING release && cp *.img /output/ 2>/dev/null || true"
+
+    - name: Upload firmware image
       uses: actions/upload-artifact@v4
       with:
-        name: binaries
-        path: build/*.fw
+        name: retro-go-image-${{ matrix.target }}
+        path: output/*.img
+        if-no-files-found: error
+
+  draft-release:
+    needs: [generate-matrix, build]
+    if: ${{ always() && !cancelled() && inputs.create_release }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download all built firmware images
+        uses: actions/download-artifact@v4
+        with:
+          pattern: retro-go-image-*
+          path: all-images
+          merge-multiple: true
+
+      - name: Create or update GitHub Draft Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ inputs.project_ver }}"
+          echo "Preparing Draft Release for tag/version: $TAG"
+          ls -la all-images/
+          
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release '$TAG' exists, uploading/overwriting assets..."
+            gh release upload "$TAG" all-images/*.img --clobber
+          else
+            echo "Creating new Draft Release '$TAG'..."
+            gh release create "$TAG" all-images/*.img \
+              --draft \
+              --title "Retro-Go $TAG" \
+              --notes "Automated release build for Retro-Go $TAG."
+          fi
+
+
+
