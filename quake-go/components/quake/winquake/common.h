@@ -150,6 +150,9 @@ extern	char	**com_argv;
 int COM_CheckParm (char *parm);
 void COM_Init (char *path);
 void COM_InitArgv (int argc, char **argv);
+#ifdef ESP32_QUAKE
+void COM_SetSelectedPaks (const char *pak0_path, const char *pak1_path);
+#endif
 
 char *COM_SkipPath (char *pathname);
 void COM_StripExtension (char *in, char *out);

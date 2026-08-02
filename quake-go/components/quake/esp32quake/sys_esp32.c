@@ -37,7 +37,10 @@ typedef struct
 
 static file_handle_t sys_handles[MAX_HANDLES];
 
-static bool sys_quit = false;
+static volatile bool sys_quit = false;
+static bool host_is_up = false;
+static uint32_t excluded_pause_us = 0;
+static quakeparms_t parms;
 
 static const char *mmap_pak_path;
 static uint32_t mmap_pak_size;
@@ -425,6 +428,35 @@ void Sys_Quit(void)
     sys_quit = true;
 }
 
+void Sys_Shutdown(void)
+{
+    sys_quit = true;
+    if (host_is_up)
+    {
+        host_is_up = false;
+        Host_Shutdown();
+    }
+
+    // Pack files remain open for the engine lifetime. Close every native file
+    // handle before the proxy exits and Retro-Go unmounts storage.
+    for (int i = 0; i < MAX_HANDLES; ++i)
+    {
+        if (sys_handles[i].isOpen)
+            Sys_FileClose(i);
+    }
+
+    if (parms.membase)
+    {
+        free(parms.membase);
+        parms.membase = NULL;
+    }
+}
+
+void Sys_ExcludePauseTime(uint32_t paused_us)
+{
+    excluded_pause_us += paused_us;
+}
+
 double Sys_FloatTime(void)
 {
     return ((uint64_t)esp_timer_get_time()) / 1000000.0;
@@ -440,7 +472,11 @@ void Sys_Sleep(void)
 }
 
 void Sys_SendKeyEvents(void)
-{    
+{
+    // This is also called by SCR_ModalMessage while the main host frame is
+    // blocked, so controller input must be pumped here rather than only from
+    // Host_Frame.
+    IN_Commands();
 }
 
 void Sys_HighFPPrecision(void)
@@ -453,22 +489,27 @@ void Sys_LowFPPrecision(void)
 
 //=============================================================================
 
-static quakeparms_t parms;
 extern void S_PrecacheAmbients(void);
 
-void esp32_quake_main(int argc, char **argv, const char *basedir, const char *pakPath, uint32_t pakSize, const void *pakMmap)
+void esp32_quake_main(int argc, char **argv, const char *basedir,
+                      const char *pak0Path, const char *pak1Path,
+                      uint32_t pakSize, const void *pakMmap)
 {
-    mmap_pak_path = pakPath;
+    mmap_pak_path = pak0Path;
     mmap_pak_size = pakSize;
     mmap_pak = pakMmap;
+    COM_SetSelectedPaks(pak0Path, pak1Path);
 
     strcpy(com_savedir, RG_BASE_PATH_SAVES "/quake");
     strcpy(com_configdir, RG_BASE_PATH_CONFIG "/quake");
 
 #if defined(CONFIG_IDF_TARGET_ESP32P4)
-    parms.memsize = 8192*1024; // 8MB Hunk for P4
+    // All supported P4 handhelds have at least 16 MiB PSRAM. Leave ample room
+    // for Retro-Go/display allocations while exceeding WinQuake's historical
+    // minimum and accommodating the official mission packs.
+    parms.memsize = 10240*1024; // 10MB Hunk for P4
 #elif defined(CONFIG_IDF_TARGET_ESP32S3)
-    parms.memsize = 6144*1024; // 6MB Hunk for S3
+    parms.memsize = 6400*1024; // 6.25MB Hunk for S3
 #else
     parms.memsize = 3481*1024; // 3.4MB Hunk for original ESP32 (4MB limit)
 #endif
@@ -485,6 +526,7 @@ void esp32_quake_main(int argc, char **argv, const char *basedir, const char *pa
 
     RG_LOGI("Host_Init\n");
     Host_Init(&parms);
+    host_is_up = true;
     
     // Call our deferred precaching after Host_Init
     S_PrecacheAmbients();
@@ -496,18 +538,23 @@ void esp32_quake_main(int argc, char **argv, const char *basedir, const char *pa
     Cvar_SetValue("fov", 90);
     Cvar_SetValue("nosound", 0);
 
-    // Bind custom controls
-    if (registered.value) {
-        Cbuf_AddText("bind c +movedown\n");
-    }
+    // START and optional X both emit this held key. Apply it for shareware,
+    // registered data and mods so the hardware mapping never depends on a
+    // particular default.cfg.
+    Cbuf_AddText("bind c +movedown\n");
 
     double oldtime = Sys_FloatTime();
     int force_viewmodel = 100;
+    int skip_frames = 0;
 
     while (!sys_quit)
     {
         double newtime = Sys_FloatTime();
-        double time = newtime - oldtime;
+        double time = (newtime - oldtime) * rg_system_get_app()->speed;
+        int frame_before = host_framecount;
+        int64_t work_start = rg_system_timer();
+
+        VID_SetSkipFrame(skip_frames > 0);
 
         if (force_viewmodel > 0) {
             Cvar_SetValue("r_drawviewmodel", 1);
@@ -517,11 +564,28 @@ void esp32_quake_main(int argc, char **argv, const char *basedir, const char *pa
 
         Host_Frame (time);
 
-        rg_task_yield();
-        rg_system_tick((Sys_FloatTime() - newtime) * 1000000);
+        uint32_t paused_us = excluded_pause_us;
+        excluded_pause_us = 0;
+        oldtime = newtime + paused_us / 1000000.0;
 
-        oldtime = newtime;
+        // Host_FilterTime rejects iterations above Quake's 72 Hz ceiling.
+        // Count only an accepted simulation frame as a Retro-Go tick.
+        if (host_framecount != frame_before)
+        {
+            int64_t busy_us = rg_system_timer() - work_start - paused_us
+                              - VID_ConsumeDisplayTime();
+            rg_system_tick((int)(busy_us > 0 ? busy_us : 0));
+
+            if (skip_frames > 0)
+                skip_frames--;
+            else if (VID_ConsumeDisplayLate())
+                skip_frames = 1;
+        }
+
+        // Yield after accounting so time spent running display/audio tasks is
+        // not reported as Quake CPU work.
+        rg_task_yield();
     }
 
-    Host_Shutdown();
+    Sys_Shutdown();
 }

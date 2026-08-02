@@ -85,9 +85,19 @@ rg_setup_compile_options(
     -Wno-trigraphs
     -Wno-dangling-pointer
     -Werror=incompatible-pointer-types
-    -fcommon
 )
 
-if(CONFIG_IDF_TARGET_ARCH_RISCV)
-    target_link_options(${COMPONENT_LIB} INTERFACE "-Wl,--allow-multiple-definition")
-endif()
+# Prefer speed for the renderer and mixer hot paths while retaining conservative
+# arithmetic and aliasing semantics for the original fixed-point code.
+set(QUAKE_RENDER_SRCS)
+foreach(src ${WINQUAKE_SRCS})
+    if(src MATCHES "^winquake/(d_|r_)")
+        list(APPEND QUAKE_RENDER_SRCS ${src})
+    endif()
+endforeach()
+set_source_files_properties(${QUAKE_RENDER_SRCS} PROPERTIES
+    COMPILE_OPTIONS "-O2;-fno-strict-aliasing;-fwrapv"
+)
+set_source_files_properties(esp32quake/snd_esp32.c PROPERTIES
+    COMPILE_OPTIONS "-O2;-fno-strict-aliasing;-fwrapv"
+)

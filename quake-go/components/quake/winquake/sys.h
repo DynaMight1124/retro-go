@@ -19,6 +19,8 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 */
 // sys.h -- non-portable functions
 
+#include <stdint.h>
+
 //
 // file IO
 //
@@ -54,6 +56,11 @@ void Sys_Printf (char *fmt, ...);
 
 void Sys_Quit (void);
 
+#ifdef ESP32_QUAKE
+void Sys_Shutdown (void);
+void Sys_ExcludePauseTime (uint32_t paused_us);
+#endif
+
 double Sys_FloatTime (void);
 
 char *Sys_ConsoleInput (void);
@@ -68,4 +75,3 @@ void Sys_SendKeyEvents (void);
 void Sys_LowFPPrecision (void);
 void Sys_HighFPPrecision (void);
 void Sys_SetFPCW (void);
-

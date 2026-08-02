@@ -21,6 +21,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 #include "quakedef.h"
 #include "r_local.h"
+#include "esp_attr.h"
 
 //define	PASSAGES
 
@@ -52,6 +53,14 @@ int			r_clipflags;
 byte		*r_warpbuffer;
 
 byte		*r_stack_start;
+
+#if defined(ESP32_QUAKE) && !defined(CONFIG_IDF_TARGET_ESP32)
+// The active surface set is linked, sorted and revisited throughout edge
+// drawing. Keep it internal on S3/P4; original ESP32 retains the stack path.
+static DRAM_ATTR surf_t fast_lsurfs[NUMSTACKSURFACES +
+		((CACHE_SIZE - 1) / sizeof(surf_t)) + 1]
+		__attribute__((aligned(CACHE_SIZE)));
+#endif
 
 qboolean	r_fov_greater_than_90;
 
@@ -868,8 +877,14 @@ void R_EdgeDrawing (void)
 {
 	edge_t	ledges[NUMSTACKEDGES +
 				((CACHE_SIZE - 1) / sizeof(edge_t)) + 1];
+#if defined(ESP32_QUAKE) && !defined(CONFIG_IDF_TARGET_ESP32)
+	// Reserve element zero for Quake's dummy surface so the later surfaces--
+	// remains within the static array.
+	surf_t	*lsurfs = &fast_lsurfs[1];
+#else
 	surf_t	lsurfs[NUMSTACKSURFACES +
 				((CACHE_SIZE - 1) / sizeof(surf_t)) + 1];
+#endif
 
 	if (auxedges)
 	{
@@ -1073,4 +1088,3 @@ void R_InitTurb (void)
 		intsintable[i] = AMP2 + sin(i*3.14159*2/CYCLE)*AMP2;	// AMP2, not 20
 	}
 }
-

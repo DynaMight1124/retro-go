@@ -21,6 +21,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 #include "quakedef.h"
 #include "r_local.h"
+#include "esp_attr.h"
 
 #if 0
 // FIXME
@@ -43,8 +44,13 @@ surf_t	*surfaces, *surface_p, *surf_max;
 // pointer is greater than another one, it should be drawn in front
 // surfaces[1] is the background, and is used as the active surface stack
 
-edge_t	*newedges[MAXHEIGHT];
-edge_t	*removeedges[MAXHEIGHT];
+#if defined(ESP32_QUAKE) && !defined(CONFIG_IDF_TARGET_ESP32)
+DRAM_ATTR edge_t *newedges[MAXHEIGHT];
+DRAM_ATTR edge_t *removeedges[MAXHEIGHT];
+#else
+edge_t *newedges[MAXHEIGHT];
+edge_t *removeedges[MAXHEIGHT];
+#endif
 
 espan_t	*span_p, *max_span_p;
 
@@ -64,6 +70,13 @@ edge_t	edge_aftertail;
 edge_t	edge_sentinel;
 
 float	fv;
+
+#if defined(ESP32_QUAKE) && !defined(CONFIG_IDF_TARGET_ESP32)
+// Spans are written during edge scanning and immediately traversed by every
+// surface drawer. Keep this bounded, per-frame workspace off the PSRAM stack.
+static DRAM_ATTR byte fast_basespans[MAXSPANS * sizeof(espan_t) + CACHE_SIZE]
+		__attribute__((aligned(CACHE_SIZE)));
+#endif
 
 void R_GenerateSpans (void);
 void R_GenerateSpansBackward (void);
@@ -663,7 +676,11 @@ Each surface has a linked list of its visible spans
 void R_ScanEdges (void)
 {
 	int		iv, bottom;
+#if defined(ESP32_QUAKE) && !defined(CONFIG_IDF_TARGET_ESP32)
+	byte	*basespans = fast_basespans;
+#else
 	byte	basespans[MAXSPANS*sizeof(espan_t)+CACHE_SIZE];
+#endif
 	espan_t	*basespan_p;
 	surf_t	*s;
 
@@ -770,5 +787,3 @@ void R_ScanEdges (void)
 	else
 		D_DrawSurfaces ();
 }
-
-

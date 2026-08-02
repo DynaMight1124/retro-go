@@ -650,9 +650,6 @@ void _Host_Frame (float time)
 // get new key events
 	Sys_SendKeyEvents ();
 
-// allow mice or other external controllers to add commands
-	IN_Commands ();
-
 // process console commands
 	Cbuf_Execute ();
 
@@ -697,7 +694,10 @@ void _Host_Frame (float time)
 	if (host_speeds.value)
 		time1 = Sys_FloatTime ();
 		
-	SCR_UpdateScreen ();
+#ifdef ESP32_QUAKE
+	if (!VID_ShouldSkipFrame ())
+#endif
+		SCR_UpdateScreen ();
 
 	if (host_speeds.value)
 		time2 = Sys_FloatTime ();
@@ -955,4 +955,3 @@ void Host_Shutdown(void)
 		VID_Shutdown();
 	}
 }
-

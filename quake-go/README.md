@@ -1,60 +1,69 @@
-# Quake-Go: Optimized Quake Port for Retro-Go
+# Quake-Go
 
-Quake-Go is a high-performance port of the legendary **Quake (WinQuake)** engine, modernised for ESP-IDF v5.5 and fully integrated into the **Retro-Go** ecosystem. This port features aggressive memory management and hardware-specific optimisations to deliver a playable experience on the ESP32-S3 and ESP32-P4 hardware.
+Quake-Go is a WinQuake software-renderer port integrated with Retro-Go for the
+ESP32-S3 and ESP32-P4. It uses Retro-Go for launch content, storage, input,
+display, audio, menus, screenshots, timing statistics, and shutdown.
 
----
+## Game data
 
-## 🛠 Work Completed
+Provide your own Quake PAK files and select a `.pak` in the Retro-Go launcher.
+Keep related files together: selecting `pak0.pak` also discovers sequential
+siblings such as `pak1.pak` in the same directory. Selecting either conventional
+PAK name launches the same data set: `pak0.pak` is required and `pak1.pak`
+enables registered Quake. The exact selected file is honored even if it has a
+non-standard name. The `rogue` and `hipnotic`
+subdirectories enable their official mission-pack modes; other subdirectories
+under `/sd/roms/quake` are launched with Quake's `-game` mod path.
 
-- **ESP-IDF v5.5 Modernisation:** Fully updated for the latest framework, resolving legacy compiler warnings, linker conflicts, and API deprecations.
-- **Cross-Generation Memory Architecture:**
-  - Implemented a unified Hunk-based asset loader to resolve MMU exhaustion on lower-tier hardware.
-  - Offloaded critical system overhead (Task Stack, Z-Buffer, Mix Buffers) to internal DRAM to maximize addressable PSRAM.
-- **Unified Control Scheme:** 
-  - **SELECT:** Weapon Toggle
-  - **X / OPTION:** Swim Down
-  - **Y:** Run / Walk Toggle
-  - **START / MENU:** Quake Menu
-- **Stability Fixes:** Implemented target-gated watchdog yields to prevent system resets during heavy asset loading on ESP32 hardware.
+The conventional locations are:
 
----
+- `/sd/roms/quake/pak0.pak`
+- `/sd/roms/quake/id1/pak0.pak`
+- `/sd/roms/quake/id1/pak1.pak`
+- `/sd/roms/quake/hipnotic/pak0.pak`
+- `/sd/roms/quake/rogue/pak0.pak`
 
-## 📱 Supported Hardware Comparison
+Mission packs require the registered base-game `pak0.pak` and `pak1.pak` in
+`id1` (or at the Quake root as a fallback). *Scourge of Armagon* (`hipnotic`)
+and *Dissolution of Eternity* (`rogue`) contain maps whose working sets exceed
+the practical combined hunk and renderer-cache capacity of 8 MiB S3 devices.
+Both mission packs are supported on P4 only. S3 launch is blocked with an
+explanatory alert rather than risking an out-of-memory panic later in a map.
 
-### 1. ESP32-P4 
-The powerhouse implementation. Leverages the massive resources of the P4 generation.
-- **Resolution:** 320x240 (Full)
-- **Hunk Size:** 8.0MB
-- **Pros:** Peak framerate, high-quality audio, massive map support, no memory bottlenecks.
-- **Cons:** Larger battery footprint.
+Quake configuration and native save games are stored under Retro-Go's config
+and save roots. Use Quake's in-game menus for native saving, loading, and a new
+game. Retro-Go's screenshot command is supported.
 
-### 2. ESP32-S3
-The sweet spot for performance and portability.
-- **Resolution:** 320x240
-- **Hunk Size:** 6.0MB
-- **Pros:** Stable performance, excellent display compatibility, standard resolution.
-- **Cons:** PSRAM bandwidth can be a bottleneck in complex scenes.
+## Controls
 
-### 3. Original ESP32 (Currently NOT working!)
-A technical (but not working) breakthrough for the original architecture, utilizing aggressive memory offloading to break the 4MB PSRAM mapping limit. Its probably not far away from working, maybe 50-100kb here or there.
-- **Resolution:** 160x120 (Internal software scaling) however may need lower
-- **Hunk Size:** 3.4MB (Maximised)
-- **Pros:** Very low hardware cost. Maybe a little too low!
-- **Cons:** 4MB PSRAM and well, it doesnt work :)
+- D-pad: move and turn; navigate native menus
+- A: fire; accept/yes in native menus
+- B: jump/swim up; back/no in native menus
+- X: swim down (duplicates START)
+- Y: next weapon (duplicates SELECT)
+- L/R: strafe
+- SELECT: next weapon
+- START: swim down (hold)
+- Short MENU: Quake menu
+- Long MENU (500 ms): Retro-Go game menu
+- Long OPTION (500 ms): Retro-Go options menu
 
----
+Buttons still held when a Retro-Go dialog closes are suppressed until release.
 
-## 📜 Credits & Licensing
+## Target configuration
 
-This project is based on the amazing work originally developed by **thisiseth**. 
+- ESP32-S3: 320x200, 6.25 MiB Quake hunk
+- ESP32-P4: 320x240, 10 MiB Quake hunk
+- Original ESP32: experimental 160x120, 3.4 MiB hunk; not currently supported
 
-**Original Repository:** [tang-primer-25k-spi-io](https://github.com/thisiseth/tang-primer-25k-spi-io)
+Fullscreen scaling is the first-launch default. Subsequent launches preserve
+the user's Retro-Go display setting.
 
-Quake is Copyright (C) 1996-1997 Id Software, Inc. This port is distributed under the terms of the GNU General Public License as published by the Free Software Foundation.
+## Credits and license
 
----
+This port is based on work by `thisiseth` from the
+[`tang-primer-25k-spi-io`](https://github.com/thisiseth/tang-primer-25k-spi-io)
+project.
 
-## 🚀 Getting Started
-
-1. **PAK Files:** You must provide your own `pak0.pak` for shareware (and optionally `pak1.pak` for the full version).
-2. **Storage:** Place PAK files in `/sd/roms/quake/` or `/sd/roms/quake/id1/`.
+Quake is Copyright 1996-1997 id Software. This port is distributed under the
+GNU General Public License included with the source.

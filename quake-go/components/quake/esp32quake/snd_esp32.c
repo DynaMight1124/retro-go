@@ -37,16 +37,18 @@ static int sound_generation = 0;
 // SFX pool metadata. For original ESP32, keep in internal DRAM to save PSRAM address space.
 #if defined(CONFIG_IDF_TARGET_ESP32)
 static DRAM_ATTR sfx_t known_sfx[MAX_SFX];
-DRAM_ATTR channel_t channels[MAX_CHANNELS];
 #else
 static EXT_RAM_BSS_ATTR sfx_t known_sfx[MAX_SFX];
-EXT_RAM_BSS_ATTR channel_t channels[MAX_CHANNELS];
 #endif
+// Channel state is touched by both the game and every mixer iteration.
+DRAM_ATTR channel_t channels[MAX_CHANNELS];
 
 static int num_sfx = 0;
+static int permanent_sfx_count = -1;
 static sfx_t *ambient_sfx[NUM_AMBIENTS];
 static bool snd_ambient = 1;
 static SemaphoreHandle_t sound_mutex = NULL;
+static volatile TaskHandle_t audio_task_handle = NULL;
 
 // sound.h visible stuff
 cvar_t bgmvolume = {"bgmvolume", "1", true};
@@ -68,15 +70,14 @@ vec_t sound_nominal_clip_dist = 1000.0;
 int paintedtime; // MUST be int
 static int64_t hardware_sample_offset = 0;
 
-#define AUDIO_BUFFER_SAMPLES 512
+// Keep mixer latency and the time spent holding sound_mutex bounded. At the
+// 11,025 Hz output rate, 256 frames represent about 23 ms of audio.
+#define AUDIO_BUFFER_SAMPLES 256
 
-#if defined(CONFIG_IDF_TARGET_ESP32)
-static DRAM_ATTR int64_t mix_buffer[AUDIO_BUFFER_SAMPLES * 2];
+// Spatialization can double an 8-bit channel volume. Even with all 32 channels
+// at that maximum, the worst-case sum is below 536 million and fits int32_t.
+static DRAM_ATTR int32_t mix_buffer[AUDIO_BUFFER_SAMPLES * 2];
 static DRAM_ATTR rg_audio_frame_t output_buffer[AUDIO_BUFFER_SAMPLES];
-#else
-static EXT_RAM_BSS_ATTR int64_t mix_buffer[AUDIO_BUFFER_SAMPLES * 2];
-static EXT_RAM_BSS_ATTR rg_audio_frame_t output_buffer[AUDIO_BUFFER_SAMPLES];
-#endif
 
 // forward declarations
 static sfx_t *FindSfxName(char *name);
@@ -143,12 +144,9 @@ static sfx_t *FindSfxName(char *name)
 
     if (num_sfx == MAX_SFX) return NULL;
 
-    sfx_t *sfx = &known_sfx[num_sfx];
+    sfx_t *sfx = &known_sfx[num_sfx++];
+    memset(sfx, 0, sizeof(*sfx));
     strcpy(sfx->name, name);
-
-    if (!LoadSound(sfx)) return NULL;
-
-    num_sfx++;
     return sfx;
 }
 
@@ -250,10 +248,9 @@ void SND_Spatialize(channel_t *ch)
 
 static void audio_task(void *arg)
 {
+    (void)arg;
     while (snd_initialized)
     {
-        vTaskDelay(1);
-
         if (!sound_mutex || xSemaphoreTake(sound_mutex, pdMS_TO_TICKS(100)) != pdTRUE)
             continue;
 
@@ -302,9 +299,8 @@ static void audio_task(void *arg)
                 else
                     sample = (int16_t)(p[0] | (p[1] << 8));
 
-                // Sum into 64-bit buffer to prevent overflow
-                mix_buffer[2 * j] += (int64_t)sample * lvol;
-                mix_buffer[2 * j + 1] += (int64_t)sample * rvol;
+                mix_buffer[2 * j] += sample * lvol;
+                mix_buffer[2 * j + 1] += sample * rvol;
                 pos += step;
             }
             chan->pos = pos;
@@ -313,8 +309,8 @@ static void audio_task(void *arg)
         for (int i = 0; i < AUDIO_BUFFER_SAMPLES; ++i)
         {
             // Scale by 1/16 (>> 20) to prevent clipping with multiple sounds
-            int32_t l = (int32_t)((mix_buffer[2 * i] * volumeInt) >> 20);
-            int32_t r = (int32_t)((mix_buffer[2 * i + 1] * volumeInt) >> 20);
+            int32_t l = (int32_t)(((int64_t)mix_buffer[2 * i] * volumeInt) >> 20);
+            int32_t r = (int32_t)(((int64_t)mix_buffer[2 * i + 1] * volumeInt) >> 20);
             
             if (l > 32767) l = 32767; else if (l < -32768) l = -32768;
             if (r > 32767) r = 32767; else if (r < -32768) r = -32768;
@@ -325,8 +321,10 @@ static void audio_task(void *arg)
         paintedtime += AUDIO_BUFFER_SAMPLES;
         xSemaphoreGive(sound_mutex);
 
+        // The Retro-Go audio backend blocks as needed to pace the producer.
         rg_audio_submit(output_buffer, AUDIO_BUFFER_SAMPLES);
     }
+    audio_task_handle = NULL;
     vTaskDelete(NULL);
 }
 
@@ -342,19 +340,32 @@ void S_Init(void)
 
     total_channels = MAX_DYNAMIC_CHANNELS + NUM_AMBIENTS;
     memset(channels, 0, sizeof(channels));
+    memset(known_sfx, 0, sizeof(known_sfx));
+    num_sfx = 0;
+    permanent_sfx_count = -1;
     sound_generation = 1;
 
     snd_initialized = true;
     paintedtime = 0;
     hardware_sample_offset = rg_audio_get_counters().totalSamples;
 
-#if defined(CONFIG_IDF_TARGET_ESP32S3)
+#if defined(CONFIG_IDF_TARGET_ESP32S3) || defined(CONFIG_IDF_TARGET_ESP32P4)
     int audio_core = 1;
 #else
     int audio_core = tskNO_AFFINITY;
 #endif
 
-    xTaskCreatePinnedToCore(audio_task, "audio_task", 4096, NULL, RG_TASK_PRIORITY_8, NULL, audio_core);
+    TaskHandle_t task = NULL;
+    if (xTaskCreatePinnedToCore(audio_task, "audio_task", 4096, NULL,
+                                RG_TASK_PRIORITY_8, &task, audio_core) != pdPASS)
+    {
+        snd_initialized = false;
+        vSemaphoreDelete(sound_mutex);
+        sound_mutex = NULL;
+        RG_LOGE("Failed to start Quake audio task");
+        return;
+    }
+    audio_task_handle = task;
 }
 
 void S_AmbientOff(void) { snd_ambient = false; }
@@ -362,9 +373,25 @@ void S_AmbientOn(void) { snd_ambient = true; }
 
 void S_Shutdown(void)
 {
-    if (!snd_initialized) return;
+    if (!snd_initialized && audio_task_handle == NULL) {
+        if (sound_mutex) {
+            vSemaphoreDelete(sound_mutex);
+            sound_mutex = NULL;
+        }
+        return;
+    }
     snd_initialized = false;
-    vTaskDelay(pdMS_TO_TICKS(100));
+
+    // rg_audio_submit() may still own the task briefly. Join it exactly before
+    // Host_Shutdown releases sound state or Retro-Go deinitializes audio.
+    while (audio_task_handle != NULL) {
+        rg_task_yield();
+    }
+
+    if (sound_mutex) {
+        vSemaphoreDelete(sound_mutex);
+        sound_mutex = NULL;
+    }
 }
 
 void S_StartSound(int entnum, int entchannel, sfx_t *sfx, vec3_t origin, float fvol, float attenuation)
@@ -420,7 +447,7 @@ void S_StaticSound(sfx_t *sfx, vec3_t origin, float vol, float attenuation)
 
 void S_LocalSound(char *name)
 {
-    sfx_t *sfx = FindSfxName(name);
+    sfx_t *sfx = S_PrecacheSound(name);
     if (sfx) S_StartSound(cl.viewentity, -1, sfx, vec3_origin, 1, 1);
 }
 
@@ -435,8 +462,16 @@ void S_StopSound(int entnum, int entchannel)
     }
 }
 
-sfx_t *S_PrecacheSound(char *name) { return FindSfxName(name); }
-void S_TouchSound(char *name) { S_PrecacheSound(name); }
+sfx_t *S_PrecacheSound(char *name)
+{
+    sfx_t *sfx = FindSfxName(name);
+    if (!sfx || (sfx->cache.data == NULL && !LoadSound(sfx))) return NULL;
+    return sfx;
+}
+
+// The first server-info pass only touches names. Loading here would read and
+// allocate every map sound a second time before the real precache pass.
+void S_TouchSound(char *name) { FindSfxName(name); }
 
 void S_Update(vec3_t origin, vec3_t forward, vec3_t right, vec3_t up)
 {
@@ -482,8 +517,20 @@ void S_ClearBuffer(void) {}
 void S_BeginPrecaching(void) 
 {
     if (xSemaphoreTake(sound_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
-        num_sfx = 0;
-        memset(known_sfx, 0, sizeof(known_sfx));
+        // Sounds loaded during engine initialization live below the host hunk
+        // mark and remain valid across maps. Touched map entries follow them
+        // and have no data yet on the first pass.
+        if (permanent_sfx_count < 0) {
+            permanent_sfx_count = 0;
+            while (permanent_sfx_count < num_sfx &&
+                   known_sfx[permanent_sfx_count].cache.data != NULL) {
+                permanent_sfx_count++;
+            }
+        }
+
+        num_sfx = permanent_sfx_count;
+        memset(&known_sfx[num_sfx], 0,
+               (MAX_SFX - num_sfx) * sizeof(known_sfx[0]));
         sound_generation++;
         xSemaphoreGive(sound_mutex);
     }
