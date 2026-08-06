@@ -11,6 +11,7 @@
 #include "Bitmap.h"
 #include "Errors.h"
 #include <rg_system.h>
+#include <rg_settings.h>
 
 static rg_surface_t* fb_surfaces[2];
 static int active_fb_idx = 0;
@@ -57,7 +58,11 @@ void Window_Create3D(int width, int height) {
 
     active_fb_idx = 0;
 
-    rg_display_set_scaling(RG_DISPLAY_SCALING_FULL);
+    // Full scaling is the most useful initial presentation at this resolution,
+    // but do not overwrite a scaling mode the user has already selected.
+    if (!rg_settings_exists(NS_APP, "DispScaling")) {
+        rg_display_set_scaling(RG_DISPLAY_SCALING_FULL);
+    }
 
     Event_RaiseVoid(&WindowEvents.Resized);
 }

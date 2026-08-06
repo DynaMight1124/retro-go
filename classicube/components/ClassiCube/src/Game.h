@@ -1,6 +1,9 @@
 #ifndef CC_GAME_H
 #define CC_GAME_H
 #include "Core.h"
+#ifdef CC_BUILD_RETROGO
+#include <sdkconfig.h>
+#endif
 CC_BEGIN_HEADER
 
 /* Represents the game and related structures.
@@ -40,7 +43,13 @@ extern cc_string Game_Mppass;
 #if defined CC_BUILD_N64 || defined CC_BUILD_PS1 || defined CC_BUILD_SATURN
     #define DEFAULT_VIEWDIST 20
 #elif defined CC_BUILD_RETROGO
-    #define DEFAULT_VIEWDIST 10
+    #if defined CONFIG_IDF_TARGET_ESP32
+        #define DEFAULT_VIEWDIST 16
+    #elif defined CONFIG_IDF_TARGET_ESP32S3 || defined CONFIG_IDF_TARGET_ESP32P4
+        #define DEFAULT_VIEWDIST 32
+    #else
+        #define DEFAULT_VIEWDIST 10
+    #endif
 #elif defined CC_BUILD_SYMBIAN
 	#define DEFAULT_VIEWDIST 64
 #elif defined CC_BUILD_NDS

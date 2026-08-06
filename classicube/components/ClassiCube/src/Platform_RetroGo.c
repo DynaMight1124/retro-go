@@ -14,6 +14,7 @@
 #include "Chat.h"
 #include "InputHandler.h"
 #include <rg_system.h>
+#include <rg_storage.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -177,8 +178,9 @@ static void GetFullPath(char* str, const cc_filepath* path) {
     const char* root = RG_BASE_PATH_ROMS "/classicube/data/";
     const char* filename = path->buffer;
 
-    // Use saves for options and other mutable data
-    if (strstr(filename, "options.txt") || strstr(filename, "options-default.txt")) {
+    // options-default.txt is packaged read-only data. Only the user's live
+    // options file belongs under config.
+    if (!strstr(filename, "options-default.txt") && strstr(filename, "options.txt")) {
         root = RG_BASE_PATH_CONFIG "/classicube/";
     } else if (strstr(filename, ".log") || strstr(filename, "maps/")) {
         root = RG_BASE_PATH_SAVES "/classicube/";
@@ -318,7 +320,12 @@ void Waitable_WaitFor(void* handle, cc_uint32 milliseconds) { }
 /*########################################################################################################################*
 *---------------------------------------------------------Other-----------------------------------------------------------*
 *#########################################################################################################################*/
-void Platform_Init(void) { }
+void Platform_Init(void) {
+    /* fopen cannot create parent directories. Ensure ClassiCube's mutable
+       storage roots exist before Options_Load and any save/map writes. */
+    rg_storage_mkdir(RG_BASE_PATH_CONFIG "/classicube");
+    rg_storage_mkdir(RG_BASE_PATH_SAVES  "/classicube");
+}
 void Platform_Free(void) { }
 void Platform_SetCurrentDirectory(const cc_string* path) { }
 void Platform_GetExecutablePath(cc_string* path) { }

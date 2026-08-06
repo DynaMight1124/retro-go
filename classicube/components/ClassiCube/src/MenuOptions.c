@@ -733,8 +733,31 @@ static void GrO_SetFPS(int v) {
 	Game_SetFpsLimit(v);
 }
 
+#ifdef CC_BUILD_RETROGO
+static const int retroViewDists[] = { 10, 16, 24, 32, 48, 64, 96, 128, 192, 256, 384, 512 };
+static const char* const retroViewDistNames[] = {
+	"10", "16", "24", "32", "48", "64", "96", "128", "192", "256", "384", "512"
+};
+
+static int GrO_GetViewDistPreset(void) {
+	int i, closest = 0;
+	int closestDiff = Math_AbsI(Game_ViewDistance - retroViewDists[0]);
+
+	for (i = 1; i < Array_Elems(retroViewDists); i++) {
+		int diff = Math_AbsI(Game_ViewDistance - retroViewDists[i]);
+		if (diff >= closestDiff) continue;
+		closest = i; closestDiff = diff;
+	}
+	return closest;
+}
+
+static void GrO_SetViewDistPreset(int i) {
+	Game_UserSetViewDistance(retroViewDists[i]);
+}
+#else
 static int  GrO_GetViewDist(void) { return Game_ViewDistance; }
 static void GrO_SetViewDist(int v) { Game_UserSetViewDistance(v); }
+#endif
 
 static cc_bool GrO_GetSmooth(void) { return Builder_SmoothLighting; }
 static void    GrO_SetSmooth(cc_bool v) {
@@ -783,9 +806,17 @@ static void GraphicsOptionsScreen_InitWidgets(struct MenuOptionsScreen* s) {
 			"&e30/60/120/144 FPS: &fRenders 30/60/120/144 frames at most each second.\n" \
 			"&eNoLimit: &fRenders as many frames as possible each second.\n" \
 			"&cNoLimit is pointless - it wastefully renders frames that you don't even see!");
+#ifdef CC_BUILD_RETROGO
+		MenuOptionsScreen_AddEnum(s, "View distance",
+			retroViewDistNames, Array_Elems(retroViewDistNames),
+			GrO_GetViewDistPreset, GrO_SetViewDistPreset,
+			"&eSelects how far the world is rendered.\n" \
+			"&cHigher distances may significantly reduce performance.");
+#else
 		MenuOptionsScreen_AddInt(s, "View distance",
 			8, 4096, 512,
 			GrO_GetViewDist,   GrO_SetViewDist, NULL);
+#endif
 		MenuOptionsScreen_AddBool(s, "Smooth lighting",
 			GrO_GetSmooth,     GrO_SetSmooth,
 			"&eSmooth lighting smooths lighting and adds a minor glow to bright blocks.\n" \

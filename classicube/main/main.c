@@ -31,7 +31,6 @@ static void cc_main_task(void* arg)
     
     RG_LOGI("ClassiCube setup complete. Entering main loop.\n");
 
-    int frameCount = 0;
     while (Game_Running)
     {
         int64_t startTime = rg_system_timer();
@@ -42,13 +41,11 @@ static void cc_main_task(void* arg)
         
         // Game_RenderFrame handles logic update and drawing
         Game_RenderFrame();
+
+        int64_t frameTime = rg_system_timer() - startTime;
         
         // Handle retro-go system tasks and timing
-        rg_system_tick(rg_system_timer() - startTime);
-
-        if (++frameCount % 60 == 0) {
-            RG_LOGI("Main loop running... Frame: %d\n", frameCount);
-        }
+        rg_system_tick(frameTime);
     }
     
     Game_Free();
@@ -59,7 +56,9 @@ static void cc_main_task(void* arg)
 void app_main(void)
 {
     const rg_config_t config = {
-        .sampleRate = 22050,
+        // Must match Audio_RetroGo's output mixer. Source effects are resampled
+        // by that mixer, while Retro-Go's sink always receives 44.1 kHz frames.
+        .sampleRate = 44100,
         .frameRate = 30,
         .storageRequired = true,
         .romRequired = false,
@@ -71,8 +70,8 @@ void app_main(void)
     RG_LOGI("ClassiCube starting...\n");
 
     // We use rg_task_create so the system monitor tracks this task.
-    // We use 48KB stack because ClassiCube's software rendering and builder are stack-heavy.
-    rg_task_create("CCMain", cc_main_task, NULL, 48 * 1024, 1, RG_TASK_PRIORITY_5, 0);
+    // Profiling showed a peak use of about 7KB, so retain ample margin while reclaiming internal RAM.
+    rg_task_create("CCMain", cc_main_task, NULL, 24 * 1024, 1, RG_TASK_PRIORITY_5, 0);
 
     // Keep the main task alive to avoid LoadProhibited in rg_system's monitor.
     while (1) {

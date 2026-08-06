@@ -1658,9 +1658,6 @@ void Builder_ApplyActive(void) {
 static void OnInit(void) {
 #ifdef CC_BUILD_RETROGO
 	if (!Builder_Parts) Builder_Parts = (struct Builder1DPart*)rg_alloc(sizeof(struct Builder1DPart) * ATLAS1D_MAX_ATLASES * 2, MEM_SLOW);
-	Builder_Chunk = (BlockID*)rg_alloc(EXTCHUNK_SIZE_3 * sizeof(BlockID), MEM_SLOW);
-	Builder_Counts = (cc_uint8*)rg_alloc(CHUNK_SIZE_3 * FACE_COUNT * sizeof(cc_uint8), MEM_SLOW);
-	Builder_BitFlags = (int*)rg_alloc(EXTCHUNK_SIZE_3 * sizeof(int), MEM_SLOW);
 #endif
 	Builder_Offsets[FACE_XMIN] = -1;
 	Builder_Offsets[FACE_XMAX] =  1;

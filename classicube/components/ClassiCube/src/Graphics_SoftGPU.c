@@ -17,6 +17,7 @@
 #include "Errors.h"
 #include "Window.h"
 #include <rg_system.h>
+#include <stdint.h>
 
 static cc_bool faceCulling;
 static int fb_width, fb_height; 
@@ -29,7 +30,13 @@ static BitmapCol clearColor;
 static cc_bool colWrite = true;
 static int cb_stride;
 
-static float* depthBuffer;
+typedef cc_uint16 DepthValue;
+#define DEPTH_MAX_VALUE 65535
+#define DEPTH_SCALE     65535.0f
+/* ceil(0.001 * 65535), matching the existing floating-point depth tolerance. */
+#define DEPTH_TOLERANCE 66
+
+static DepthValue* depthBuffer;
 static cc_bool depthTest  = true;
 static cc_bool depthWrite = true;
 static int db_stride;
@@ -37,10 +44,12 @@ static int db_stride;
 static void* gfx_vertices;
 
 static BitmapCol* realColorBuffer;
-static float* realDepthBuffer;
+static DepthValue* realDepthBuffer;
 static BitmapCol* lowColorBuffer;
-static float* lowDepthBuffer;
+static DepthValue* lowDepthBuffer;
 static GfxResourceID white_square;
+
+typedef uint32_t BitmapPair __attribute__((__may_alias__));
 
 static void Gfx_RestoreState(void) {
 	InitDefaultResources();
@@ -170,25 +179,40 @@ static void SetAlphaBlend(cc_bool enabled) {
 
 void Gfx_SetAlphaArgBlend(cc_bool enabled) { }
 
+static void FillColorRow(BitmapCol* dst, int count, BitmapCol color, BitmapPair pair) {
+	BitmapPair* pairs;
+	int i, pairCount;
+
+	/* Bitmap pixels are at least 16-bit aligned. Consume one pixel if needed before 32-bit stores. */
+	if (((uintptr_t)dst & 3) && count) {
+		*dst++ = color;
+		count--;
+	}
+	pairs = (BitmapPair*)dst;
+	pairCount = count >> 1;
+	for (i = 0; i < pairCount; i++) pairs[i] = pair;
+	if (count & 1) dst[count - 1] = color;
+}
+
 static void ClearColorBuffer(void) {
-	int i, x, y, size = fb_width * fb_height;
+	int y, size = fb_width * fb_height;
+	BitmapPair pair = (uint32_t)clearColor | ((uint32_t)clearColor << 16);
 
 	if (cb_stride == fb_width) {
-		for (i = 0; i < size; i++) colorBuffer[i] = clearColor;
+		FillColorRow(colorBuffer, size, clearColor, pair);
 	} else {
 		/* Slower partial buffer clear */
 		for (y = 0; y < fb_height; y++) {
-			i = y * cb_stride;
-			for (x = 0; x < fb_width; x++) {
-				colorBuffer[i + x] = clearColor;
-			}
+			BitmapCol* row = colorBuffer + y * cb_stride;
+			FillColorRow(row, fb_width, clearColor, pair);
 		}
 	}
 }
 
 static void ClearDepthBuffer(void) {
-	int i, size = fb_width * fb_height;
-	for (i = 0; i < size; i++) depthBuffer[i] = 100000000.0f;
+	int size = fb_width * fb_height;
+
+	Mem_Set(depthBuffer, 0xFF, size * sizeof(DepthValue));
 }
 
 void Gfx_ClearBuffers(GfxBuffers buffers) {
@@ -438,11 +462,11 @@ static void DrawSprite2D(Vertex* V0, Vertex* V1, Vertex* V2) {
 			}
 		} else {
 			BitmapCol color = BitmapCol_Make(R, G, B, 0xFF);
+			BitmapPair pair = (uint32_t)color | ((uint32_t)color << 16);
+			int count = maxX - minX + 1;
 			for (y = minY; y <= maxY; y++) {
 				int cb_row = y * cb_stride;
-				for (x = minX; x <= maxX; x++) {
-					colorBuffer[cb_row + x] = color;
-				}
+				FillColorRow(colorBuffer + cb_row + minX, count, color, pair);
 			}
 		}
 		return;
@@ -462,6 +486,44 @@ static void DrawSprite2D(Vertex* V0, Vertex* V1, Vertex* V2) {
 				(begTY + delTY < curTexHeight);
 
 	int x, y;
+#ifdef BITMAP_565
+	/* Retro-Go textures use zero as transparent and all other RGB565 values as opaque.
+	   Avoid unpacking and rebuilding the common un-tinted GUI/font pixels. */
+	if (vColor == PACKEDCOL_WHITE) {
+		for (y = minY; y <= maxY; y++) {
+			int texY = fast ? (begTY + (y - origY)) : (((begTY + delTY * (y - origY) / height)) & texHeightMask);
+			BitmapCol* dst = colorBuffer + y * cb_stride;
+			for (x = minX; x <= maxX; x++) {
+				int texX = fast ? (begTX + (x - origX)) : (((begTX + delTX * (x - origX) / width)) & texWidthMask);
+				BitmapCol color = curTexPixels[texY * curTexWidth + texX];
+				if (!gfx_alphaBlend || color) dst[x] = color;
+			}
+		}
+		return;
+	}
+	if (gfx_alphaBlend && PackedCol_A(vColor) == 255) {
+		int tintR = PackedCol_R(vColor);
+		int tintG = PackedCol_G(vColor);
+		int tintB = PackedCol_B(vColor);
+
+		for (y = minY; y <= maxY; y++) {
+			int texY = fast ? (begTY + (y - origY)) : (((begTY + delTY * (y - origY) / height)) & texHeightMask);
+			BitmapCol* dst = colorBuffer + y * cb_stride;
+			for (x = minX; x <= maxX; x++) {
+				int texX = fast ? (begTX + (x - origX)) : (((begTX + delTX * (x - origX) / width)) & texWidthMask);
+				BitmapCol color = curTexPixels[texY * curTexWidth + texX];
+				int R, G, B;
+				if (!color) continue;
+
+				R = (BitmapCol_R(color) * tintR) >> 8;
+				G = (BitmapCol_G(color) * tintG) >> 8;
+				B = (BitmapCol_B(color) * tintB) >> 8;
+				dst[x] = BitmapCol_Make(R, G, B, 0xFF);
+			}
+		}
+		return;
+	}
+#endif
 	for (y = minY; y <= maxY; y++) 
 	{
 		int texY = fast ? (begTY + (y - origY)) : (((begTY + delTY * (y - origY) / height)) & texHeightMask);
@@ -674,6 +736,7 @@ static void DrawTriangle3D(Vertex* V0, Vertex* V1, Vertex* V2) {
 	float bc0_start = edgeFunction(x1,y1, x2,y2, minX+0.5f,minY+0.5f);
 	float bc1_start = edgeFunction(x2,y2, x0,y0, minX+0.5f,minY+0.5f);
 	float bc2_start = edgeFunction(x0,y0, x1,y1, minX+0.5f,minY+0.5f);
+	float z_step = (dx12 * z0 + dx20 * z1 + dx01 * z2) * factor;
 
 	int R = 0, G = 0, B = 0, A = 0, x, y;
 	int a1, r1, g1, b1;
@@ -696,31 +759,42 @@ static void DrawTriangle3D(Vertex* V0, Vertex* V1, Vertex* V2) {
 		texturing = false;
 	}
 
-	for (y = minY; y <= maxY; y++, bc0_start += dy12, bc1_start += dy20, bc2_start += dy01) 
+	for (y = minY; y <= maxY; y++, bc0_start += dy12, bc1_start += dy20, bc2_start += dy01)
 	{
 		float bc0 = bc0_start;
 		float bc1 = bc1_start;
 		float bc2 = bc2_start;
+		float z = (bc0_start * z0 + bc1_start * z1 + bc2_start * z2) * factor;
+		int db_row = y * db_stride;
+		int cb_row = y * cb_stride;
 
-		for (x = minX; x <= maxX; x++, bc0 += dx12, bc1 += dx20, bc2 += dx01) 
+		for (x = minX; x <= maxX; x++, bc0 += dx12, bc1 += dx20, bc2 += dx01, z += z_step)
 		{
 			if (bc0 < 0 || bc1 < 0 || bc2 < 0) continue;
 
-			float ic0 = bc0 * factor;
-			float ic1 = bc1 * factor;
-			float ic2 = bc2 * factor;
-			int db_index = y * db_stride + x;
+			int zValue;
+			int db_index = db_row + x;
 
-			float w = 1 / (ic0 * w0 + ic1 * w1 + ic2 * w2);
-			float z = (ic0 * z0 + ic1 * z1 + ic2 * z2) * w;
-
-			if (depthTest && (z < 0 || z > depthBuffer[db_index] + 0.001f)) continue;
+			if (depthTest && z < 0) continue;
+			if (z <= 0.0f) {
+				zValue = 0;
+			} else if (z >= 1.0f) {
+				zValue = DEPTH_MAX_VALUE;
+			} else {
+				zValue = (int)(z * DEPTH_SCALE);
+			}
+			if (depthTest && zValue > depthBuffer[db_index] + DEPTH_TOLERANCE) continue;
 			if (!colWrite) {
-				if (depthWrite) depthBuffer[db_index] = z;
+				if (depthWrite) depthBuffer[db_index] = (DepthValue)zValue;
 				continue;
 			}
 
 			if (texturing) {
+				/* Only surviving textured pixels need perspective correction. */
+				float ic0 = bc0 * factor;
+				float ic1 = bc1 * factor;
+				float ic2 = bc2 * factor;
+				float w = 1.0f / (ic0 * w0 + ic1 * w1 + ic2 * w2);
 				float u = (ic0 * u0 + ic1 * u1 + ic2 * u2) * w;
 				float v = (ic0 * v0 + ic1 * v1 + ic2 * v2) * w;
 				int texX = ((int)u) & texWidthMask;
@@ -729,12 +803,29 @@ static void DrawTriangle3D(Vertex* V0, Vertex* V1, Vertex* V2) {
 				int texIndex = texY * curTexWidth + texX;
 				BitmapCol tColor = curTexPixels[texIndex];
 
+#ifdef BITMAP_565
+				if (!gfx_alphaBlend) {
+					int vertexA = PackedCol_A(color);
+					BitmapCol shaded;
+					if (gfx_alphaTest && (!tColor || ((vertexA * 255) >> 8) < 0x80)) continue;
+
+					/* This is algebraically identical to expanding RGB565 to 8-bit,
+					   multiplying by the vertex tint, then packing back to RGB565. */
+					shaded  = (BitmapCol)((((tColor >> 11) & 0x1F) * PackedCol_R(color) >> 8) << 11);
+					shaded |= (BitmapCol)((((tColor >>  5) & 0x3F) * PackedCol_G(color) >> 8) <<  5);
+					shaded |= (BitmapCol)( ((tColor        & 0x1F) * PackedCol_B(color) >> 8));
+
+					if (depthWrite) depthBuffer[db_index] = (DepthValue)zValue;
+					colorBuffer[cb_row + x] = shaded;
+					continue;
+				}
+#endif
 				MultiplyColors(color, tColor);
 			}
 
 			if (gfx_alphaTest && A < 0x80) continue;
-			if (depthWrite) depthBuffer[db_index] = z;
-			int cb_index = y * cb_stride + x;
+			if (depthWrite) depthBuffer[db_index] = (DepthValue)zValue;
+			int cb_index = cb_row + x;
 			
 			if (!gfx_alphaBlend) {
 				colorBuffer[cb_index] = BitmapCol_Make(R, G, B, 0xFF);
@@ -1132,10 +1223,9 @@ void Gfx_OnWindowResize(void) {
 	Window_AllocFramebuffer(&fb_bmp, Game.Width, Game.Height);
 	realColorBuffer = fb_bmp.scan0;
 
-	realDepthBuffer = Mem_Alloc(Game.Width * Game.Height, sizeof(float), "real depth buffer");
 #if RENDERING_3D_WIDTH < 320
-	lowColorBuffer = Mem_Alloc(160 * 120, sizeof(BitmapCol), "low color buffer");
-	lowDepthBuffer = Mem_Alloc(160 * 120, sizeof(float), "low depth buffer");
+	lowColorBuffer = (BitmapCol*)rg_alloc(160 * 120 * sizeof(BitmapCol), MEM_FAST);
+	lowDepthBuffer = (DepthValue*)rg_alloc(160 * 120 * sizeof(DepthValue), MEM_FAST);
 
 	// Start in 3D mode (low res)
 	colorBuffer = lowColorBuffer;
@@ -1150,6 +1240,7 @@ void Gfx_OnWindowResize(void) {
 	Gfx_SetViewport(0, 0, 160, 120);
 	Gfx_SetScissor (0, 0, 160, 120);
 #else
+	realDepthBuffer = (DepthValue*)rg_alloc(Game.Width * Game.Height * sizeof(DepthValue), MEM_FAST);
 	colorBuffer = realColorBuffer;
 	depthBuffer = realDepthBuffer;
 	cb_stride = fb_bmp.width;
@@ -1182,20 +1273,20 @@ void Gfx_GetApiInfo(cc_string* info) {
 static void Upscale3D(void) {
 #if RENDERING_3D_WIDTH < 320
 	int x, y;
+	BitmapPair expandedLine[160];
 	if (!lowColorBuffer || !realColorBuffer) return;
 
 	int dest_width = Game.Width;
 	for (y = 0; y < 120; y++) {
 		BitmapCol* srcLine = lowColorBuffer + y * 160;
-		BitmapCol* dstLine1 = realColorBuffer + (y * 2) * dest_width;
-		BitmapCol* dstLine2 = realColorBuffer + (y * 2 + 1) * dest_width;
+		BitmapPair* dstLine1 = (BitmapPair*)(realColorBuffer + (y * 2) * dest_width);
+		BitmapPair* dstLine2 = (BitmapPair*)(realColorBuffer + (y * 2 + 1) * dest_width);
 		for (x = 0; x < 160; x++) {
-			BitmapCol pixel = srcLine[x];
-			dstLine1[x * 2] = pixel;
-			dstLine1[x * 2 + 1] = pixel;
-			dstLine2[x * 2] = pixel;
-			dstLine2[x * 2 + 1] = pixel;
+			BitmapPair pixel = srcLine[x];
+			expandedLine[x] = pixel | (pixel << 16);
 		}
+		Mem_Copy(dstLine1, expandedLine, sizeof(expandedLine));
+		Mem_Copy(dstLine2, expandedLine, sizeof(expandedLine));
 	}
 #endif
 }
@@ -1210,7 +1301,8 @@ void Gfx_Begin2D(int width, int height) {
 
 	// 2. Switch pointers to high-res colorBuffer for 2D UI drawing
 	colorBuffer = realColorBuffer;
-	depthBuffer = realDepthBuffer;
+	// The 2D pass has depth testing and writes disabled, so it needs no full-resolution depth buffer.
+	depthBuffer = NULL;
 	fb_width = Game.Width;
 	fb_height = Game.Height;
 	cb_stride = Game.Width;

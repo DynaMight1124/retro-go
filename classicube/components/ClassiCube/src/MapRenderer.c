@@ -532,7 +532,11 @@ static void RefreshBorderChunks(int maxHeight) {
 *--------------------------------------------------Chunks updating/sorting------------------------------------------------*
 *#########################################################################################################################*/
 #define CHUNK_TARGET_TIME ((1.0f/30) + 0.01f)
+#ifdef CC_BUILD_RETROGO
+static int chunksTarget = 1;
+#else
 static int chunksTarget = 12;
+#endif
 static Vec3 lastCamPos;
 static float lastYaw, lastPitch;
 /* Max distance from camera that chunks are rendered within */
@@ -629,7 +633,11 @@ static void UpdateChunks(float delta) {
 
 	/* Build more chunks if 30 FPS or over, otherwise slowdown */
 	chunksTarget += delta < CHUNK_TARGET_TIME ? 1 : -1; 
+#ifdef CC_BUILD_RETROGO
+	Math_Clamp(chunksTarget, 1, maxChunkUpdates);
+#else
 	Math_Clamp(chunksTarget, 4, maxChunkUpdates);
+#endif
 
 	p = Entities.CurPlayer;
 	samePos = Vec3_Equals(&Camera.CurrentPos, &lastCamPos)

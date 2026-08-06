@@ -2,6 +2,7 @@
 #if defined CC_BUILD_RETROGO
 
 #include <stdint.h>
+#include <stdlib.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 
@@ -43,18 +44,19 @@ void Audio_FreeChunks(struct AudioChunk* chunks, int numChunks);
 #define MIXER_RATE 44100
 #define MIXER_BUF_SAMPLES 512
 
-static TaskHandle_t mixer_task_handle = NULL;
+static rg_task_t* mixer_task;
 
 static void audio_mixer_task(void* arg) {
-    rg_audio_frame_t* out_buf = (rg_audio_frame_t*)rg_alloc(MIXER_BUF_SAMPLES * sizeof(rg_audio_frame_t), MEM_SLOW);
-    if (!out_buf) {
-        vTaskDelete(NULL);
-        return;
-    }
+    rg_audio_frame_t* out_buf = (rg_audio_frame_t*)rg_alloc(MIXER_BUF_SAMPLES * sizeof(rg_audio_frame_t), MEM_FAST);
+    rg_task_msg_t msg;
+    cc_bool output_active = false;
+    if (!out_buf) return;
 
     rg_audio_set_sample_rate(MIXER_RATE);
 
     while (1) {
+        if (rg_task_receive(&msg, 0) && msg.type == RG_TASK_MSG_STOP) break;
+
         memset(out_buf, 0, MIXER_BUF_SAMPLES * sizeof(rg_audio_frame_t));
         int any_active = 0;
 
@@ -111,21 +113,36 @@ static void audio_mixer_task(void* arg) {
 
         if (any_active) {
             rg_audio_submit(out_buf, MIXER_BUF_SAMPLES);
+            output_active = true;
         } else {
-            // Sleep for 10ms to save CPU when idle
-            vTaskDelay(pdMS_TO_TICKS(10));
+            // Ensure the I2S DMA path cannot retain the tail of the last audible buffer.
+            if (output_active) {
+                rg_audio_submit(out_buf, MIXER_BUF_SAMPLES);
+                output_active = false;
+            }
+            // Block on the task queue so shutdown does not have to wait for an idle delay.
+            if (rg_task_receive(&msg, 10) && msg.type == RG_TASK_MSG_STOP) break;
         }
     }
+
+    free(out_buf);
 }
 
 cc_bool AudioBackend_Init(void) {
-    if (!mixer_task_handle) {
-        rg_task_create("CCAudioMixer", audio_mixer_task, NULL, 4096, 1, RG_TASK_PRIORITY_5, -1);
-    }
-    return true;
+    if (mixer_task && rg_task_find("CCAudioMixer")) return true;
+
+    mixer_task = rg_task_create("CCAudioMixer", audio_mixer_task, NULL, 4096, 1, RG_TASK_PRIORITY_5, -1);
+    return mixer_task != NULL;
 }
 
-void    AudioBackend_Free(void) { }
+void AudioBackend_Free(void) {
+    rg_task_msg_t msg = { .type = RG_TASK_MSG_STOP };
+    if (!mixer_task) return;
+
+    rg_task_send(mixer_task, &msg, -1);
+    while (rg_task_find("CCAudioMixer")) rg_task_delay(1);
+    mixer_task = NULL;
+}
 void    AudioBackend_Tick(void) { }
 
 cc_result Audio_Init(struct AudioContext* ctx, int buffers) {

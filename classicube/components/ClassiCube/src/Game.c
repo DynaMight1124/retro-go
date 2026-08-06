@@ -376,8 +376,8 @@ static void LoadOptions(void) {
 
 	Game_ViewDistance     = Options_GetInt(OPT_VIEW_DISTANCE, 8, 4096, DEFAULT_VIEWDIST);
 #ifdef CC_BUILD_RETROGO
-	if (Game_ViewDistance < 6) Game_ViewDistance = 6;
-	if (Game_ViewDistance > 14) Game_ViewDistance = 14;
+	if (Game_ViewDistance < 10)  Game_ViewDistance = 10;
+	if (Game_ViewDistance > 512) Game_ViewDistance = 512;
 #endif
 	Game_UserViewDistance = Game_ViewDistance;
 	/* TODO: Do we need to support option to skip SSL */
