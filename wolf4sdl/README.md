@@ -41,6 +41,11 @@ Store only a placeholder file in the root to launch the game, and move the bulk 
 Place all files directly in the game folder.
 - `roms/wolf3d/` (Place all game data files here)
 
+Both layouts are detected when launching from Retro-Go or directly from an
+application `.bin`. The `data/` subdirectory is preferred when both locations
+contain game data. If neither location contains recognized Wolf3D/SOD data, the
+port displays an error and exits cleanly.
+
 ### Persistent Data
 - **Save Games**: Automatically stored in `retro-go/saves/wolf3d/`
 - **Configuration**: Automatically stored in `retro-go/config/wolf3d/`

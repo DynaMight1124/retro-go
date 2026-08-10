@@ -205,6 +205,76 @@ static void options_handler(rg_gui_option_t *dest)
     *dest++ = (rg_gui_option_t)RG_DIALOG_END;
 }
 
+static bool wolf_data_present(const char *directory)
+{
+    static const char *headers[] = {
+        "vgahead.wl6",
+        "vgahead.wl1",
+        "vgahead.sod",
+    };
+    char path[400];
+
+    for (size_t i = 0; i < sizeof(headers) / sizeof(headers[0]); ++i)
+    {
+        int written = snprintf(path, sizeof(path), "%s%s",
+                               directory, headers[i]);
+        if (written < 0 || (size_t)written >= sizeof(path))
+            continue;
+        if (rg_storage_exists(path))
+            return true;
+    }
+    return false;
+}
+
+static bool select_wolf_data_directory(char *destination, size_t size,
+                                       const char *base_directory)
+{
+    char base[350];
+    char data[350];
+    size_t length;
+    int written;
+
+    if (!destination || size == 0 || !base_directory || !base_directory[0])
+        return false;
+
+    written = snprintf(base, sizeof(base), "%s", base_directory);
+    if (written < 0 || (size_t)written >= sizeof(base))
+        return false;
+
+    length = strlen(base);
+    if (length > 0 && base[length - 1] != '/')
+    {
+        if (length + 1 >= sizeof(base))
+            return false;
+        base[length++] = '/';
+        base[length] = 0;
+    }
+
+    // Prefer the tidy layout, but retain compatibility with data files stored
+    // directly in the game's root directory.
+    written = snprintf(data, sizeof(data), "%sdata/", base);
+    if (written < 0 || (size_t)written >= sizeof(data))
+        return false;
+
+    if (wolf_data_present(data))
+    {
+        length = strlen(data) + 1;
+        if (length > size)
+            return false;
+        memcpy(destination, data, length);
+        return true;
+    }
+    if (wolf_data_present(base))
+    {
+        length = strlen(base) + 1;
+        if (length > size)
+            return false;
+        memcpy(destination, base, length);
+        return true;
+    }
+    return false;
+}
+
 extern int wolf_main(int argc, char *argv[]);
 
 extern "C" void app_main()
@@ -237,48 +307,46 @@ extern "C" void app_main()
 
     SDL_RG_SetSurface(update);
 
-    char current_datadir[350];
-    strcpy(current_datadir, RG_BASE_PATH_ROMS "/wolf3d/"); // Default
+    char current_datadir[350] = {0};
+    bool data_found = false;
 
     const char *romPath = app->romPath;
     if (romPath && romPath[0])
     {
-        char baseDir[256];
-        strncpy(baseDir, romPath, sizeof(baseDir) - 1);
-        baseDir[sizeof(baseDir) - 1] = 0;
-        char *lastSlash = strrchr(baseDir, '/');
-        if (lastSlash)
+        char baseDir[350];
+        rg_stat_t rom_stat = rg_storage_stat(romPath);
+
+        snprintf(baseDir, sizeof(baseDir), "%s", romPath);
+        if (!rom_stat.is_dir)
         {
-            *(lastSlash + 1) = 0;
-            
-            char testPath[300];
-            bool found = false;
-            
-            // Probe for Wolf3D or SOD data
-            snprintf(testPath, sizeof(testPath), "%sdata/vgahead.wl6", baseDir);
-            if (rg_storage_exists(testPath)) found = true;
-            
-            if (!found) {
-                snprintf(testPath, sizeof(testPath), "%sdata/vgahead.wl1", baseDir);
-                if (rg_storage_exists(testPath)) found = true;
-            }
-
-            if (!found) {
-                snprintf(testPath, sizeof(testPath), "%sdata/vgahead.sod", baseDir);
-                if (rg_storage_exists(testPath)) found = true;
-            }
-
-            if (found)
-            {
-                snprintf(current_datadir, sizeof(current_datadir), "%sdata/", baseDir);
-            }
+            char *lastSlash = strrchr(baseDir, '/');
+            if (lastSlash)
+                *(lastSlash + 1) = 0;
             else
-            {
-                strncpy(current_datadir, baseDir, sizeof(current_datadir) - 1);
-                current_datadir[sizeof(current_datadir) - 1] = 0;
-            }
+                baseDir[0] = 0;
         }
+
+        data_found = select_wolf_data_directory(
+                current_datadir, sizeof(current_datadir), baseDir);
     }
+
+    // Direct .bin launches have no launcher ROM path. Also use this as a
+    // fallback if a supplied boot path does not lead to valid game data.
+    if (!data_found)
+    {
+        data_found = select_wolf_data_directory(
+                current_datadir, sizeof(current_datadir),
+                RG_BASE_PATH_ROMS "/wolf3d/");
+    }
+
+    if (!data_found)
+    {
+        rg_gui_alert("Wolf3D data not found",
+                     "Place the game files in\n/wolf3d/data/ or /wolf3d/.");
+        rg_system_exit();
+    }
+
+    RG_LOGI("Using game data from: %s", current_datadir);
 
     // Prepare arguments for Wolf4SDL
     char arg0[] = "wolf4sdl";

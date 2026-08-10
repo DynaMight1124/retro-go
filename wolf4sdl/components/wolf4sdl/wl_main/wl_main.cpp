@@ -1612,6 +1612,13 @@ static void DemoLoop()
             CA_CacheGrChunk (TITLEPALETTE);
             VL_ConvertPalette((byte *)grsegs[TITLEPALETTE], pal, 256);
 
+            // The SOD title pixels use TITLEPALETTE rather than gamepal. On
+            // the first pass there has not yet been a fade-out, so submitting
+            // them with gamepal briefly produces a garbled title. Seed the
+            // transition with black before the first title submission.
+            if (!screenfaded)
+                VL_FillPalette(0,0,0);
+
             CA_CacheGrChunk (TITLE1PIC);
             VWB_DrawPic (0,0,TITLE1PIC);
             UNCACHEGRCHUNK (TITLE1PIC);
