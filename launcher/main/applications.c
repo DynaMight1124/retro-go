@@ -698,7 +698,7 @@ void applications_init(void)
     application("NEC PC Engine", "pce", "pce zip", "retro-core", 0);
     application("Atari Lynx", "lnx", "lnx zip", "retro-core", 64);
     application("Atari 2600", "a26", "a26 bin zip", "stella", 0);
-    // application("Neo Geo Pocket Color", "ngp", "ngp ngc zip", "ngpocket-go", 0);
+    application("Neo Geo Pocket Color", "ngp", "ngp ngc zip", "ngp-go", 0);
     application("DOOM", "doom", "wad zip", "prboom-go", 0);
     application("Duke Nukem 3D", "duke3d", "grp zip", "duke3d-go", 0);
     application("Quake", "quake", "pak", "quake-go", 0);
@@ -708,6 +708,8 @@ void applications_init(void)
     application("Celeste", "celeste", "p8", "celeste", 0);
     application("Outrun", "cannonball", "ball", "cannonball", 0);
     application("Tomb Raider", "openlara", "tr1", "openlara", 0);
+    application("Pico-8", "pico8", "p8 png zip", "fake-08", 0);
+    application("Commodore 64", "c64", "crt zip prg d64 t64", "frodo", 0);
 
     // Special app to bootstrap native esp32 binaries from the SD card
     // application("Bootstrap", "apps", "bin elf", "bootstrap", 0);
