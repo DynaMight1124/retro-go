@@ -14,7 +14,7 @@ import zlib
 DEFAULT_TARGET = os.getenv("RG_TOOL_TARGET", "gb300-p4")
 DEFAULT_BAUD = os.getenv("RG_TOOL_BAUD", "1152000")
 DEFAULT_PORT = os.getenv("RG_TOOL_PORT", "COM3")
-DEFAULT_APPS = os.getenv("RG_TOOL_APPS", "launcher retro-core prboom-go snes9x gwenesis fmsx gbsp duke3d-go quake-go celeste stella openlara wolf4sdl openlara cannonball rott")
+DEFAULT_APPS = os.getenv("RG_TOOL_APPS", "launcher retro-core prboom-go snes9x gwenesis fmsx gbsp duke3d-go quake-go stella openlara wolf4sdl rott fake-08 ngp-go frodo")
 PROJECT_NAME = os.getenv("PROJECT_NAME", "Retro-Go")
 PROJECT_ICON = os.getenv("PROJECT_ICON", "assets/icon.raw")
 PROJECT_APPS = {
@@ -35,6 +35,9 @@ PROJECT_APPS = {
   'openlara':     [0, 16, 1179648],
   'cannonball':   [0, 16, 851968],
   'rott':         [0, 16, 917504],
+  'fake-08':      [0, 16, 1048576],
+  'ngp-go':       [0, 16, 655360],
+  'frodo':        [0, 16, 655360],
 
 }
 # PROJECT_APPS = {}

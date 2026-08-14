@@ -6,4 +6,4 @@ IDF_TARGET = "esp32"
 # .fw file format, if supported by the device
 FW_FORMAT = "esplay"
 # Default apps to build when none is specified (comment to build all)
-DEFAULT_APPS = "launcher retro-core prboom-go gwenesis fmsx snes9x gbsp celeste duke3d-go rott stella wolf4sdl cannonball"
+DEFAULT_APPS = "launcher retro-core prboom-go gwenesis fmsx snes9x gbsp celeste duke3d-go rott stella wolf4sdl cannonball frodo"

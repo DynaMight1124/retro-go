@@ -1,0 +1,147 @@
+Changes from V4.5 to V4.6:
+ - Improved CIA timer reset behavior
+
+Changes from V4.4 to V4.5:
+ - Note: The snapshot file format has changed. This version of Frodo will
+   not read snapshot files from earlier versions.
+ - Added Datasette tape drive emulation (TAP files, not available in Frodo
+   Lite)
+ - Added support for banked cartridges (Ocean, Fun Play, Power Play, Super
+   Games, C64 Games System, System 3, Dinamic, Zaxxon, Magic Desk, Simons'
+   BASIC, COMAL 80)
+ - Added ability to auto-start D64/G64/T64/TAP images, cartridges, and C64
+   BASIC program files by specifying them on the command line
+ - Unix: Added file type associations to let Frodo start disk/tape image
+   files, cartridges, and C64 program files from the desktop
+ - Windows: Fixed some portability problems
+ - Frodo now also looks in the application directory for the 'Frodo.ui' file
+ - Added support for integration with VICE automated regression testbench
+ - Small improvements to CPU and SID emulation
+ - Use more realistic RAM initialization pattern
+
+Changes from V4.3 to V4.4:
+ - Fixed startup problem when running under Wayland
+ - Command line option '-c' is now used to specify a different configuration
+   file than the default
+ - Settings from configuration file can be overridden on command line (for
+   example “DrivePath8=/path/to/disk.d64”)
+ - Holding down Ctrl while pressing F12 resets the C64 and auto-starts from
+   disk drive 8
+ - Settings window changes:
+   - Added ability to map game controller buttons to keys on the C64 keyboard
+     or the tape PLAY button
+   - Added ability to define firmware ROM sets, and switch between them
+   - Added option for twin-stick joystick control (for games like “Robotron
+     2084”)
+   - Added option to enable controller rumble effects via the C64 tape drive
+     motor signal (for the game “Aquarius”)
+   - Added “Auto-Start Drive 8” button
+   - Added menu item for opening the included user manual
+   - Removed "Display Sprites" and "Enable SID Filters" settings which are
+     now always enabled
+ - Improved interrupt timing
+ - Improved SID emulation
+ - Improved virtual 1541 file name pattern matching
+ - New font for on-screen displays
+
+Changes from V4.2 to V4.3:
+ - "Frodo SC" renamed to "Frodo", original "Frodo" renamed to "Frodo Lite"
+ - Ported to SDL2 and GTK 3
+ - Removed all platform-specific code, main target is now SDL
+ - Unix: settings are now stored in ~/.local/share/cebix/Frodo/config
+   instead of ~/.frodorc
+ - New functions on numeric keypad:
+   - Enter key toggles fullscreen mode
+   - Minus key (or left game controller trigger) for instant rewind
+   - Plus key (or right game controller trigger) to fast-forward
+ - Holding down Shift while pressing F12 clears all RAM memory during reset
+ - Game controllers are automatically detected and used
+ - D-pad on game controllers is now supported
+ - Replaced status bar with overlay
+ - Settings window changes:
+   - Added setting for status overlay display
+   - Added setting for initial window size
+   - Added setting for color palette
+   - Added setting for SID type (6581 or 8580)
+   - Removed "Draw every n-th frame" setting
+   - Added menu items for loading/saving snapshot files
+   - Added menu item for creating a blank D64 image
+   - Added "Eject" and "Next Disk" buttons to the drive paths
+ - SAM is now started from the "Tools" menu in the settings window instead
+   of by pressing F9
+ - Enabled drag-and-drop of files and folders onto the emulator window to
+   mount disk image files and directories, mount cartridge files, load
+   snapshot files, or load BASIC program files
+ - Improved sprite display
+ - Improved CIA timer emulation
+ - Improved 1541 emulation
+ - Added read-only support for G64 files
+ - Added support for 8K and 16K game cartridges
+ - Added GeoRAM emulation
+ - Added emulation of SID registers 27 and 28 (voice 3 read-back)
+ - Made the MapSlash setting functional again
+
+Changes from V4.1b to V4.2:
+ - Changed license to GPL
+ - "Plain" Frodo removed, "Frodo PC" renamed to "Frodo"
+ - ROMs are built into the Frodo executable
+ - Implemented write access to disk image files (D64/X64)
+ - Voice 3 mute works
+ - Unix: added Gtk preferences editor
+ - Unix: removed obsolete Linux joystick code, added SDL joystick support
+ - Unix: added fullscreen display with SDL
+ - Unix: added resizable window display with SDL/OpenGL
+ - Unix: added SDL sound support
+ - Linux: added support for Catweasel SID
+ - Linux: more accurate timing
+ - BeOS: added support for digital joysticks connected to the GeekPort
+ - BeOS: updated to new Media Kit API
+
+Changes from V4.1a to V4.1b:
+ - Unix: Updated Tcl/Tk preferences editor [Gerard Decatrel]
+ - Unix: Added SDL display driver which is the default if SDL >= 1.2 is
+   detected by the configure script
+ - Unix: Increased number of sound buffers from 4 to 16 (emu10k driver doesn't
+   work with the smaller value)
+ - Unix: Fixed some small compilation problems
+
+Changes from V4.1 to V4.1a:
+ - Fixed bug in IEC::NewPrefs()
+ - Optimized VIC emulation for speed
+ - BeOS: Prefs saved in /boot/home/config/settings/Frodo_settings
+ - BeOS: Directory panel works again
+ - BeOS: Correct C64/1541 clock frequency ratio (Frodo SC)
+ - BeOS: Correct audio mixing/clipping
+
+Changes from V4.0a to V4.1:
+ - Integrated Win32 and RiscOS ports
+ - Snapshot support
+ - Added page-crossing and "borrowed" cycles in line-based CPU emulation (Frodo PC)
+ - Added precise CIA cycles for line-based emulation (Frodo PC)
+ - Optional fixed-point arithmetic and precomputed filters in SID.cpp
+ - Optional dynamic alignment checks in VIC.cpp
+ - Changed typedefs and constants:
+     BYTE  -> int8
+     UBYTE -> uint8
+     WORD  -> int16
+     UWORD -> uint16
+     LONG  -> int32
+     ULONG -> uint32
+     FALSE -> false
+     TRUE -> true
+ - Unix: Better configure script
+ - Unix: Sound support for Solaris 2.x
+ - Unix: Joystick can be toggled between port 1/2 with the NumLock key
+ - Unix: US keyboard layouts supported
+ - BeOS: Fixed for BeOS AA:DR9
+ - BeOS: Can now switch between window/screen mode while the emulation is running,
+   speeded up full screen mode
+ - BeOS: Prefs saved in /system/settings/Frodo_settings by default
+
+Changes from V4.0 to V4.0a:
+ - Corrected BRK, ANE, ARR, SBX and DCP instructions
+ - Frodo SC: Improved the CIA timers
+ - Frodo SC: MOS6526::EmulateCycle() split into MOS6526::EmulateCycle()
+   and MOS6526::CheckIRQs()
+ - Frodo SC: Corrected interrupt behaviour of branch instructions
+ - BeOS: Sound calculation is now done in stereo
