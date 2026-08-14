@@ -1,4 +1,5 @@
 cmake_minimum_required(VERSION 3.5)
+option(FAKE08_STAGE_PROFILING "Log Fake-08 frame-stage timings" OFF)
 set(COMPONENTS "main retro-go fake-08")
 set(RG_ENABLE_NETWORKING 0)
 include(../base.cmake)

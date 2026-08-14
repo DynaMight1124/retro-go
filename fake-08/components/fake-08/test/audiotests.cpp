@@ -2,10 +2,13 @@
 #include "../source/Audio.h"
 #include "../source/PicoRam.h"
 #include "../source/cart.h"
-#include <iostream>
+#include <algorithm>
+#include <cmath>
 #include <fstream>
+#include <iostream>
 #include <sstream>
 #include <string>
+#include <vector>
 
 typedef struct WAV_HEADER {
   /* RIFF Chunk Descriptor */
@@ -50,6 +53,50 @@ void write_wav(std::istream *in, const char *output_filename) {
     in->read(reinterpret_cast<char *>(&d), sizeof(int16_t));
     out.write(reinterpret_cast<char *>(&d), sizeof(int16_t));
   }
+}
+
+TEST_CASE("vibrato produces triangle wave modulation") {
+    PicoRam picoRam;
+    picoRam.Reset();
+    Audio audio(&picoRam);
+
+    // A square wave makes changes in pitch easy to measure from its positive
+    // zero crossings. Correct triangle modulation changes their spacing
+    // smoothly; the old sawtooth produced a large jump once per cycle.
+    for (int n = 0; n < 32; ++n) {
+        picoRam.sfx[0].notes[n].setKey(24);
+        picoRam.sfx[0].notes[n].setWaveform(3);
+        picoRam.sfx[0].notes[n].setVolume(7);
+        picoRam.sfx[0].notes[n].setEffect(FX_VIBRATO);
+    }
+    picoRam.sfx[0].speed = 16;
+    audio.api_sfx(0, 0, 0, 31);
+
+    constexpr int num_samples = 22050;
+    std::vector<int16_t> samples(num_samples);
+    audio.FillMonoAudioBuffer(samples.data(), 0, num_samples);
+
+    std::vector<int> intervals;
+    int last_crossing = -1;
+    for (int i = 1; i < num_samples; ++i) {
+        if (samples[i - 1] <= 0 && samples[i] > 0) {
+            if (last_crossing >= 0)
+                intervals.push_back(i - last_crossing);
+            last_crossing = i;
+        }
+    }
+
+    CHECK(intervals.size() > 100);
+    int max_interval_jump = 0;
+    for (size_t i = 1; i < intervals.size(); ++i)
+        max_interval_jump = std::max(max_interval_jump,
+                                     std::abs(intervals[i] - intervals[i - 1]));
+    CHECK(max_interval_jump <= 5);
+
+    double sum_squares = 0.0;
+    for (int16_t sample : samples)
+        sum_squares += static_cast<double>(sample) * sample;
+    CHECK(std::sqrt(sum_squares / num_samples) > 100.0);
 }
 
 TEST_CASE("audio class behaves as expected") {

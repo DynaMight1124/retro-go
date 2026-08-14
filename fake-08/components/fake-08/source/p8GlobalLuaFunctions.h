@@ -535,6 +535,7 @@ end
 function __z8_run_cart(cart_code)
     -- Glue code that manages the game loop after the cart's code runs.
     local glue_code = [[--
+        _set_fps(_update60 and 60 or 30)
         if (_init) _init()
         if _update or _update60 or _draw then
             while true do
@@ -542,9 +543,6 @@ function __z8_run_cart(cart_code)
                     _update_buttons()
                     _update60()
                 else
-                    -- 30fps logic catch-up: run update twice per draw/yield
-                    _update_buttons()
-                    if (_update) _update()
                     _update_buttons()
                     if (_update) _update()
                 end
@@ -761,5 +759,4 @@ end
 __z8_loop = cocreate(__z8_shell)
 
 )#";
-
 

@@ -85,16 +85,4 @@ void filter::init(type t, float freq, float q, float gain)
     c5 = a2 / a0;
 }
 
-float filter::run(float input)
-{
-    float output = c1 * input + c2 * linput + c3 * llinput - c4 * loutput - c5 * lloutput;
-    llinput = linput;
-    linput = input;
-    lloutput = loutput;
-    loutput = output;
-
-    return output;
-}
-
 } // namespace z8
-

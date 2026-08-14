@@ -147,7 +147,6 @@ int print(std::string str, int x, int y, uint8_t c) {
     uint8_t bgColor = 0xff;
     uint8_t fgColor = _ph_mem->drawState.color;
     uint8_t charBytes[8];
-    uint8_t audioStrBytes[32];
     bool cancelWrap = false;
     uint8_t outlineColor = 0;
     uint8_t outlineNeighbors = 0;
@@ -436,13 +435,13 @@ int print(std::string str, int x, int y, uint8_t c) {
             }
 		}
 		else if (ch == 7) { // "\a" audio command
-            uint8_t nextChar = str[++n];
-            int audioStrIdx = 0;
-            while (nextChar != 32 && n < length) {
-                audioStrBytes[audioStrIdx++] = nextChar;
-                nextChar = str[++n];
+            // Audio text commands are not implemented yet. Consume the
+            // command through its terminating space without copying it into
+            // an unused fixed-size buffer (or reading beyond the string).
+            while (n + 1 < (size_t)length) {
+                ++n;
+                if (str[n] == ' ') break;
             }
-            //todo: generate audio stuff and play
         }
         else if (ch == 11) { // "\v" decorate previous character
             uint8_t offsetChar = str[++n];

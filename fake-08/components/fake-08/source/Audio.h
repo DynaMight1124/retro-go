@@ -92,7 +92,15 @@ class Audio {
     audioState_t _audioState;
     bool _paused;
 
+    // Rebuilt at audio-buffer boundaries so carts can still modify SFX RAM
+    // dynamically without paying these costs for every generated sample.
+    float _noteFrequencies[64];
+    double _sfxOffsetPerSecond[64];
+    uint8_t _sfxEndNotes[64];
+
     void set_music_pattern(int pattern);
+    void updateBufferMetadata();
+    float keyToFrequency(uint8_t key) const;
     void update_sfx_state(sfx_state& cur_sfx, z8::synth_param& new_synth, 
                           float freq_factor, float length, bool is_music, 
                           bool can_loop, bool half_rate, double inv_frames_per_second);

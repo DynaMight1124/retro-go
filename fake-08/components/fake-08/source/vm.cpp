@@ -172,21 +172,20 @@ bool _initializeLuaState(lua_State* luaState) {
         return false;
     }
 
-    // Push the eris.init_persist_all function on the top of the lua stack (or nil if it doesn't exist)
-    // we call this function to establish the default global state of things not to save in the save state
-    // needs to be called after globals are loaded but before the cart is run, or _init is called
-    //TODO: move these calls to the glue code?
-    // lua_getglobal(luaState, "eris");
-	// lua_getfield(luaState, -1, "init_persist_all");
+    // Establish the immutable BIOS/global baseline used by persist_all(). This
+    // must happen after the BIOS installs its globals but before a cart's
+    // _init() adds game state. Without it Eris tries to persist native globals
+    // and save-state serialization fails.
+    lua_getglobal(luaState, "eris");
+    lua_getfield(luaState, -1, "init_persist_all");
 
-    // if (lua_pcall(luaState, 0, 0, 0)){
-    //     Logger_Write("Error setting up lua persistence: %s\n", lua_tostring(luaState, -1));
-    //     lua_pop(luaState, 1);
-    //     return false;
-    // }
+    if (lua_pcall(luaState, 0, 0, 0) != LUA_OK) {
+        Logger_Write("Error setting up Lua persistence: %s\n", lua_tostring(luaState, -1));
+        lua_pop(luaState, 2); // error and eris table
+        return false;
+    }
 
-    // //pop the eris.init_persist_all fuction off the stack now that we're done with it
-    // lua_pop(luaState, 1);
+    lua_pop(luaState, 1); // eris table
 
 
     return true;
@@ -244,7 +243,8 @@ Vm::Vm(
         _loadedCart(nullptr),
         _luaState(nullptr),
         _cleanupDeps(false),
-        //_targetFps(30),
+        _targetFps(30),
+        _rateReported(false),
         _picoFrameCount(0),
         _cartChangeQueued(false),
         _nextCartKey(""),
@@ -354,6 +354,7 @@ bool abortLua;
 
 bool Vm::loadCart(Cart* cart) {
     _picoFrameCount = 0;
+    _rateReported = false;
 
     _cartdataKeyCount = 0;
     _currentCartdataKey = "";
@@ -774,7 +775,7 @@ void Vm::CloseCart() {
     }
 
     Logger_Write("resetting state\n");
-    _targetFps = 60;
+    setTargetFps(30);
     _picoFrameCount = 0;
 }
 
@@ -868,30 +869,127 @@ string Vm::GetBiosError() {
 
 void Vm::GameLoop() {
     Logger_Write("Start of GameLoop()\n");
+
+#if defined(ESP_PLATFORM) && FAKE08_STAGE_PROFILING
+    struct {
+        int64_t intervalStart;
+        int64_t wall;
+        int64_t wait;
+        int64_t busy;
+        int64_t lua;
+        int64_t video;
+        int64_t audioMix;
+        int64_t audioSubmit;
+        uint32_t frames;
+    } profile = {};
+    profile.intervalStart = rg_system_timer();
+#endif
+
     while (_host->shouldRunMainLoop())
     {
+#if defined(ESP_PLATFORM) && FAKE08_STAGE_PROFILING
+        const int64_t loopStart = rg_system_timer();
+#endif
+
+        // Wait until the display task has taken the previously submitted
+        // buffer before the alternate buffer can be reused.
         _host->waitForTargetFps();
 
         int64_t frame_start = rg_system_timer();
 
-        if (_host->shouldQuit()) break; 
+#if defined(ESP_PLATFORM) && FAKE08_STAGE_PROFILING
+        profile.wait += frame_start - loopStart;
+#endif
+
+        if (_host->shouldQuit()) break;
+        if (_host->consumeDialogOpened()) {
+            // Blocking Retro-Go dialogs are not emulation work. Start this
+            // frame's accounting after the dialog has closed.
+            frame_start = rg_system_timer();
+        }
         _host->changeStretch();
 
         // Removed update_buttons() from here because Step() -> __z8_tick() already calls it.
         // Calling it twice doubles the btnp frame count and clears KDown.
+#if defined(ESP_PLATFORM) && FAKE08_STAGE_PROFILING
+        int64_t stageStart = rg_system_timer();
+#endif
         Step();
+
+        if (_host->consumeDialogOpened()) {
+            // The Options dialog can be opened from input polling inside the
+            // Lua tick. Exclude its blocked time from this frame's busy time.
+            frame_start = rg_system_timer();
+#if defined(ESP_PLATFORM) && FAKE08_STAGE_PROFILING
+            stageStart = frame_start;
+#endif
+        }
+
+#if defined(ESP_PLATFORM) && FAKE08_STAGE_PROFILING
+        int64_t stageEnd = rg_system_timer();
+        profile.lua += stageEnd - stageStart;
+        stageStart = stageEnd;
+#endif
 
         uint8_t* picoFb = GetPicoInteralFb();
         uint8_t* screenPaletteMap = GetScreenPaletteMap();
 
         _host->drawFrame(picoFb, screenPaletteMap, _memory->drawState.drawMode);
 
-        if (_host->shouldFillAudioBuff()) {
+#if defined(ESP_PLATFORM) && FAKE08_STAGE_PROFILING
+        stageEnd = rg_system_timer();
+        profile.video += stageEnd - stageStart;
+        stageStart = stageEnd;
+#endif
+
+        const bool fillAudio = _host->shouldFillAudioBuff();
+        if (fillAudio) {
             FillAudioBuffer(_host->getAudioBufferPointer(), 0, _host->getAudioBufferSize());
+        }
+
+#if defined(ESP_PLATFORM) && FAKE08_STAGE_PROFILING
+        stageEnd = rg_system_timer();
+        profile.audioMix += stageEnd - stageStart;
+#endif
+
+        // Audio submission is the frame pacer. Account for emulation and mixing,
+        // but do not report time blocked waiting for the audio device as busy CPU.
+        const int64_t busyEnd = rg_system_timer();
+        rg_system_tick(busyEnd - frame_start);
+
+        if (fillAudio) {
             _host->playFilledAudioBuffer();
         }
-        
-        rg_system_tick(rg_system_timer() - frame_start);
+
+#if defined(ESP_PLATFORM) && FAKE08_STAGE_PROFILING
+        const int64_t frameEnd = rg_system_timer();
+        profile.busy += busyEnd - frame_start;
+        profile.audioSubmit += frameEnd - busyEnd;
+        profile.wall += frameEnd - loopStart;
+        profile.frames++;
+
+        if (frameEnd - profile.intervalStart >= 3000000 && profile.frames > 0) {
+            const int64_t measured = profile.lua + profile.video + profile.audioMix;
+            const int64_t other = std::max<int64_t>(0, profile.busy - measured);
+            const int64_t active = std::max<int64_t>(1, profile.busy);
+            RG_LOGI("PERF frames=%u target=%d us/frame wall=%d wait=%d lua=%d video=%d mix=%d submit=%d other=%d share%% lua=%d video=%d mix=%d other=%d",
+                (unsigned)profile.frames, _targetFps,
+                (int)(profile.wall / profile.frames),
+                (int)(profile.wait / profile.frames),
+                (int)(profile.lua / profile.frames),
+                (int)(profile.video / profile.frames),
+                (int)(profile.audioMix / profile.frames),
+                (int)(profile.audioSubmit / profile.frames),
+                (int)(other / profile.frames),
+                (int)(profile.lua * 100 / active),
+                (int)(profile.video * 100 / active),
+                (int)(profile.audioMix * 100 / active),
+                (int)(other * 100 / active));
+
+            profile = {};
+            profile.intervalStart = frameEnd;
+        }
+#endif
     }
 }
 
@@ -1369,8 +1467,17 @@ void Vm::vm_reset(){
 }
 
 void Vm::setTargetFps(int targetFps){
-    //currently handled by lua loop?
-    //_targetFps = targetFps;
+    _targetFps = targetFps == 60 ? 60 : 30;
+    _host->setTargetFps(_targetFps);
+#ifdef ESP_PLATFORM
+    if (!_rateReported) {
+        const std::string filename = CurrentCartFilename();
+        if (!filename.empty()) {
+            RG_LOGI("CART rate=%dHz file='%s'", _targetFps, filename.c_str());
+            _rateReported = true;
+        }
+    }
+#endif
 }
 
 int Vm::getFps(){
@@ -1495,33 +1602,50 @@ std::string Vm::getLuaLine(string filename, int linenumber) {
 
 
 size_t Vm::serializeLuaState(char* dest) {
+    return serializeLuaState(dest, SIZE_MAX);
+}
+
+size_t Vm::serializeLuaState(char* dest, size_t capacity) {
     lua_getglobal(_luaState, "eris");
 	lua_getfield(_luaState, -1, "persist_all");
 
 	if (lua_pcall(_luaState, 0, 1, 0) != 0) {
-		std::string e = lua_tostring(_luaState, -1);
+		const char *error = lua_tostring(_luaState, -1);
+		Logger_Write("Error serializing Lua state: %s\n", error ? error : "unknown error");
 		lua_pop(_luaState, 1);
+		lua_pop(_luaState, 1); // eris table
 		return 0;
 	}
 
 	size_t len;
 	const char* result = lua_tolstring(_luaState, -1, &len);
+    if (!result || len > capacity) {
+        lua_pop(_luaState, 2);
+        return 0;
+    }
     memcpy(dest, result, len);
 	lua_pop(_luaState, 2);
 
     return len;
 }
 
-void Vm::deserializeLuaState(const char* src, size_t len) {
+bool Vm::deserializeLuaState(const char* src, size_t len) {
     lua_getglobal(_luaState, "eris");
 	lua_getfield(_luaState, -1, "restore_all");
 	lua_pushlstring(_luaState, src, len);
 
 	if (lua_pcall(_luaState, 1, 0, 0) != 0) {
-		std::string e = lua_tostring(_luaState, -1);
+		const char *error = lua_tostring(_luaState, -1);
+		Logger_Write("Error restoring Lua state: %s\n", error ? error : "unknown error");
 		lua_pop(_luaState, 1);
-		return;
+		lua_pop(_luaState, 1); // eris table
+		return false;
 	}
 	lua_pop(_luaState, 1);
+    return true;
 }
 
+void Vm::RestoreFrameState(int frameCount, int targetFps) {
+    _picoFrameCount = frameCount;
+    setTargetFps(targetFps);
+}

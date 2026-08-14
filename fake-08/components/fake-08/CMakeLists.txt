@@ -107,5 +107,14 @@ if(NOT CMAKE_SCRIPT_MODE_FILE)
     set_source_files_properties(${LUA_SRCS} PROPERTIES COMPILE_FLAGS "-fwrapv -fno-strict-overflow -Wno-implicit-fallthrough")
     set_source_files_properties(${COMPONENT_SRCS} PROPERTIES COMPILE_FLAGS "-Wno-unused-variable -Wno-unused-function -Wno-format -fwrapv -fno-strict-overflow -Wno-implicit-fallthrough")
 
-    rg_setup_compile_options()
+    # Fake-08 spends most of its frame in the Lua VM, software graphics and
+    # audio synthesis. Override size-oriented target defaults for this
+    # application-local engine component only. Stage timing is independently
+    # opt-in so production builds do not carry its counters or serial output.
+    if(FAKE08_STAGE_PROFILING)
+        set(FAKE08_STAGE_PROFILING_VALUE 1)
+    else()
+        set(FAKE08_STAGE_PROFILING_VALUE 0)
+    endif()
+    rg_setup_compile_options(-O3 -DFAKE08_STAGE_PROFILING=${FAKE08_STAGE_PROFILING_VALUE})
 endif()

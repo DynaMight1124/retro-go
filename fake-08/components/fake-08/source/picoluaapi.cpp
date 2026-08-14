@@ -1369,7 +1369,7 @@ int reset(lua_State *L) {
 }
 
 int setFps(lua_State *L){
-    //_vmForLuaApi->setTargetFps(lua_tointeger(L, 1));
+    _vmForLuaApi->setTargetFps(lua_tointeger(L, 1));
 
     return 0;
 }

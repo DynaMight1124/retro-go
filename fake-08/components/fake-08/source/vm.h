@@ -33,6 +33,7 @@ class Vm {
     bool _cleanupDeps;
 
     int _targetFps;
+    bool _rateReported;
 
     int _picoFrameCount;
     //bool _hasUpdate;
@@ -93,6 +94,10 @@ class Vm {
     int GetTargetFps();
 
     int GetFrameCount();
+
+    // Adapter save states also need the VM counters which are not held in
+    // PicoRam or in the serialized Lua globals.
+    void RestoreFrameState(int frameCount, int targetFps);
 
     void GameLoop();
 
@@ -173,7 +178,7 @@ class Vm {
     string getCartBreadcrumb();
     string getCartParam();
 
+    size_t serializeLuaState(char* dest, size_t capacity);
     size_t serializeLuaState(char* dest);
-    void deserializeLuaState(const char* src, size_t len);
+    bool deserializeLuaState(const char* src, size_t len);
 };
-

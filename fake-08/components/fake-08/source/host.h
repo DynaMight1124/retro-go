@@ -84,10 +84,15 @@ class Host {
     int mouseOffsetX = 0;
     int mouseOffsetY = 0;
     int quit = 0;
+    bool dialogOpened = false;
     
     std::string _logFilePrefix;
     std::string _customBiosLua;
     std::string _cartDirectory;
+
+    int _targetFps = 30;
+    size_t _audioBufferFrames = 0;
+    uint32_t _audioSampleRemainder = 0;
 
     void loadSettingsIni();
     void saveSettingsIni();
@@ -111,6 +116,11 @@ class Host {
 
     InputState_t scanInput();
     bool shouldQuit();
+    bool consumeDialogOpened() {
+        bool opened = dialogOpened;
+        dialogOpened = false;
+        return opened;
+    }
 
     void changeStretch();
     void forceStretch(StretchOption newStretch);

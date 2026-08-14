@@ -31,7 +31,19 @@ public:
     filter(type t, float freq, float q, float gain);
 
     void init(type t, float freq, float q, float gain);
-    float run(float input);
+    // This recurrence runs twice for every channel and output sample. Keep it
+    // visible to the mixer translation unit so -O3 can inline it while still
+    // advancing the filter history even when the dry signal is selected.
+    inline float run(float input)
+    {
+        float output = c1 * input + c2 * linput + c3 * llinput - c4 * loutput - c5 * lloutput;
+        llinput = linput;
+        linput = input;
+        lloutput = loutput;
+        loutput = output;
+
+        return output;
+    }
 
     float c1 = 0, c2 = 0, c3 = 0, c4 = 0, c5 = 0;
     float linput = 0;
@@ -41,4 +53,3 @@ public:
 };
 
 } // namespace z8
-

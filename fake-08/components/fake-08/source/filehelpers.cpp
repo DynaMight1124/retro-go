@@ -109,11 +109,7 @@ bool hasEnding (std::string const &fullString, std::string const &ending) {
 }
 
 bool isHiddenFile (std::string const &fullString) {
-    if (fullString.length() >= 0) {
-        return (0 == fullString.compare (0, 2, "._"));
-    } else {
-        return false;
-    }
+    return fullString.rfind("._", 0) == 0;
 }
 
 bool isCartFile (std::string const &fullString) {
