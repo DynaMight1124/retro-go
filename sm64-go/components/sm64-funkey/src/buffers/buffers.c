@@ -50,4 +50,15 @@ void sm64_init_buffers(void) {
 #if !defined(F3DEX_GBI_SHARED) && !defined(VERSION_EU)
     gUnusedThread2Stack = rg_alloc(0x1400, MEM_SLOW);
 #endif
+
+    if (!gDecompressionHeap || !gAudioHeap || !gSaveBufferPtr || !gGfxPools
+#ifdef VERSION_JP
+        || !gAudioSPTaskYieldBuffer
+#endif
+#if !defined(F3DEX_GBI_SHARED) && !defined(VERSION_EU)
+        || !gUnusedThread2Stack
+#endif
+    ) {
+        RG_PANIC("Failed to allocate SM64 engine buffers!");
+    }
 }

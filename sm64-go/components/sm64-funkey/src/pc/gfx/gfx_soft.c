@@ -82,7 +82,9 @@ typedef Color4 (*sample_fn_t)(const struct Texture * const, const int, const int
 // pixel drawing function: does blending, zwriting, alpha edge checking or whatever else, then plots pixel
 typedef void (*draw_fn_t)(const int idx, uint16_t uz, const Color4 src);
 // color combiner: takes float vertex properties and obtains final fragment color from them
-typedef Color4 (*combine_fn_t)(const float z, const float *props);
+#define COMBINE_ARGS const float z, const float *props, \
+                     UNUSED const struct Texture *tex0, UNUSED const struct Texture *tex1
+typedef Color4 (*combine_fn_t)(COMBINE_ARGS);
 // rasterizer: walks the triangle and interpolates a fixed amount of vertex properties
 typedef void (*rast_fn_t)(const struct Tri tri);
 
@@ -120,6 +122,12 @@ struct ClipRect {
 uint32_t *gfx_output;
 uint32_t *gfx_overlay_output;
 bool gfx_overlay_active;
+int gfx_overlay_min_x;
+int gfx_overlay_min_y;
+int gfx_overlay_max_x;
+int gfx_overlay_max_y;
+int16_t gfx_overlay_row_min_x[SCREEN_HEIGHT];
+int16_t gfx_overlay_row_max_x[SCREEN_HEIGHT];
 
 // this is set in the drawing functions
 static draw_fn_t draw_fn;
@@ -201,13 +209,6 @@ static int gfx_soft_dbg_menu_max_y;
 #define overlay_height SCREEN_HEIGHT
 #define overlay_size (SCREEN_WIDTH * SCREEN_HEIGHT)
 
-// color component interpolation table:
-// lerp(x, y, t) = x + (y - x) * t
-// the first index is x, the second is (y - x) + 256
-static uint8_t (*lerp_tab)[256 * 2 + 1] = NULL;
-// color component multiplication table: [x][y] = (x * y) / 256;
-static uint8_t (*mult_tab)[256] = NULL;
-
 /* math shit */
 
 static inline uint16_t u16clamp(const int v) {
@@ -226,31 +227,46 @@ static inline int imirror0w(const int x, const int wrap) {
     return iclamp0w(abs(x), wrap); // NOTE: this is not a universal solution
 }
 
+static inline uint8_t rgba_mul_component(const uint8_t c1, const uint8_t c2) {
+    return (uint8_t)(((uint16_t)c1 * c2) >> 8);
+}
+
+static inline uint8_t rgba_blend_component(const uint8_t src, const uint8_t dst,
+                                           const uint8_t a, const uint8_t ia) {
+    return (uint8_t)(rgba_mul_component(src, a) + rgba_mul_component(dst, ia));
+}
+
+static inline uint8_t rgba_lerp_component(const uint8_t c1, const uint8_t c2,
+                                          const uint8_t t) {
+    const int delta = (int)c2 - (int)c1;
+    return (uint8_t)(c1 + (uint8_t)(((int)t * delta) >> 8));
+}
+
 static inline Color4 rgba_modulate(const Color4 c1, const Color4 c2) {
     return (Color4) {{
-        .r = mult_tab[c1.r][c2.r],
-        .g = mult_tab[c1.g][c2.g],
-        .b = mult_tab[c1.b][c2.b],
-        .a = mult_tab[c1.a][c2.a],
+        .r = rgba_mul_component(c1.r, c2.r),
+        .g = rgba_mul_component(c1.g, c2.g),
+        .b = rgba_mul_component(c1.b, c2.b),
+        .a = rgba_mul_component(c1.a, c2.a),
     }};
 }
 
 static inline Color4 rgba_blend(const Color4 src, const Color4 dst, const uint8_t a) {
     const uint8_t ia = 0xFF - a;
     return (Color4) {{
-        .r = mult_tab[src.r][a] + mult_tab[dst.r][ia],
-        .g = mult_tab[src.g][a] + mult_tab[dst.g][ia],
-        .b = mult_tab[src.b][a] + mult_tab[dst.b][ia],
+        .r = rgba_blend_component(src.r, dst.r, a, ia),
+        .g = rgba_blend_component(src.g, dst.g, a, ia),
+        .b = rgba_blend_component(src.b, dst.b, a, ia),
         .a = dst.a,
     }};
 }
 
 static inline Color4 rgba_lerp(const Color4 c1, const Color4 c2, const uint8_t t) {
     return (Color4) {{
-        .r = c1.r + lerp_tab[t][0xFF + c2.r - c1.r],
-        .g = c1.g + lerp_tab[t][0xFF + c2.g - c1.g],
-        .b = c1.b + lerp_tab[t][0xFF + c2.b - c1.b],
-        .a = c1.a + lerp_tab[t][0xFF + c2.a - c1.a],
+        .r = rgba_lerp_component(c1.r, c2.r, t),
+        .g = rgba_lerp_component(c1.g, c2.g, t),
+        .b = rgba_lerp_component(c1.b, c2.b, t),
+        .a = rgba_lerp_component(c1.a, c2.a, t),
     }};
 }
 
@@ -325,69 +341,69 @@ static inline Color4 tex_sample_nearest(const struct Texture * const tex, const 
 
 #define tex_sample tex_sample_nearest
 
-static Color4 combine_rgb(const float z, const float *props) {
+static Color4 combine_rgb(COMBINE_ARGS) {
     return (Color4) {{ .r = props[0] * z, .g = props[1] * z, .b = props[2] * z, .a = 0xFF }};
 }
 
-static Color4 combine_rgba(const float z, const float *props) {
+static Color4 combine_rgba(COMBINE_ARGS) {
     return (Color4) {{ .r = props[0] * z, .g = props[1] * z, .b = props[2] * z, .a = props[3] * z }};
 }
 
-static Color4 combine_fog_rgb(const float z, const float *props) {
+static Color4 combine_fog_rgb(COMBINE_ARGS) {
     const uint8_t fog = props[0] * z;
     const Color4 c = (Color4) {{ .r = props[1] * z, .g = props[2] * z, .b = props[3] * z, .a = 0xFF }};
     return rgba_blend(fog_color, c, fog);
 }
 
-static Color4 combine_fog_rgba(const float z, const float *props) {
+static Color4 combine_fog_rgba(COMBINE_ARGS) {
     const uint8_t fog = props[0] * z;
     const Color4 c = (Color4) {{ .r = props[1] * z, .g = props[2] * z, .b = props[3] * z, .a = props[4] * z }};
     return rgba_blend(fog_color, c, fog);
 }
 
-static Color4 combine_rgba_rgba(const float z, const float *props) {
+static Color4 combine_rgba_rgba(COMBINE_ARGS) {
     const Color4 ca = (Color4) {{ .r = props[0] * z, .g = props[1] * z, .b = props[2] * z, .a = props[3] * z }};
     const Color4 cb = (Color4) {{ .r = props[4] * z, .g = props[5] * z, .b = props[6] * z, .a = props[7] * z }};
     return rgba_modulate(ca, cb);
 }
 
-static Color4 combine_tex(const float z, const float *props) {
-    return tex_sample(cur_tex[0], props[0] * z, props[1] * z);
+static Color4 combine_tex(COMBINE_ARGS) {
+    return tex_sample(tex0, props[0] * z, props[1] * z);
 }
 
-static Color4 combine_tex_fog(const float z, const float *props) {
-    const Color4 tc = tex_sample(cur_tex[0], props[0] * z, props[1] * z);
+static Color4 combine_tex_fog(COMBINE_ARGS) {
+    const Color4 tc = tex_sample(tex0, props[0] * z, props[1] * z);
     const uint8_t fog = props[2] * z;
     return rgba_blend(fog_color, tc, fog);
 }
 
-static Color4 combine_tex_rgb(const float z, const float *props) {
-    const Color4 tc = tex_sample(cur_tex[0], props[0] * z, props[1] * z);
+static Color4 combine_tex_rgb(COMBINE_ARGS) {
+    const Color4 tc = tex_sample(tex0, props[0] * z, props[1] * z);
     const Color4 cc = (Color4) {{ .r = props[2] * z, .g = props[3] * z, .b = props[4] * z, .a = 0xFF }};
     return rgba_modulate(tc, cc);
 }
 
-static Color4 combine_tex_fog_rgb(const float z, const float *props) {
-    const Color4 tc = tex_sample(cur_tex[0], props[0] * z, props[1] * z);
+static Color4 combine_tex_fog_rgb(COMBINE_ARGS) {
+    const Color4 tc = tex_sample(tex0, props[0] * z, props[1] * z);
     const uint8_t fog = props[2] * z;
     const Color4 cc = (Color4) {{ .r = props[3] * z, .g = props[4] * z, .b = props[5] * z, .a = 0xFF }};
     return rgba_blend(fog_color, rgba_modulate(tc, cc), fog);
 }
 
-static Color4 combine_tex_rgb_decal(const float z, const float *props) {
-    const Color4 tc = tex_sample(cur_tex[0], props[0] * z, props[1] * z);
+static Color4 combine_tex_rgb_decal(COMBINE_ARGS) {
+    const Color4 tc = tex_sample(tex0, props[0] * z, props[1] * z);
     const Color4 cc = (Color4) {{ .r = props[2] * z, .g = props[3] * z, .b = props[4] * z, .a = 0xFF }};
     return rgba_blend(tc, cc, tc.a);
 }
 
-static Color4 combine_tex_rgba(const float z, const float *props) {
-    const Color4 tc = tex_sample(cur_tex[0], props[0] * z, props[1] * z);
+static Color4 combine_tex_rgba(COMBINE_ARGS) {
+    const Color4 tc = tex_sample(tex0, props[0] * z, props[1] * z);
     const Color4 cc = (Color4) {{ .r = props[2] * z, .g = props[3] * z, .b = props[4] * z, .a = props[5] * z }};
     return rgba_modulate(tc, cc);
 }
 
-static Color4 combine_tex_rgba_texa(const float z, const float *props) {
-    const Color4 tc = tex_sample(cur_tex[0], props[0] * z, props[1] * z);
+static Color4 combine_tex_rgba_texa(COMBINE_ARGS) {
+    const Color4 tc = tex_sample(tex0, props[0] * z, props[1] * z);
     const Color4 cc = (Color4) {{ .r = props[2] * z, .g = props[3] * z, .b = props[4] * z, .a = 0xFF }};
     return rgba_modulate(tc, cc);
 }
@@ -398,33 +414,33 @@ static inline bool shader_preserves_texture_alpha(uint32_t shader_id) {
            shader_id == GFX_SOFT_MENU_SHADER_MODULATE_EDGE;
 }
 
-static Color4 combine_tex_fog_rgba(const float z, const float *props) {
-    const Color4 tc = tex_sample(cur_tex[0], props[0] * z, props[1] * z);
+static Color4 combine_tex_fog_rgba(COMBINE_ARGS) {
+    const Color4 tc = tex_sample(tex0, props[0] * z, props[1] * z);
     const uint8_t fog = props[2] * z;
     const Color4 cc = (Color4) {{ .r = props[3] * z, .g = props[4] * z, .b = props[5] * z, .a = props[6] * z }};
     return rgba_blend(fog_color, rgba_modulate(tc, cc), fog);
 }
 
-static Color4 combine_tex_rgba_decal(const float z, const float *props) {
-    const Color4 tc = tex_sample(cur_tex[0], props[0] * z, props[1] * z);
+static Color4 combine_tex_rgba_decal(COMBINE_ARGS) {
+    const Color4 tc = tex_sample(tex0, props[0] * z, props[1] * z);
     const Color4 cc = (Color4) {{ .r = props[2] * z, .g = props[3] * z, .b = props[4] * z, .a = props[5] * z }};
     Color4 out = rgba_blend(tc, cc, tc.a);
     out.a = tc.a;
     return out;
 }
 
-static Color4 combine_tex_rgb_rgb(const float z, const float *props) {
-    const Color4 tc = tex_sample(cur_tex[0], props[0] * z, props[1] * z);
+static Color4 combine_tex_rgb_rgb(COMBINE_ARGS) {
+    const Color4 tc = tex_sample(tex0, props[0] * z, props[1] * z);
     const Color4 cc1 = (Color4) {{ .r = props[2] * z, .g = props[3] * z, .b = props[4] * z, 0xFF }};
     const Color4 cc2 = (Color4) {{ .r = props[5] * z, .g = props[6] * z, .b = props[7] * z, 0xFF }};
     return rgba_lerp(cc2, cc1, tc.r);
 }
 
-static Color4 combine_tex_tex_rgba(const float z, const float *props) {
+static Color4 combine_tex_tex_rgba(COMBINE_ARGS) {
     const float u = props[0] * z;
     const float v = props[1] * z;
-    const Color4 tc1 = tex_sample(cur_tex[0], u, v);
-    const Color4 tc2 = tex_sample(cur_tex[1], u, v);
+    const Color4 tc1 = tex_sample(tex0, u, v);
+    const Color4 tc2 = tex_sample(tex1, u, v);
     const uint8_t r = props[2] * z;
     return rgba_lerp(tc1, tc2, r);
 }
@@ -636,9 +652,9 @@ static void draw_pixel_blend(const int idx, UNUSED const uint16_t z, Color4 src)
     const uint8_t a = src.a;
     const uint8_t ia = 255 - a;
     const Color4 dst = (Color4) { .c = gfx_output[idx] };
-    src.r = mult_tab[src.r][a] + mult_tab[dst.r][ia];
-    src.g = mult_tab[src.g][a] + mult_tab[dst.g][ia];
-    src.b = mult_tab[src.b][a] + mult_tab[dst.b][ia];
+    src.r = rgba_blend_component(src.r, dst.r, a, ia);
+    src.g = rgba_blend_component(src.g, dst.g, a, ia);
+    src.b = rgba_blend_component(src.b, dst.b, a, ia);
     gfx_output[idx] = src.c;
 }
 
@@ -647,9 +663,9 @@ static void draw_pixel_blend_zwrite(const int idx, const uint16_t z, Color4 src)
     const uint8_t a = src.a;
     const uint8_t ia = 255 - a;
     const Color4 dst = (Color4) { .c = gfx_output[idx] };
-    src.r = mult_tab[src.r][a] + mult_tab[dst.r][ia];
-    src.g = mult_tab[src.g][a] + mult_tab[dst.g][ia];
-    src.b = mult_tab[src.b][a] + mult_tab[dst.b][ia];
+    src.r = rgba_blend_component(src.r, dst.r, a, ia);
+    src.g = rgba_blend_component(src.g, dst.g, a, ia);
+    src.b = rgba_blend_component(src.b, dst.b, a, ia);
     gfx_output[idx] = src.c;
     z_buffer[idx] = z;
 }
@@ -660,9 +676,9 @@ static void draw_pixel_blend_edge(const int idx, UNUSED const uint16_t z, Color4
         const uint8_t a = src.a;
         const uint8_t ia = 255 - a;
         const Color4 dst = (Color4) { .c = gfx_output[idx] };
-        src.r = mult_tab[src.r][a] + mult_tab[dst.r][ia];
-        src.g = mult_tab[src.g][a] + mult_tab[dst.g][ia];
-        src.b = mult_tab[src.b][a] + mult_tab[dst.b][ia];
+        src.r = rgba_blend_component(src.r, dst.r, a, ia);
+        src.g = rgba_blend_component(src.g, dst.g, a, ia);
+        src.b = rgba_blend_component(src.b, dst.b, a, ia);
         gfx_output[idx] = src.c;
     }
 }
@@ -673,9 +689,9 @@ static void draw_pixel_blend_edge_zwrite(const int idx, const uint16_t z, Color4
         const uint8_t a = src.a;
         const uint8_t ia = 255 - a;
         const Color4 dst = (Color4) { .c = gfx_output[idx] };
-        src.r = mult_tab[src.r][a] + mult_tab[dst.r][ia];
-        src.g = mult_tab[src.g][a] + mult_tab[dst.g][ia];
-        src.b = mult_tab[src.b][a] + mult_tab[dst.b][ia];
+        src.r = rgba_blend_component(src.r, dst.r, a, ia);
+        src.g = rgba_blend_component(src.g, dst.g, a, ia);
+        src.b = rgba_blend_component(src.b, dst.b, a, ia);
         gfx_output[idx] = src.c;
         z_buffer[idx] = z;
     }
@@ -737,7 +753,7 @@ static void draw_pixel_blend_edge_zwrite(const int idx, const uint16_t z, Color4
 #define GFX_SOFT_MENU_ZFAIL_PIXEL() ((void)0)
 #endif
 
-#define R_RASTERIZE_TRI_SEG(y_a, y_b, nprops) \
+#define R_RASTERIZE_TRI_SEG(y_a, y_b, nprops, combine_fn) \
     register int y = y_a; \
     register int y_end = y_b; \
     register int x, x_end; \
@@ -748,8 +764,10 @@ static void draw_pixel_blend_edge_zwrite(const int idx, const uint16_t z, Color4
     /* draw triangle segment from y_a to y_b */ \
     while (y < y_end) { \
         /* do scissor clipping */ \
-        x = imax(r_clip.x0, x_a); \
-        x_end = imin(r_clip.x1, x_b); \
+        /* Clamp once per scanline so every generated framebuffer index is \
+         * valid without repeating bounds branches for every pixel. */ \
+        x = imax(0, imax(r_clip.x0, (int)x_a)); \
+        x_end = imin(scr_width, imin(r_clip.x1, (int)x_b)); \
         /* do X subpixel prestepping */ \
         dx = 1.f - (x_a - x); \
         for (i = 2; i < nprops; ++i) p[i] = p_a[i] + dx * dp[i].x; \
@@ -760,31 +778,20 @@ static void draw_pixel_blend_edge_zwrite(const int idx, const uint16_t z, Color4
             const int draw_y = y; \
             GFX_SOFT_LOGO_SCAN_PIXEL(draw_x, draw_y); \
             GFX_SOFT_MENU_SCAN_PIXEL(draw_x, draw_y); \
-            if (idx < 0 || idx >= scr_size) { \
-                GFX_SOFT_LOGO_OOB_PIXEL(); \
-                GFX_SOFT_MENU_OOB_PIXEL(); \
-                if (gfx_soft_dbg_oob_log_count < 8) { \
-                    RG_LOGE("gfx_soft_oob[%d]: shader=%08lx idx=%d x=%d y=%d xend=%d yend=%d clip=(%d,%d)-(%d,%d) view=(%d,%d %dx%d) v0=%.2f,%.2f v1=%.2f,%.2f v2=%.2f,%.2f", \
-                            gfx_soft_dbg_oob_log_count, cur_shader ? (unsigned long)cur_shader->shader_id : 0, \
-                            idx, draw_x, draw_y, x_end, y_end, \
-                            r_clip.x0, r_clip.y0, r_clip.x1, r_clip.y1, \
-                            r_view.x, r_view.y, r_view.w, r_view.h, \
-                            (double)v0[0], (double)v0[1], (double)v1[0], (double)v1[1], (double)v2[0], (double)v2[1]); \
-                    gfx_soft_dbg_oob_log_count++; \
-                } \
-                for (i = 2; i < nprops; ++i) p[i] += dp[i].x; \
-                ++idx; \
-                continue; \
-            } \
-            uz = u16clamp(p[2] * 65535.f + z_offset); \
-            if (!z_test || uz <= z_buffer[idx]) { \
+            uz = u16clamp(p[2] * 65535.f + raster_z_offset); \
+            if (!raster_z_test || uz <= raster_z_buffer[idx]) { \
                 w = 1.f / p[3]; /* the combiner will multiply by w any props it needs to persp correct */ \
-                src = cur_shader->combine(w, p + 4); \
+                src = combine_fn(w, p + 4, raster_tex0, raster_tex1); \
                 GFX_SOFT_LOGO_COLOR(src); \
                 GFX_SOFT_MENU_COLOR(src); \
                 GFX_SOFT_LOGO_DRAWN_PIXEL(); \
                 GFX_SOFT_MENU_DRAWN_PIXEL(); \
-                draw_fn(idx, uz, src); \
+                if (direct_opaque_draw) { \
+                    raster_output[idx] = src.c; \
+                    if (direct_opaque_zwrite) raster_z_buffer[idx] = uz; \
+                } else { \
+                    raster_draw_fn(idx, uz, src); \
+                } \
             } else { \
                 GFX_SOFT_LOGO_ZFAIL_PIXEL(); \
                 GFX_SOFT_MENU_ZFAIL_PIXEL(); \
@@ -799,10 +806,19 @@ static void draw_pixel_blend_edge_zwrite(const int idx, const uint16_t z, Color4
         ++y; \
     }
 
-#define R_RASTERIZE(tri, nprops) \
+#define R_RASTERIZE(tri, nprops, combine_fn) \
     const float *v0 = (float *)tri.v0; \
     const float *v1 = (float *)tri.v1; \
     const float *v2 = (float *)tri.v2; \
+    const bool direct_opaque_draw = cur_shader->draw_flags == 0; \
+    const bool direct_opaque_zwrite = z_write; \
+    const bool raster_z_test = z_test; \
+    const float raster_z_offset = z_offset; \
+    uint16_t *const raster_z_buffer = z_buffer; \
+    uint32_t *const raster_output = gfx_output; \
+    const draw_fn_t raster_draw_fn = draw_fn; \
+    const struct Texture *const raster_tex0 = cur_tex[0]; \
+    const struct Texture *const raster_tex1 = cur_tex[1]; \
     const int clip_y0 = imax(0, r_clip.y0); \
     const int clip_y1 = imin(scr_height, r_clip.y1); \
     const int y0i = imax(clip_y0, (int)v0[1]); \
@@ -845,7 +861,7 @@ static void draw_pixel_blend_edge_zwrite(const int idx, const uint16_t z, Color4
             const float dxdy_b = dxdy_ab; \
             /* last column of this scanline */ \
             float x_b = v0[0] + y_pre0 * dxdy_ab; \
-            R_RASTERIZE_TRI_SEG(y0i, y1i, nprops); \
+            R_RASTERIZE_TRI_SEG(y0i, y1i, nprops, combine_fn); \
         } \
         if (y1i < y2i) { \
             /* left is AC, right is BC */ \
@@ -853,7 +869,7 @@ static void draw_pixel_blend_edge_zwrite(const int idx, const uint16_t z, Color4
             /* calculate prestep for vertex B */ \
             const float y_pre1 = 1.f - (v1[1] - y1i); \
             float x_b = v1[0] + y_pre1 * dxdy_bc; \
-            R_RASTERIZE_TRI_SEG(y1i, y2i, nprops); \
+            R_RASTERIZE_TRI_SEG(y1i, y2i, nprops, combine_fn); \
         } \
     } else { \
         /* longer edge is on the right */ \
@@ -868,7 +884,7 @@ static void draw_pixel_blend_edge_zwrite(const int idx, const uint16_t z, Color4
                 dpdy_a[i] = dxdy_ab * dp[i].x + dp[i].y; \
                 p_a[i] = v0[i] + y_pre0 * dpdy_a[i]; \
             } \
-            R_RASTERIZE_TRI_SEG(y0i, y1i, nprops); \
+            R_RASTERIZE_TRI_SEG(y0i, y1i, nprops, combine_fn); \
         } \
         if (y1i < y2i) { \
             /* right is AC, left is BC */ \
@@ -879,27 +895,74 @@ static void draw_pixel_blend_edge_zwrite(const int idx, const uint16_t z, Color4
                 dpdy_a[i] = dxdy_bc * dp[i].x + dp[i].y; \
                 p_a[i] = v1[i] + y_pre1 * dpdy_a[i]; \
             } \
-            R_RASTERIZE_TRI_SEG(y1i, y2i, nprops); \
+            R_RASTERIZE_TRI_SEG(y1i, y2i, nprops, combine_fn); \
         } \
     }
 
 // define a bunch of rasterizers/interpolators for known property counts
 // nprops includes XYZW
 
-#define DEFINE_RAST_FUNC(nprops) \
-    static void rast_fn_ ## nprops (const struct Tri tri) { R_RASTERIZE(tri, nprops); }
+#define DEFINE_RAST_FUNC(name, nprops, combine_fn) \
+    static void rast_fn_ ## name (const struct Tri tri) { R_RASTERIZE(tri, nprops, combine_fn); }
 
-#define GET_RAST_FUNC(nprops) rast_fn_ ## nprops
+static inline Color4 combine_indirect(COMBINE_ARGS) {
+    return cur_shader->combine(z, props, tex0, tex1);
+}
 
-DEFINE_RAST_FUNC(6)
-DEFINE_RAST_FUNC(7)
-DEFINE_RAST_FUNC(8)
-DEFINE_RAST_FUNC(9)
-DEFINE_RAST_FUNC(10)
-DEFINE_RAST_FUNC(11)
-DEFINE_RAST_FUNC(12)
-DEFINE_RAST_FUNC(13)
-DEFINE_RAST_FUNC(14)
+#define GET_GENERIC_RAST_FUNC(nprops) rast_fn_generic_ ## nprops
+
+DEFINE_RAST_FUNC(generic_6, 6, combine_indirect)
+DEFINE_RAST_FUNC(generic_7, 7, combine_indirect)
+DEFINE_RAST_FUNC(generic_8, 8, combine_indirect)
+DEFINE_RAST_FUNC(generic_9, 9, combine_indirect)
+DEFINE_RAST_FUNC(generic_10, 10, combine_indirect)
+DEFINE_RAST_FUNC(generic_11, 11, combine_indirect)
+DEFINE_RAST_FUNC(generic_12, 12, combine_indirect)
+DEFINE_RAST_FUNC(generic_13, 13, combine_indirect)
+DEFINE_RAST_FUNC(generic_14, 14, combine_indirect)
+
+/* Each software combiner has a fixed interpolant layout. Direct calls preserve
+ * the existing math while allowing the compiler to inline the per-pixel work. */
+DEFINE_RAST_FUNC(rgb, 7, combine_rgb)
+DEFINE_RAST_FUNC(rgba, 8, combine_rgba)
+DEFINE_RAST_FUNC(fog_rgb, 8, combine_fog_rgb)
+DEFINE_RAST_FUNC(fog_rgba, 9, combine_fog_rgba)
+DEFINE_RAST_FUNC(rgba_rgba, 12, combine_rgba_rgba)
+DEFINE_RAST_FUNC(tex, 6, combine_tex)
+DEFINE_RAST_FUNC(tex_fog, 7, combine_tex_fog)
+DEFINE_RAST_FUNC(tex_rgb, 9, combine_tex_rgb)
+DEFINE_RAST_FUNC(tex_fog_rgb, 10, combine_tex_fog_rgb)
+DEFINE_RAST_FUNC(tex_rgb_decal, 9, combine_tex_rgb_decal)
+DEFINE_RAST_FUNC(tex_rgba, 10, combine_tex_rgba)
+DEFINE_RAST_FUNC(tex_rgba_texa, 10, combine_tex_rgba_texa)
+DEFINE_RAST_FUNC(tex_fog_rgba, 11, combine_tex_fog_rgba)
+DEFINE_RAST_FUNC(tex_rgba_decal, 10, combine_tex_rgba_decal)
+DEFINE_RAST_FUNC(tex_rgb_rgb, 12, combine_tex_rgb_rgb)
+DEFINE_RAST_FUNC(tex_tex_rgba, 9, combine_tex_tex_rgba)
+
+static rast_fn_t gfx_soft_get_specialized_rast(combine_fn_t combine, int num_props,
+                                                rast_fn_t fallback) {
+#define MATCH_RAST(combine_name, props) \
+    if (combine == combine_ ## combine_name && num_props == props) return rast_fn_ ## combine_name
+    MATCH_RAST(rgb, 3);
+    MATCH_RAST(rgba, 4);
+    MATCH_RAST(fog_rgb, 4);
+    MATCH_RAST(fog_rgba, 5);
+    MATCH_RAST(rgba_rgba, 8);
+    MATCH_RAST(tex, 2);
+    MATCH_RAST(tex_fog, 3);
+    MATCH_RAST(tex_rgb, 5);
+    MATCH_RAST(tex_fog_rgb, 6);
+    MATCH_RAST(tex_rgb_decal, 5);
+    MATCH_RAST(tex_rgba, 6);
+    MATCH_RAST(tex_rgba_texa, 6);
+    MATCH_RAST(tex_fog_rgba, 7);
+    MATCH_RAST(tex_rgba_decal, 6);
+    MATCH_RAST(tex_rgb_rgb, 8);
+    MATCH_RAST(tex_tex_rgba, 5);
+#undef MATCH_RAST
+    return fallback;
+}
 
 static inline void pop_triangle(const float *buf, const int stride) {
     Vector4 *v0 = (Vector4 *)buf;
@@ -965,15 +1028,15 @@ static struct ShaderProgram *gfx_soft_create_and_load_new_shader(uint32_t shader
     static const rast_fn_t rast_funcs[] = {
         NULL,
         NULL,
-        GET_RAST_FUNC(6),
-        GET_RAST_FUNC(7),
-        GET_RAST_FUNC(8),
-        GET_RAST_FUNC(9),
-        GET_RAST_FUNC(10),
-        GET_RAST_FUNC(11),
-        GET_RAST_FUNC(12),
-        GET_RAST_FUNC(13),
-        GET_RAST_FUNC(14),
+        GET_GENERIC_RAST_FUNC(6),
+        GET_GENERIC_RAST_FUNC(7),
+        GET_GENERIC_RAST_FUNC(8),
+        GET_GENERIC_RAST_FUNC(9),
+        GET_GENERIC_RAST_FUNC(10),
+        GET_GENERIC_RAST_FUNC(11),
+        GET_GENERIC_RAST_FUNC(12),
+        GET_GENERIC_RAST_FUNC(13),
+        GET_GENERIC_RAST_FUNC(14),
     };
 
     struct CCFeatures ccf;
@@ -1041,7 +1104,8 @@ static struct ShaderProgram *gfx_soft_create_and_load_new_shader(uint32_t shader
 
     prg->num_props = num_props;
     // pick rasterizer that interps the amount of float properties this shader requires
-    prg->rast = rast_funcs[num_props];
+    prg->rast = gfx_soft_get_specialized_rast(prg->combine, num_props,
+                                              rast_funcs[num_props]);
 
     gfx_soft_load_shader(prg);
 
@@ -1313,6 +1377,17 @@ static inline void gfx_soft_overlay_write_pixel(const int idx, Color4 src) {
     gfx_overlay_active = true;
 }
 
+static inline void gfx_soft_overlay_include_rect(int x0, int y0, int x1, int y1) {
+    gfx_overlay_min_x = imin(gfx_overlay_min_x, x0);
+    gfx_overlay_min_y = imin(gfx_overlay_min_y, y0);
+    gfx_overlay_max_x = imax(gfx_overlay_max_x, x1);
+    gfx_overlay_max_y = imax(gfx_overlay_max_y, y1);
+    for (int y = y0; y < y1; y++) {
+        gfx_overlay_row_min_x[y] = imin(gfx_overlay_row_min_x[y], x0);
+        gfx_overlay_row_max_x[y] = imax(gfx_overlay_row_max_x[y], x1);
+    }
+}
+
 static void gfx_soft_overlay_tex_rect_clipped(int x0, int y0, int x1, int y1,
                                               float u0, float v0, const float dudx, const float dvdy,
                                               const Color4 rgba, const bool modulate) {
@@ -1333,6 +1408,7 @@ static void gfx_soft_overlay_tex_rect_clipped(int x0, int y0, int x1, int y1,
     if (x1 <= x0 || y1 <= y0) {
         return;
     }
+    gfx_soft_overlay_include_rect(x0, y0, x1, y1);
 
     int base = y0 * overlay_width + x0;
     float v = v0;
@@ -1390,6 +1466,7 @@ void gfx_soft_overlay_textured_tri(float x0, float y0, float u0, float v0,
     if (max_x <= min_x || max_y <= min_y) {
         return;
     }
+    gfx_soft_overlay_include_rect(min_x, min_y, max_x, max_y);
 
     const Color4 rgba_color = *(const Color4 *)rgba;
     const bool modulate = cur_shader->cc.num_inputs != 0;
@@ -1422,19 +1499,6 @@ void gfx_soft_overlay_textured_tri(float x0, float y0, float u0, float v0,
     }
 }
 
-static void gfx_soft_prepare_tables(void) {
-    for (int t = 0; t < 0x100; ++t) {
-        for (int i = 0, sum = 0; i < 0x100; ++i, sum += t) {
-            lerp_tab[t][0xFF - i] = (uint8_t)(-sum >> 8);
-            lerp_tab[t][0xFF + i] = (uint8_t)( sum >> 8);
-        }
-    }
-
-    for (int x = 0; x < 0x100; ++x)
-        for (int y = 0; y < 0x100; ++y)
-            mult_tab[x][y] = (x * y) >> 8;
-}
-
 static void gfx_soft_set_resolution(UNUSED const int width, UNUSED const int height) {
     if (!z_buffer) {
         z_buffer = rg_alloc(scr_size * sizeof(int16_t), MEM_SLOW);
@@ -1444,7 +1508,14 @@ static void gfx_soft_set_resolution(UNUSED const int width, UNUSED const int hei
         }
     }
     if (!gfx_output) {
+#if CONFIG_IDF_TARGET_ESP32P4
+        /* This buffer is written by the rasterizer, read during blending, and
+         * read again by the RGB565 display conversion. P4 has sufficient
+         * internal RAM; rg_alloc falls back if the capability is unavailable. */
+        gfx_output = rg_alloc(scr_size * sizeof(uint32_t), MEM_FAST);
+#else
         gfx_output = rg_alloc(scr_size * sizeof(uint32_t), MEM_SLOW);
+#endif
         if (!gfx_output) {
             printf("gfx_soft: could not alloc color buffer for %dx%d\n", scr_width, scr_height);
             abort();
@@ -1457,6 +1528,14 @@ static void gfx_soft_set_resolution(UNUSED const int width, UNUSED const int hei
             abort();
         }
         memset(gfx_overlay_output, 0x00, overlay_size * sizeof(uint32_t));
+    }
+    gfx_overlay_min_x = overlay_width;
+    gfx_overlay_min_y = overlay_height;
+    gfx_overlay_max_x = 0;
+    gfx_overlay_max_y = 0;
+    for (int y = 0; y < overlay_height; y++) {
+        gfx_overlay_row_min_x[y] = overlay_width;
+        gfx_overlay_row_max_x[y] = 0;
     }
 
     depth_clear();
@@ -1477,9 +1556,10 @@ static void gfx_soft_init(void) {
     }
 #endif
 
-    lerp_tab = rg_alloc(sizeof(uint8_t) * 256 * (256 * 2 + 1), MEM_SLOW);
-    mult_tab = rg_alloc(sizeof(uint8_t) * 256 * 256, MEM_SLOW);
     tex_hdr = rg_alloc(sizeof(struct Texture) * MAX_TEXTURES, MEM_SLOW);
+    if (!tex_hdr) {
+        RG_PANIC("Failed to allocate software-renderer texture headers!");
+    }
     memset(tex_hdr, 0, sizeof(struct Texture) * MAX_TEXTURES);
 
     z_test = true;
@@ -1487,18 +1567,32 @@ static void gfx_soft_init(void) {
     do_blend = false;
     do_clip = false;
 
-    gfx_soft_prepare_tables();
-
     gfx_soft_set_resolution(gfx_current_dimensions.width, gfx_current_dimensions.height);
 }
 
 static void gfx_soft_start_frame(void) {
     // depth_swap(); // FIXME: ztrick
     depth_clear();
-    if (gfx_overlay_output && gfx_overlay_active) {
-        memset(gfx_overlay_output, 0x00, overlay_size * sizeof(uint32_t));
+    if (gfx_overlay_output && gfx_overlay_active &&
+        gfx_overlay_min_x < gfx_overlay_max_x && gfx_overlay_min_y < gfx_overlay_max_y) {
+        for (int y = gfx_overlay_min_y; y < gfx_overlay_max_y; y++) {
+            const int x0 = gfx_overlay_row_min_x[y];
+            const int x1 = gfx_overlay_row_max_x[y];
+            if (x0 < x1) {
+                memset(gfx_overlay_output + y * overlay_width + x0, 0,
+                       (size_t)(x1 - x0) * sizeof(uint32_t));
+            }
+        }
+    }
+    for (int y = gfx_overlay_min_y; y < gfx_overlay_max_y; y++) {
+        gfx_overlay_row_min_x[y] = overlay_width;
+        gfx_overlay_row_max_x[y] = 0;
     }
     gfx_overlay_active = false;
+    gfx_overlay_min_x = overlay_width;
+    gfx_overlay_min_y = overlay_height;
+    gfx_overlay_max_x = 0;
+    gfx_overlay_max_y = 0;
 }
 
 static void gfx_soft_shutdown(void) {

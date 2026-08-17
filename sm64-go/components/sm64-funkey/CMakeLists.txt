@@ -200,7 +200,31 @@ component_compile_options(
     "-Wno-implicit-function-declaration"
 )
 
+# The software rasterizer dominates frame time on ESP32-P4. Optimize this one
+# translation unit for speed without changing floating-point semantics or the
+# optimization level of the game/Retro-Go integration code.
+set_source_files_properties(
+    "src/pc/gfx/gfx_soft.c"
+    PROPERTIES COMPILE_OPTIONS "-O3"
+)
+
+# The audio synthesis scheduler benefits from speed optimization without
+# materially expanding its working set.
+set_source_files_properties(
+    "src/audio/synthesis.c"
+    PROPERTIES COMPILE_OPTIONS "-O3"
+)
+
+# mixer.c already requests loop unrolling locally. Use -O2 here to retain
+# speed-oriented scalar optimization while avoiding the large -O3 expansion
+# that competes with the renderer for instruction cache.
+set_source_files_properties(
+    "src/pc/mixer.c"
+    PROPERTIES COMPILE_OPTIONS "-O2"
+)
+
 component_compile_definitions(
+    ${RG_BUILD_TARGET}=1
     VERSION_US
     ENABLE_SOFTRAST=1
     CONVERT

@@ -71,6 +71,9 @@ struct Object *gObjectPool;
 
 void sm64_init_objects(void) {
     gObjectPool = rg_alloc(sizeof(struct Object) * OBJECT_POOL_CAPACITY, MEM_SLOW);
+    if (!gObjectPool) {
+        RG_PANIC("Failed to allocate SM64 object pool!");
+    }
 }
 
 /**

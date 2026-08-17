@@ -16,6 +16,12 @@ extern struct GfxRenderingAPI gfx_soft_api;
 extern uint32_t *gfx_output;
 extern uint32_t *gfx_overlay_output;
 extern bool gfx_overlay_active;
+extern int gfx_overlay_min_x;
+extern int gfx_overlay_min_y;
+extern int gfx_overlay_max_x;
+extern int gfx_overlay_max_y;
+extern int16_t gfx_overlay_row_min_x[];
+extern int16_t gfx_overlay_row_max_x[];
 
 void gfx_soft_overlay_tex_rect(int x0, int y0, int x1, int y1,
                                float u0, float v0, float dudx, float dvdy,

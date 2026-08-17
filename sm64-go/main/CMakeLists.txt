@@ -18,6 +18,7 @@ idf_component_register(
 
 # We define these here to ensure main.c compiles correctly
 target_compile_definitions(${COMPONENT_LIB} PRIVATE 
+    ${RG_BUILD_TARGET}=1
     VERSION_US
     ENABLE_SOFTRAST=1
     CONVERT

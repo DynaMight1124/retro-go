@@ -9,4 +9,7 @@ u16 (*gFrameBuffersPtr)[SCREEN_WIDTH * SCREEN_HEIGHT];
 
 void sm64_init_framebuffers(void) {
     gFrameBuffersPtr = rg_alloc(3 * SCREEN_WIDTH * SCREEN_HEIGHT * sizeof(u16), MEM_SLOW);
+    if (!gFrameBuffersPtr) {
+        RG_PANIC("Failed to allocate SM64 framebuffers!");
+    }
 }

@@ -6,4 +6,7 @@ u64 *gGfxSPTaskOutputBuffer;
 
 void sm64_init_gfx_output_buffer(void) {
     gGfxSPTaskOutputBuffer = rg_alloc(GFX_OUTPUT_BUFFER_SIZE, MEM_SLOW);
+    if (!gGfxSPTaskOutputBuffer) {
+        RG_PANIC("Failed to allocate SM64 display-list buffer!");
+    }
 }

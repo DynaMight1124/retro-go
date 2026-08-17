@@ -1214,6 +1214,7 @@ static bool import_texture(int tile) {
         return true;
     }
 
+
     uint8_t *rgba32_buf = NULL;
     bool allocated_staging = false;
     if (info.needs_staging && info.staging_bytes > sizeof(gfx_texture_buf)) {

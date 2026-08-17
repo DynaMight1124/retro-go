@@ -4,6 +4,10 @@
 #include "macros.h"
 #include "fsutils.h"
 
+#ifdef RETRO_GO
+#include <rg_system.h>
+#endif
+
 #ifdef TARGET_WEB
 #include <emscripten.h>
 #endif
@@ -110,6 +114,14 @@ s32 osAiSetFrequency(u32 freq) {
     s32 a2;
     u32 D_8033491C;
 
+#if RETRO_GO
+    /* Retro-Go's SM64 adapter submits 16 kHz audio. Let the engine synthesize
+     * at that native rate instead of producing 32 kHz and discarding half of
+     * the frames. The engine derives its update count and pitch correction
+     * from the returned AI frequency. */
+    freq /= 2;
+#endif
+
 #ifdef VERSION_EU
     D_8033491C = 0x02E6025C;
 #else
@@ -137,6 +149,10 @@ s32 osEepromProbe(UNUSED OSMesgQueue *mq) {
 s32 osEepromLongRead(UNUSED OSMesgQueue *mq, u8 address, u8 *buffer, int nbytes) {
     u8 content[512];
     s32 ret = -1;
+
+    if (!buffer || nbytes < 0 || (size_t)address * 8 + (size_t)nbytes > sizeof(content)) {
+        return -1;
+    }
 
 #ifdef TARGET_WEB
     if (EM_ASM_INT({
@@ -168,12 +184,22 @@ s32 osEepromLongRead(UNUSED OSMesgQueue *mq, u8 address, u8 *buffer, int nbytes)
         ret = 0;
     }
     fclose(fp);
+#ifdef RETRO_GO
+    static bool load_logged;
+    if (ret == 0 && !load_logged) {
+        RG_LOGI("Native progress loaded from Retro-Go SRAM");
+        load_logged = true;
+    }
+#endif
 #endif
     return ret;
 }
 
 s32 osEepromLongWrite(UNUSED OSMesgQueue *mq, u8 address, u8 *buffer, int nbytes) {
     u8 content[512] = {0};
+    if (!buffer || nbytes < 0 || (size_t)address * 8 + (size_t)nbytes > sizeof(content)) {
+        return -1;
+    }
     if (address != 0 || nbytes != 512) {
         osEepromLongRead(mq, 0, content, 512);
     }
@@ -194,7 +220,15 @@ s32 osEepromLongWrite(UNUSED OSMesgQueue *mq, u8 address, u8 *buffer, int nbytes
         return -1;
     }
     s32 ret = fwrite(content, 1, 512, fp) == 512 ? 0 : -1;
-    fclose(fp);
+    if (fclose(fp) != 0) {
+        ret = -1;
+    }
+#ifdef RETRO_GO
+    if (ret == 0) {
+        rg_storage_commit();
+        RG_LOGI("Native progress saved to Retro-Go SRAM");
+    }
+#endif
 #endif
     return ret;
 }
