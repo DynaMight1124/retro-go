@@ -1,4 +1,4 @@
-/* gpSP ESP32-P4 platform interface */
+/* gpSP ESP32-P4 / ESP32-S31 platform interface */
 #ifndef GPSP_ESP_H
 #define GPSP_ESP_H
 

@@ -28,7 +28,7 @@
 #elif defined(PS2)
 #include <kernel.h>
 #endif
-#if defined(ESP_PLATFORM)
+#if defined(ESP_PLATFORM) && defined(HAVE_DYNAREC)
 #include "esp_cache.h"
 #endif
 
@@ -262,7 +262,13 @@ typedef struct
   }
 #elif defined(RISCV_ARCH)
   #include "esp_log.h"
-  #include "esp32p4/rom/cache.h"
+  #if defined(CONFIG_IDF_TARGET_ESP32P4)
+    #include "esp32p4/rom/cache.h"
+  #elif defined(CONFIG_IDF_TARGET_ESP32S31)
+    #include "esp32s31/rom/cache.h"
+  #else
+    #error "RISC-V dynarec cache synchronization requires ESP32-P4 or ESP32-S31"
+  #endif
   void platform_cache_sync(void *baseaddr, void *endptr) {
     /* Flush data cache to PSRAM then invalidate i-cache.
      * Range-based Cache_Invalidate_Addr may have issues with

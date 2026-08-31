@@ -996,9 +996,16 @@ static const u8 obj_dim_table[3][4][2] = {
   { {8, 16}, {8, 32}, {16, 32}, {32, 64} }
 };
 
+#if defined(CONFIG_IDF_TARGET_ESP32P4) || defined(CONFIG_IDF_TARGET_ESP32S31)
+#include "esp_attr.h"
+EXT_RAM_BSS_ATTR static u8 obj_priority_list[5][160][128];
+EXT_RAM_BSS_ATTR static u8 obj_priority_count[5][160];
+EXT_RAM_BSS_ATTR static u8 obj_alpha_count[160];
+#else
 static u8 obj_priority_list[5][160][128];
 static u8 obj_priority_count[5][160];
 static u8 obj_alpha_count[160];
+#endif
 
 typedef struct {
   s32 obj_x, obj_y;

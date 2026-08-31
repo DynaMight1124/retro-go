@@ -4,7 +4,7 @@
 #ifdef ESP_PLATFORM
 #include "esp_attr.h"
 
-#ifdef CONFIG_IDF_TARGET_ESP32P4
+#if defined(CONFIG_IDF_TARGET_ESP32P4) || defined(CONFIG_IDF_TARGET_ESP32S31)
 // TODO : find a way to put memory_map_read in IRAM if double frame buffering is disabled
 EXT_RAM_BSS_ATTR  u8 *memory_map_read[8 * 1024];   /* 32 KB - ROM page table, hit every ROM read */
 u16 oam_ram[512];                /*  1 KB */

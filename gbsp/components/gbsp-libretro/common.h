@@ -178,6 +178,7 @@ typedef u32 fixed8_24;
 #define write_dmareg(regnum, dmachan, val) io_registers[(regnum) + (dmachan) * 6] = eswap16(val)
 
 #ifdef ESP_PLATFORM
+  #include "sdkconfig.h"
   #include <stdlib.h>
   #include <string.h>
   #include <stdarg.h>

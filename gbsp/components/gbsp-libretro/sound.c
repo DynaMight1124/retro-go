@@ -26,7 +26,12 @@ gbc_sound_struct gbc_sound_channel[4];
 const u32 sound_frequency = GBA_SOUND_FREQUENCY;
 
 u32 sound_on;
+#if defined(CONFIG_IDF_TARGET_ESP32P4) || defined(CONFIG_IDF_TARGET_ESP32S31)
+#include "esp_attr.h"
+EXT_RAM_BSS_ATTR static s16 sound_buffer[BUFFER_SIZE];
+#else
 static s16 sound_buffer[BUFFER_SIZE];
+#endif
 static u32 sound_buffer_base;
 
 static fixed16_16 gbc_sound_tick_step;

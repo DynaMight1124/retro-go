@@ -1,4 +1,4 @@
-/* gpSP ESP32-P4 platform glue */
+/* gpSP ESP32-P4 / ESP32-S31 platform glue */
 #include "gpsp_esp.h"
 #include "common.h"
 #include "cpu.h"
@@ -13,9 +13,11 @@
 #ifdef ESP_PLATFORM
 #include "esp_heap_caps.h"
 #include "esp_log.h"
+#if defined(HAVE_DYNAREC) && defined(MMAP_JIT_CACHE)
 #include "esp_mmu_map.h"
 #include "hal/mmu_types.h"
 #include "esp_cache.h"
+#endif
 static const char *TAG = "gpsp";
 #endif
 
@@ -79,6 +81,7 @@ u32 update_input(void)
 
 bool gpsp_init(void)
 {
+#ifdef HAVE_DYNAREC
     /* Verify register file layout matches assembly stub offsets */
     {
         extern u32 spsr[];
@@ -88,6 +91,7 @@ bool gpsp_init(void)
         ESP_LOGI(TAG, "Layout: spsr=+0x%x reg_mode=+0x%x", (unsigned)spsr_off, (unsigned)regmode_off);
         assert(spsr_off == 0x100 && regmode_off == 0x118);
     }
+#endif
 #if defined(HAVE_DYNAREC) && defined(MMAP_JIT_CACHE)
     /* Allocate JIT translation caches in executable PSRAM via MMU map.
      * heap_caps_malloc gives data-only PSRAM; JIT code needs execute permission.

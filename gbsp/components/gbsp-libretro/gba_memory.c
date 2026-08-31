@@ -340,7 +340,12 @@ const u32 def_seq_cycles[16][2] =
 };
 
 
+#if defined(CONFIG_IDF_TARGET_ESP32P4) || defined(CONFIG_IDF_TARGET_ESP32S31)
+#include "esp_attr.h"
+EXT_RAM_BSS_ATTR u8 bios_rom[1024 * 16];
+#else
 u8 bios_rom[1024 * 16];
+#endif
 
 // Up to 128kb, store SRAM, flash ROM, or EEPROM here.
 #ifndef ESP_PLATFORM
