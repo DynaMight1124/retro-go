@@ -5,12 +5,15 @@
 # EXTRA_COMPONENT_DIRS = ${CMAKE_CURRENT_LIST_DIR}/../components.
 #
 # IMPORTANT — source layout and the unity-build trap:
-#   src/engine.c text-includes (via raw #include "<name>.c") five other
+#   src/engine.cpp text-includes (via raw #include "<name>.c") four other
 #   sources in the same directory:
-#       parser.c   synth.c   hud.c   sfx.c   pico8api.c
-#   Each of those five sources must therefore NOT appear in SRCS, or we
+#       parser.c   synth.c   sfx.c   pico8api.c
+#   Each of those four sources must therefore NOT appear in SRCS, or we
 #   get duplicate-symbol link errors (the same definitions compile twice,
 #   once on their own TU and once inside engine.c via text-include).
+#   hud.c is an unused PicoPico device-status overlay. Retro-Go supplies its
+#   own status UI, so compiling it would only reserve a 16.6 KB sprite sheet
+#   and 4 KB framebuffer in scarce internal RAM.
 #
 # Therefore: src/*.c / src/*.cpp is NOT globbed. Standalone TUs are listed
 # explicitly below. lua/*.cpp is globbed because Lua has no such recursion

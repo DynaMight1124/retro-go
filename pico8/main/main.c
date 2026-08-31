@@ -1186,10 +1186,14 @@ void app_main(void)
     //
     //   ***ERROR*** A stack overflow in task main has been detected.
     //
-    // Giving the emitter 32 KB of stack removes the hard wall without
-    // touching any sdkconfig — the entire fix must live inside
-    // pico8/, and per-target sdkconfig.defaults overwrite our settings
-    // during the build, so a runtime knob is the only viable path.
+    // Give the emitter 24 KB of stack. The previous 32 KB allocation was a
+    // deliberately generous first fix, but FreeRTOS task stacks must come
+    // from contiguous internal RAM when external task stacks are disabled.
+    // Devices with another internal-RAM consumer could therefore fail task
+    // creation before loading a cart. 24 KB is still three times the known-
+    // failing 8 KB main-task stack while returning 8 KB of internal RAM to
+    // the system. Keep this local to pico8/; target sdkconfig defaults remain
+    // part of the fixed platform.
     //
     // Priority RG_TASK_PRIORITY_2 matches what retro-go uses for
     // typical application tasks; affinity = 0 pins the task to the
@@ -1203,7 +1207,7 @@ void app_main(void)
     // audio task may run briefly before pico8_run_task reaches
     // `engine_init()` and resets channels[] — same window as before.)
     rg_task_t *pico8_task = rg_task_create("pico8_run", &pico8_run_task, NULL,
-                                           /*stackSize*/ 32 * 1024,
+                                           /*stackSize*/ 24 * 1024,
                                            /*queueDepth*/ 4,
                                            /*priority*/  RG_TASK_PRIORITY_2,
                                            /*affinity*/  0);

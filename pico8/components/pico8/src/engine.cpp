@@ -109,7 +109,6 @@ static bool cross_cart_store_pending = false;
 
 #include "parser.c"
 #include "synth.c"
-#include "hud.c"
 #include "sfx.c"
 #include "pico8api.c"
 #include "lua/lauxlib.h"
@@ -508,9 +507,6 @@ void engine_init(void) {
     assert(artifacts_font_lua_len <= sizeof(fontsheet.sprite_data));
     memcpy(fontsheet.sprite_data, artifacts_font_lua, artifacts_font_lua_len);
 
-    printf("Parsing HUD \n");
-    assert(artifacts_hud_p8_len <= sizeof(hud_sprites.sprite_data));
-    memcpy(hud_sprites.sprite_data, artifacts_hud_p8, artifacts_hud_p8_len);
 //    init_pink_noise_gen(&osc);
 }
 
