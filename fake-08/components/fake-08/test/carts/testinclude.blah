@@ -1,4 +1,0 @@
-function _draw()
- cls()
- print("included successfully!")
-end
