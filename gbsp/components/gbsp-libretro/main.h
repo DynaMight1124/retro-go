@@ -97,6 +97,7 @@ extern u32 num_skipped_frames;
 extern int dynarec_enable;
 extern boot_mode selected_boot_mode;
 extern int sprite_limit;
+extern u32 netplay_num_clients, netplay_client_id;
 
 #ifdef TRACE_REGISTERS
 void print_regs(void);
@@ -110,5 +111,3 @@ void print_regs(void);
 #endif
 
 #endif
-
-

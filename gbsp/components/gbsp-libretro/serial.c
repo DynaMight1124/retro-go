@@ -23,12 +23,25 @@ int serial_mode = SERIAL_MODE_AUTO;
 
 static u32 serial_irq_cycles = 0;
 
+/* Savestate accessors for the serial-IRQ scheduler. The pending-cycles
+ * counter must be persisted: without it, a state saved mid-transaction
+ * resumes either with a stuck SIOCNT busy bit (no future IRQ) or with an
+ * immediate spurious IRQ on the very next update_serial() call.
+ * serial_mode is a libretro core-option, restored independently. */
+u32 serial_get_irq_cycles(void) { return serial_irq_cycles; }
+void serial_set_irq_cycles(u32 v) { serial_irq_cycles = v; }
+
 // Timings are very aproximate, hopefully they are good enough.
 #define CLOCK_CYC_256KHZ_8BIT        524    // CLOCK / 256KHz * 8
 #define CLOCK_CYC_256KHZ_32BIT      2097    // CLOCK / 256KHz * 32
 #define CLOCK_CYC_2MHZ_8BIT           67    // CLOCK / 2MHz * 8
 #define CLOCK_CYC_2MHZ_32BIT         268    // CLOCK / 2MHz * 32
 #define CLOCK_CYC_64KHZ_32BIT       8192    // CLOCK / 64kHz * 32
+// Multiplayer mode timings (for each player message)
+#define CLOCK_CYC_9600_16BIT       31457    // CLOCK /  9600 * 18
+#define CLOCK_CYC_38400_16BIT       7864    // CLOCK / 38400 * 18
+#define CLOCK_CYC_57600_16BIT       5242    // CLOCK / 57600 * 18
+#define CLOCK_CYC_115200_16BIT      2621    // CLOCK / 115200 * 18
 
 // Available serial modes
 #define SERIAL_MODE_NORMAL      0
@@ -51,17 +64,37 @@ static u32 get_serial_mode(u16 siocnt, u16 rcnt) {
   }
 }
 
+uint16_t serial_mul_siocnt() {
+  // Calculate parent/child, ID and some other fields.
+  uint16_t ret = 0x8 |                          // All GBAs ready.
+                 (netplay_client_id << 4) |     // Device ID
+                 (netplay_client_id ? 0x4 : 0); // Parent/Child.
+  // Bit 6 is zero (no error)
+  return ret;
+}
+
 cpu_alert_type write_rcnt(u16 value) {
-  u16 pval = read_ioreg(REG_RCNT);
+  u16 oldval = read_ioreg(REG_RCNT);
+  u32 pvmode = get_serial_mode(oldval, read_ioreg(REG_RCNT));
+  u32 nwmode = get_serial_mode(value, read_ioreg(REG_RCNT));
+
   write_ioreg(REG_RCNT, value);
 
-  switch (get_serial_mode(read_ioreg(REG_SIOCNT), value)) {
+  switch (nwmode) {
   case SERIAL_MODE_GPIO:
     // Check if we are pulling PD high. This resets the RFU module.
     if (serial_mode == SERIAL_MODE_RFU) {
-      if ((value & 0x20) && !(pval & 0x02))
+      if ((value & 0x20) && !(oldval & 0x02))
         rfu_reset();
     }
+    break;
+
+  case SERIAL_MODE_MULTI:
+    if (pvmode != nwmode)
+      serialproto_reset();   // Reset multiplayer emulation states.
+
+    // Update SI/SD/ID/Error fields
+    write_ioreg(REG_SIOCNT, (read_ioreg(REG_SIOCNT) & 0xFF83) | serial_mul_siocnt());
     break;
 
   case SERIAL_MODE_NORMAL:
@@ -74,8 +107,10 @@ cpu_alert_type write_rcnt(u16 value) {
 cpu_alert_type write_siocnt(u16 value) {
   u16 oldval = read_ioreg(REG_SIOCNT);
   u16 newval = (value & 0x7F8B) | (oldval & 0x0004);
+  u32 pvmode = get_serial_mode(oldval, read_ioreg(REG_RCNT));
+  u32 nwmode = get_serial_mode(newval, read_ioreg(REG_RCNT));
 
-  switch (get_serial_mode(newval, read_ioreg(REG_RCNT))) {
+  switch (nwmode) {
   case SERIAL_MODE_NORMAL:
     // For connected Wireless devices
     if (serial_mode == SERIAL_MODE_RFU) {
@@ -124,6 +159,28 @@ cpu_alert_type write_siocnt(u16 value) {
       }
     }
     break;
+
+  case SERIAL_MODE_MULTI:
+    if (pvmode != nwmode)
+      serialproto_reset();   // Reset multiplayer emulation states.
+
+    // Update SI/SD/ID/Error fields
+    newval = (newval & 0xFF83) | serial_mul_siocnt();
+
+    if ((newval & 0x0080) && (!netplay_client_id) && !serial_irq_cycles) {
+      // Start a transaction, as a master device (no ongoing transactions).
+      const uint16_t tim[] = {
+        CLOCK_CYC_9600_16BIT, CLOCK_CYC_38400_16BIT,
+        CLOCK_CYC_57600_16BIT, CLOCK_CYC_115200_16BIT };
+      serial_irq_cycles = tim[newval & 0x3] * (netplay_num_clients + 1);
+
+      if (serial_mode == SERIAL_MODE_SERIAL_POKE)
+        serialpoke_master_send();
+      else if (serial_mode == SERIAL_MODE_SERIAL_AW1 || serial_mode == SERIAL_MODE_SERIAL_AW2)
+        serialaw_master_send();
+    }
+
+    break;
   };
 
   // Update reg with its new value
@@ -147,20 +204,43 @@ bool update_serial(unsigned cycles) {
     if (rfu_update(cycles))
       return true;
     break;
+  case SERIAL_MODE_SERIAL_POKE:
+    if (serialpoke_update(cycles))
+      return true;
+    break;
+  case SERIAL_MODE_SERIAL_AW1:
+  case SERIAL_MODE_SERIAL_AW2:
+    if (serialaw_update(cycles))
+      return true;
+    break;
   };
 
+  bool trigger_irq = false;
   if (serial_irq_cycles) {
     if (serial_irq_cycles > cycles)
       serial_irq_cycles -= cycles;
     else {
       // Event happening now!
       serial_irq_cycles = 0;
+      trigger_irq = true;
+    }
+  }
+
+  // Handle IRQ trigger schedule.
+  if (trigger_irq) {
+    switch (get_serial_mode(read_ioreg(REG_SIOCNT), read_ioreg(REG_RCNT))) {
+    case SERIAL_MODE_NORMAL:
       // Clear the send bit, signal data is ready.
       // Set the device busy bit, to perform the weird SO/SI handshake.
       write_ioreg(REG_SIOCNT, (read_ioreg(REG_SIOCNT) & ~0x80) | 0x04);
       // Return if IRQs are enabled.
       return read_ioreg(REG_SIOCNT) & 0x4000;
-    }
+    case SERIAL_MODE_MULTI:
+      // Clear the start bit, signal data is ready.
+      write_ioreg(REG_SIOCNT, (read_ioreg(REG_SIOCNT) & ~0x80));
+      // Return if IRQs are enabled.
+      return read_ioreg(REG_SIOCNT) & 0x4000;
+    };
   }
 
   return false;

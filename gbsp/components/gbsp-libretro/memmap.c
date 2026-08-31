@@ -24,6 +24,13 @@
 
 #ifdef MMAP_JIT_CACHE
 
+#ifdef ESP_PLATFORM
+// ESP32-P4: JIT caches allocated via heap_caps_malloc in gpsp_esp.c
+// No need for map_jit_block/unmap_jit_block
+void *map_jit_block(unsigned size) { return 0; }
+void unmap_jit_block(void *bufptr, unsigned size) { (void)bufptr; (void)size; }
+#else
+
 // JIT block requirements translated to allocation code.
 #if defined(MIPS_ARCH)
   #define _MAP_ITERATIONS           1024   // Test -/+2GB in 4MB steps
@@ -127,6 +134,8 @@ bool validate_addr_section_mips(void *ptr, unsigned size, unsigned max_offset_mb
 	}
 
 #endif /* WIN32 */
+
+#endif /* ESP_PLATFORM */
 
 #endif /* MMAP_JIT_CACHE */
 

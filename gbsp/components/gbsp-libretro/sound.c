@@ -25,8 +25,6 @@ gbc_sound_struct gbc_sound_channel[4];
 
 const u32 sound_frequency = GBA_SOUND_FREQUENCY;
 
-bool sound_master_enable = true;
-
 u32 sound_on;
 static s16 sound_buffer[BUFFER_SIZE];
 static u32 sound_buffer_base;
@@ -67,7 +65,7 @@ unsigned sound_timer(fixed8_24 frequency_step, u32 channel)
   ds->fifo_base = (ds->fifo_base + 1) % 32;
   next_sample = ds->fifo[ds->fifo_base] * 16;
 
-  if(sound_on == 1 && sound_master_enable)
+  if(sound_on == 1)
   {
     current_sample >>= ds->volume_halve;
     next_sample >>= ds->volume_halve;
@@ -426,7 +424,7 @@ void render_gbc_sound()
     gbc_sound_partial_ticks &= 0xFFFF;
   }
 
-  if(sound_on == 1 && sound_master_enable)
+  if(sound_on == 1)
   {
     s8 *wave_bank;
     gs = gbc_sound_channel + 0;
@@ -654,6 +652,17 @@ bool sound_read_savestate(const u8 *src)
   int i;
   const u8 *snddoc = bson_find_key(src, "sound");
 
+  /* The 128KiB ring buffer holding rendered samples is intentionally not
+   * serialized (it would inflate the savestate well beyond its hard size
+   * cap). Zero it on load so that the gbc_sound and direct_sound mixers,
+   * which use += into this buffer, do not pick up stale data from before
+   * the load. The saved buffer_base / buffer_index pair remains valid
+   * against this zero-filled ring: any range that was 'in flight' at save
+   * time decodes as silence after load instead of random pre-load mix.
+   * This makes audio output deterministic across save/load at the cost of
+   * up to one frame of silence at the load point. */
+  memset(sound_buffer, 0, sizeof(sound_buffer));
+
   if (!(
     bson_read_int32(snddoc, "on", &sound_on) &&
     bson_read_int32(snddoc, "buf-base", &sound_buffer_base) &&
@@ -812,7 +821,6 @@ u32 sound_read_samples(s16 *out, u32 frames)
    if (samples_to_read > samples_available)
       samples_to_read = samples_available;
 
-   if (sound_master_enable)
    for(i = 0; i < samples_to_read; i++)
    {
       u32 source_index   = (sound_buffer_base + i) & BUFFER_SIZE_MASK;
@@ -820,12 +828,35 @@ u32 sound_read_samples(s16 *out, u32 frames)
 
       sound_buffer[source_index] = 0;
 
-      if(current_sample > 2047)
-         current_sample = 2047;
-      if(current_sample < -2048)
-         current_sample = -2048;
+      /* Two-segment soft clipper, smooth everywhere (C1 continuous):
+       *
+       * Segment 1 (|s| <= 4096): cubic y = (3x - x³)/2, x = s/4096
+       *   Output range ±24576, gain ~9x at center, slope 0 at boundary.
+       *
+       * Segment 2 (4096 < |s| <= 6144): Hermite cubic extension
+       *   Smoothly compresses from ±24576 to ±32767 with slope 0 at
+       *   both ends. Covers worst-case 2 DMA + 4 GBC channels (~±5900).
+       *
+       * No hard clipping within the GBA's possible output range. */
+      s32 s = current_sample;
+      s32 abs_s = (s >= 0) ? s : -s;
+      s32 out_val;
 
-      out[i] = current_sample * 16;
+      if(abs_s <= 4096)
+      {
+         s32 q = 50331648 - s * s;   /* 3 * 4096² - s² */
+         out_val = (s32)(((s64)s * q * 24576LL) >> 37);
+      }
+      else
+      {
+         if(abs_s > 6144) abs_s = 6144;
+         s32 u = abs_s - 4096;        /* 0..2048 */
+         s64 h = (s64)u * u * (6144 - 2 * u);
+         s32 ext = (s32)((8191LL * h) >> 33);
+         out_val = (s >= 0) ? (24576 + ext) : (-24576 - ext);
+      }
+
+      out[i] = (s16)(out_val * 3 >> 2);
    }
 
    sound_buffer_base += samples_to_read;

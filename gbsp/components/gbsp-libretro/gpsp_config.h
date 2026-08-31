@@ -3,7 +3,7 @@
 #define GPSP_CONFIG_H
 
 #define GPSP_NAME                "gpSP"
-#define GPSP_VERSION             "v1.0.0"
+#define GPSP_VERSION             "v1.1.0"
 #define GPSP_NETPACKET_VERSION   "gpSP v1.0"
 
 /* Default ROM buffer size in megabytes (this is a maximum value!) */
@@ -13,8 +13,8 @@
 
 /* Cache sizes and their config knobs */
 #if defined(SMALL_TRANSLATION_CACHE)
-  #define ROM_TRANSLATION_CACHE_SIZE (1024 * 1024 * 2)
-  #define RAM_TRANSLATION_CACHE_SIZE (1024 * 384)
+  #define ROM_TRANSLATION_CACHE_SIZE (1024 * 1024)
+  #define RAM_TRANSLATION_CACHE_SIZE (1024 * 256)
 #else
   #define ROM_TRANSLATION_CACHE_SIZE (1024 * 1024 * 10)
   #define RAM_TRANSLATION_CACHE_SIZE (1024 * 512)
@@ -30,5 +30,8 @@
 
 /* RFU Multiplayer config, do not mess around too much with it */
 #define MAX_RFU_NETPLAYERS       32
+
+/* Serial modes (multiplayer serial). */
+#define MAX_SERMULT_NETPLAYERS    4
 
 #endif

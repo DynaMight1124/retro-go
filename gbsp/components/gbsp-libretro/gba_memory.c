@@ -19,7 +19,6 @@
 
 #include "common.h"
 #include "streams/file_stream.h"
-#include "bios/open_gba_bios.h"
 
 /* Sound */
 #define gbc_sound_tone_control_low(channel, regn)                             \
@@ -273,6 +272,9 @@ static void trigger_timer(u32 timer_number, u32 value)
    write_ioreg(REG_TMXCNT(timer_number), value);
 }
 
+bool is_known_game = false;
+bool require_m1_hle_bios = false;
+
 /* Memory timings */
 const u8 ws012_nonseq[] = {4, 3, 2, 8};
 const u8 ws0_seq[] = {2, 1};
@@ -337,11 +339,11 @@ const u32 def_seq_cycles[16][2] =
   { 9, 17 }, // Gamepak (wait 2)
 };
 
-static u8 *bios_rom_alloc; // [1024 * 16];
-const u8 *bios_rom = open_gba_bios_rom; // [1024 * 16];
 
-#ifndef RETRO_GO
+u8 bios_rom[1024 * 16];
+
 // Up to 128kb, store SRAM, flash ROM, or EEPROM here.
+#ifndef ESP_PLATFORM
 u8 gamepak_backup[1024 * 128];
 #endif
 
@@ -355,6 +357,11 @@ dma_transfer_type dma[4];
 u8 *gamepak_buffers[32];    /* Pointers to malloc'ed blocks */
 u32 gamepak_buffer_count;   /* Value between 1 and 32 */
 u32 gamepak_size;           /* Size of the ROM in bytes */
+u32 gamepak_file_blocks;    /* Physical payload size in 32KB blocks */
+bool gamepak_mirror_1m;     /* 1MiB Classic NES/Famicom Mini mirror mode */
+static u8 *gamepak_mini_rom;
+bool gamepak_mini_materialized;
+bool gamepak_header_nonstandard;
 // We allocate in 1MB chunks.
 const unsigned gamepak_buffer_blocksize = 1024*1024;
 
@@ -377,7 +384,7 @@ u32 gamepak_sticky_bit[1024/32];
 // This is global so that it can be kept open for large ROMs to swap
 // pages from, so there's no slowdown with opening and closing the file
 // a lot.
-FILE *gamepak_file_large = NULL;
+RFILE *gamepak_file_large = NULL;
 
 // Writes to these respective locations should trigger an update
 // so the related subsystem may react to it.
@@ -440,10 +447,20 @@ u8 read_backup(u32 address)
     {
       /* ID manufacturer type */
       if(address == 0x0000)
-        value = FLASH_MANUFACTURER_MACRONIX;
+      {
+        if (flash_device_id == FLASH_DEVICE_SANYO_128KB)
+          value = FLASH_MANUFACTURER_SANYO;
+        else
+          value = FLASH_MANUFACTURER_MACRONIX;
+      }
       /* ID device type */
       else if(address == 0x0001)
-        value = FLASH_DEVICE_MACRONIX_128KB;
+      {
+        if (flash_device_id == FLASH_DEVICE_SANYO_128KB)
+          value = FLASH_DEVICE_SANYO_128KB;
+        else
+          value = FLASH_DEVICE_MACRONIX_128KB;
+      }
     }
     else
     {
@@ -667,7 +684,7 @@ u32 function_cc read_eeprom(void)
                                                                               \
     case 0x03:                                                                \
       /* internal work RAM */                                                 \
-      value = readaddress##type(iwram, (address & 0x7FFF) + (0x8000 * SMC_DETECTION));\
+      value = readaddress##type(iwram, (address & 0x7FFF) + 0x8000);          \
       break;                                                                  \
                                                                               \
     case 0x04:                                                                \
@@ -811,7 +828,7 @@ static inline s32 signext28(u32 value)
 
 cpu_alert_type function_cc write_io_register16(u32 address, u32 value)
 {
-  uint16_t ioreg = (address & 0x3FE) >> 1;
+  uint32_t ioreg = ((address & 0xffffff) >> 1);
   value &= 0xffff;
   switch(ioreg)
   {
@@ -966,7 +983,8 @@ cpu_alert_type function_cc write_io_register16(u32 address, u32 value)
 
     // Registers without side effects
     default:
-      write_ioreg(ioreg, value);
+      if (ioreg < 0x200)
+        write_ioreg(ioreg, value);
       break;
   }
 
@@ -975,6 +993,7 @@ cpu_alert_type function_cc write_io_register16(u32 address, u32 value)
 
 cpu_alert_type function_cc write_io_register8(u32 address, u32 value)
 {
+  address &= 0xffffff;
   if (address == 0x301) {
     if (value & 1)
       reg[CPU_HALT_STATE] = CPU_STOP;
@@ -984,15 +1003,20 @@ cpu_alert_type function_cc write_io_register8(u32 address, u32 value)
   }
 
   // Partial 16 bit write, treat like a regular merge-write
-  if (address & 1)
-    value = (value << 8) | (read_ioreg(address >> 1) & 0x00ff);
-  else
-    value = (value & 0xff) | (read_ioreg(address >> 1) & 0xff00);
-  return write_io_register16(address & 0x3FE, value);
+  if (address < 0x400) {
+    if (address & 1)
+      value = (value << 8) | (read_ioreg(address >> 1) & 0x00ff);
+    else
+      value = (value & 0xff) | (read_ioreg(address >> 1) & 0xff00);
+    return write_io_register16(address & ~1U, value);
+  }
+
+  return CPU_ALERT_NONE;
 }
 
 cpu_alert_type function_cc write_io_register32(u32 address, u32 value)
 {
+  address &= 0xfffffc;
   // Handle sound FIFO data write
   if (address == 0xA0) {
     sound_timer_queue32(0, value);
@@ -1211,6 +1235,44 @@ u32 rtc_data_bits;
 u32 rtc_status = 0x40;
 s32 rtc_bit_count;
 
+/* Baseline UNIX time captured at content load. The emulated RTC reports
+ * (rtc_base_time + frame_counter * GBA_FRAME_SECONDS), so the visible
+ * clock keeps its real-time feel (one in-game second per second of
+ * native emulation, faster when fast-forwarding - matching real GBA
+ * behaviour where the RTC oscillator is independent of the CPU) while
+ * being fully determined by frame_counter and rtc_base_time. Both
+ * round-trip through the savestate, so a replay from any saved state
+ * reproduces the same in-game clock. Without this, the RTC fed
+ * wall-clock time straight into the game's bit-stream on every read,
+ * making record/replay and cross-machine state sharing impossible for
+ * RTC-using titles (Pokemon Ruby/Sapphire/Emerald, Boktai series,
+ * Sennen Kazoku, Rockman EXE 4.5, etc.).
+ *
+ * frame_counter is chosen over cpu_ticks as the time source because
+ * cpu_ticks is u32 and wraps every ~256 seconds at the native cycle
+ * rate, which would rewind the in-game clock every few minutes.
+ * frame_counter wraps after ~2.27 years of continuous emulation. */
+static s64 rtc_base_time = 0;
+
+/* Cycles per frame at the native rate; same divisor at the 60FPS
+ * overclock since GBC_BASE_RATE scales correspondingly. */
+#define GBA_CYCLES_PER_FRAME 280896
+#define GBA_FRAME_SECONDS    ((double)GBA_CYCLES_PER_FRAME / (double)GBC_BASE_RATE)
+
+static void rtc_init_base_time(void)
+{
+  time_t t;
+  time(&t);
+  rtc_base_time = (s64)t;
+}
+
+static time_t rtc_current_time(void)
+{
+  return (time_t)(rtc_base_time +
+                  (s64)((double)frame_counter * GBA_FRAME_SECONDS));
+}
+
+
 // Rumble trackin vars, not really preserved (it's just aproximate)
 static u32 rumble_enable_tick, rumble_ticks;
 
@@ -1265,7 +1327,8 @@ static void write_rtc(u8 old, u8 new)
   if (!(old & GPIO_RTC_CSS))
     rtc_state = RTC_COMMAND;
 
-  if ((old & GPIO_RTC_CLK) && !(new & GPIO_RTC_CLK)) {
+  // Capture data on raising edge
+  if (!(old & GPIO_RTC_CLK) && (new & GPIO_RTC_CLK)) {
     // Advance clock state, input/ouput data.
     switch (rtc_state) {
     case RTC_COMMAND:
@@ -1289,8 +1352,7 @@ static void write_rtc(u8 old, u8 new)
         case RTC_COMMAND_OUTPUT_TIME_FULL:
           {
             struct tm *current_time;
-            time_t current_time_flat;
-            time(&current_time_flat);
+            time_t current_time_flat = rtc_current_time();
             current_time = localtime(&current_time_flat);
 
             rtc_state = RTC_OUTPUT_DATA;
@@ -1307,8 +1369,7 @@ static void write_rtc(u8 old, u8 new)
         case RTC_COMMAND_OUTPUT_TIME:
           {
             struct tm *current_time;
-            time_t current_time_flat;
-            time(&current_time_flat);
+            time_t current_time_flat = rtc_current_time();
             current_time = localtime(&current_time_flat);
 
             rtc_state = RTC_OUTPUT_DATA;
@@ -1416,16 +1477,27 @@ void function_cc write_gpio(u32 address, u32 value) {
     case 0x02:                                                                \
       /* external work RAM */                                                 \
       address##type(ewram, (address & 0x3FFFF)) = eswap##type(value);         \
+      /* Self-modifying code: a non-zero sentinel in the tag mirror           \
+       * (data + 0x40000) means translated code lives here. Signal the        \
+       * dynarec to flush the RAM translation cache. The RISC-V backend       \
+       * routes CPU_ALERT_SMC through write_io_epilogue -> flush.             \
+       * (MIPS/ARM64 do this check inside their store stubs instead.)         \
+       */                                                                     \
+      if(address##type(ewram, (address & 0x3FFFF) + 0x40000))                 \
+        return CPU_ALERT_SMC;                                                 \
       break;                                                                  \
                                                                               \
     case 0x03:                                                                \
       /* internal work RAM */                                                 \
-      address##type(iwram, (address & 0x7FFF) + (0x8000 * SMC_DETECTION)) = eswap##type(value); \
+      address##type(iwram, (address & 0x7FFF) + 0x8000) = eswap##type(value); \
+      /* SMC sentinel lives 0x8000 below the IWRAM data mirror. */            \
+      if(address##type(iwram, (address & 0x7FFF)))                            \
+        return CPU_ALERT_SMC;                                                 \
       break;                                                                  \
                                                                               \
     case 0x04:                                                                \
       /* I/O registers */                                                     \
-      return write_io_register##type(address & 0x3FF, value);                 \
+      return write_io_register##type(address, value);                         \
                                                                               \
     case 0x05:                                                                \
       /* palette RAM */                                                       \
@@ -1517,9 +1589,19 @@ u32 function_cc read_memory32(u32 address)
 {
   u32 value;
   u32 rotate = (address & 0x03) * 8;
+  u32 orig_addr = address;
   address &= ~0x03;
   read_memory(32);
   ror(value, value, rotate);
+  /* Debug: log ROM data table reads near init code */
+  {
+    static int rm32_dbg = 0;
+    if (rm32_dbg < 200 && (orig_addr & 0xFF000000) == 0x08000000 &&
+        (orig_addr & 0x00FFFFFF) >= 0x200 && (orig_addr & 0x00FFFFFF) <= 0x260) {
+      printf("RM32[%d]: addr=0x%08x val=0x%08x regPC=0x%08x\n",
+             rm32_dbg++, orig_addr, value, reg[15]);
+    }
+  }
   return value;
 }
 
@@ -1543,9 +1625,7 @@ cpu_alert_type function_cc write_memory32(u32 address, u32 value)
 
 typedef struct
 {
-   char gamepak_title[13];
    char gamepak_code[5];
-   char gamepak_maker[3];
    u16 flags;
    u32 idle_loop_target_pc;
    u32 translation_gate_target_1;
@@ -1553,47 +1633,40 @@ typedef struct
    u32 translation_gate_target_3;
 } ini_t;
 
-typedef struct
-{
-   char gamepak_title[13];
-   char gamepak_code[5];
-   char gamepak_maker[3];
-} gamepak_info_t;
+#define FLAGS_FLASH_128KB    0x0100   // Forces 128KB flash.
+#define FLAGS_RUMBLE         0x0200   // Enables GPIO3 rumble support.
+#define FLAGS_RTC            0x0400   // Enables RTC support by default.
+#define FLAGS_EEPROM         0x0800   // Forces EEPROM storage.
 
-#define FLAGS_FLASH_128KB    0x0001   // Forces 128KB flash.
-#define FLAGS_RUMBLE         0x0002   // Enables GPIO3 rumble support.
-#define FLAGS_GBA_PLAYER     0x0004   // Enables GBA Player rumble support.
-#define FLAGS_RTC            0x0008   // Enables RTC support by default.
-#define FLAGS_EEPROM         0x0010   // Forces EEPROM storage.
-#define FLAGS_RFU            0x0020   // Enables Wireless Adapter (via serial).
+#define FLAGS_SERIAL         0x8000   // Configure a serial mode by default.
+#define FLAGS_SERIAL_MASK    0x00FF
+
+#define FLAGS_GBA_PLAYER     0x0000   // Enables GBA Player rumble support.
+#define FLAGS_RFU            0x0001   // Enables Wireless Adapter (via serial).
+#define FLAGS_SERIAL_POKE    0x0002   // Serial link cable (emulation mode).
+#define FLAGS_SERIAL_AW1     0x0003
+#define FLAGS_SERIAL_AW2     0x0004
 
 #include "gba_over.h"
 
-static void load_game_config_over(gamepak_info_t *gpinfo)
+static void load_game_config_over(const char *gamecode)
 {
   unsigned i = 0;
+  is_known_game = false;
 
   for (i = 0; i < sizeof(gbaover)/sizeof(gbaover[0]); i++)
   {
-     if (strcmp(gbaover[i].gamepak_code, gpinfo->gamepak_code))
+     if (strcmp(gbaover[i].gamepak_code, gamecode) != 0)
         continue;
 
-     if (strcmp(gbaover[i].gamepak_title, gpinfo->gamepak_title))
-        continue;
-
-     printf("gamepak title: %s\n", gbaover[i].gamepak_title);
-     printf("gamepak code : %s\n", gbaover[i].gamepak_code);
-     printf("gamepak maker: %s\n", gbaover[i].gamepak_maker);
-
-     printf("INPUT gamepak title: %s\n", gpinfo->gamepak_title);
-     printf("INPUT gamepak code : %s\n", gpinfo->gamepak_code);
-     printf("INPUT gamepak maker: %s\n", gpinfo->gamepak_maker);
+     printf("gamepak code match for : %s\n", gbaover[i].gamepak_code);
+     is_known_game = true;
 
      if (gbaover[i].idle_loop_target_pc != 0)
         idle_loop_target_pc = gbaover[i].idle_loop_target_pc;
 
      if (gbaover[i].flags & FLAGS_FLASH_128KB) {
-       flash_device_id = FLASH_DEVICE_MACRONIX_128KB;
+       flash_device_id = FLASH_DEVICE_SANYO_128KB;
        flash_bank_cnt = FLASH_SIZE_128KB;
      }
 
@@ -1606,11 +1679,10 @@ static void load_game_config_over(gamepak_info_t *gpinfo)
      if (gbaover[i].flags & FLAGS_EEPROM)
        backup_type_reset = BACKUP_EEPROM;
 
-     if (serial_mode == SERIAL_MODE_AUTO) {
-       if (gbaover[i].flags & FLAGS_RFU)
-         serial_mode = SERIAL_MODE_RFU;
-       if (gbaover[i].flags & FLAGS_GBA_PLAYER)
-         serial_mode = SERIAL_MODE_GBP;
+     if (serial_mode == SERIAL_MODE_AUTO && (gbaover[i].flags & FLAGS_SERIAL))
+     {
+       u32 m = gbaover[i].flags & FLAGS_SERIAL_MASK;
+       serial_mode = m + 1;   // Maintain the serial mode list consistently.
      }
 
      if (gbaover[i].translation_gate_target_1 != 0)
@@ -1732,7 +1804,7 @@ const dma_region_type dma_region_map[17] =
   }                                                                           \
 
 #define dma_read_iwram(type, tfsize)                                          \
-  read_value = readaddress##tfsize(iwram + (0x8000 * SMC_DETECTION), type##_ptr & 0x7FFF) \
+  read_value = readaddress##tfsize(iwram + 0x8000, type##_ptr & 0x7FFF)       \
 
 #define dma_read_vram(type, tfsize) {                                         \
   u32 rdaddr = type##_ptr & 0x1FFFF;                                          \
@@ -1765,9 +1837,9 @@ const dma_region_type dma_region_map[17] =
   read_value = read_memory##tfsize(type##_ptr)                                \
 
 #define dma_write_iwram(type, tfsize)                                         \
-  address##tfsize(iwram + (0x8000 * SMC_DETECTION), type##_ptr & 0x7FFF) =    \
+  address##tfsize(iwram + 0x8000, type##_ptr & 0x7FFF) =                      \
                                           eswap##tfsize(read_value);          \
-  if (SMC_DETECTION && address##tfsize(iwram, type##_ptr & 0x7FFF))           \
+  if (address##tfsize(iwram, type##_ptr & 0x7FFF))                            \
     alerts |= CPU_ALERT_SMC;                                                  \
 
 #define dma_write_vram(type, tfsize) {                                        \
@@ -1777,7 +1849,7 @@ const dma_region_type dma_region_map[17] =
 }
 
 #define dma_write_io(type, tfsize)                                            \
-  alerts |= write_io_register##tfsize(type##_ptr & 0x3FF, read_value)         \
+  alerts |= write_io_register##tfsize(type##_ptr, read_value)                 \
 
 #define dma_write_oam_ram(type, tfsize)                                       \
   address##tfsize(oam_ram, type##_ptr & 0x3FF) = eswap##tfsize(read_value)    \
@@ -1790,7 +1862,7 @@ const dma_region_type dma_region_map[17] =
 
 #define dma_write_ewram(type, tfsize)                                         \
   address##tfsize(ewram, type##_ptr & 0x3FFFF) = eswap##tfsize(read_value);   \
-  if (SMC_DETECTION && address##tfsize(ewram, (type##_ptr & 0x3FFFF) + 0x40000)) \
+  if (address##tfsize(ewram, (type##_ptr & 0x3FFFF) + 0x40000))               \
     alerts |= CPU_ALERT_SMC;                                                  \
 
 #define print_line()                                                          \
@@ -2188,8 +2260,14 @@ static u32 evict_gamepak_page(void)
 
 u8 *load_gamepak_page(u32 physical_index)
 {
-  if(physical_index >= (gamepak_size >> 15))
+  u32 rom_blocks = gamepak_size >> 15;
+  if (rom_blocks == 0)
     return &gamepak_buffers[0][0];
+
+  // Mirror accesses that land outside the physical ROM size.
+  // Classic NES/Famicom Mini titles rely on this behavior extensively.
+  if (physical_index >= rom_blocks)
+    physical_index %= rom_blocks;
 
   u32 entry = evict_gamepak_page();
   u32 block_idx = entry / 32;
@@ -2199,11 +2277,19 @@ u8 *load_gamepak_page(u32 physical_index)
   // Fill in the entry
   gamepak_blk_queue[entry].phy_rom = physical_index;
 
-  fseek(gamepak_file_large, physical_index * (32 * 1024), SEEK_SET);
-  fread(swap_location, (32 * 1024), 1, gamepak_file_large);
+  u32 file_index = physical_index;
+  if (gamepak_mirror_1m && gamepak_file_blocks != 0)
+    file_index %= gamepak_file_blocks;
+
+  filestream_seek(gamepak_file_large, file_index * (32 * 1024), SEEK_SET);
+  {
+    u32 read_len = (u32)filestream_read(gamepak_file_large, swap_location, (32 * 1024));
+    if (read_len < (32 * 1024))
+      memset(swap_location + read_len, 0xFF, (32 * 1024) - read_len);
+  }
 
   // Map it to the read handlers now
-  map_rom_entry(read, physical_index, swap_location, gamepak_size >> 15);
+  map_rom_entry(read, physical_index, swap_location, rom_blocks);
 
   // When mapping page 0, we might need to reflect the GPIO regs.
   if (physical_index == 0)
@@ -2238,6 +2324,9 @@ void init_gamepak_buffer(void)
 
 bool gamepak_must_swap(void)
 {
+  if (gamepak_mini_materialized)
+    return false;
+
   // Returns whether the current gamepak buffer is not big enough to hold
   // the full gamepak ROM. In these cases the device must swap.
   return gamepak_buffer_count * gamepak_buffer_blocksize < gamepak_size;
@@ -2263,7 +2352,7 @@ void init_memory(void)
   map_region(read, 0x0000000, 0x1000000, 1, bios_rom);
   map_null(read, 0x1000000, 0x2000000);
   map_region(read, 0x2000000, 0x3000000, 8, ewram);
-  map_region(read, 0x3000000, 0x4000000, 1, &iwram[0x8000 * SMC_DETECTION]);
+  map_region(read, 0x3000000, 0x4000000, 1, &iwram[0x8000]);
   map_region(read, 0x4000000, 0x5000000, 1, io_registers);
   map_null(read, 0x5000000, 0x6000000);
   map_null(read, 0x6000000, 0x7000000);
@@ -2310,7 +2399,7 @@ void memory_term(void)
 {
   if (gamepak_file_large)
   {
-    fclose(gamepak_file_large);
+    filestream_close(gamepak_file_large);
     gamepak_file_large = NULL;
   }
 
@@ -2318,6 +2407,13 @@ void memory_term(void)
   {
     free(gamepak_buffers[--gamepak_buffer_count]);
   }
+
+  if (gamepak_mini_rom)
+  {
+    free(gamepak_mini_rom);
+    gamepak_mini_rom = NULL;
+  }
+  gamepak_mini_materialized = false;
 }
 
 bool memory_check_savestate(const u8 *src)
@@ -2383,7 +2479,7 @@ bool memory_read_savestate(const u8 *src)
     return false;
 
   if (!(
-    bson_read_bytes(memdoc, "iwram", &iwram[0x8000 * SMC_DETECTION], 0x8000) &&
+    bson_read_bytes(memdoc, "iwram", &iwram[0x8000], 0x8000) &&
     bson_read_bytes(memdoc, "ewram", ewram, 0x40000) &&
     bson_read_bytes(memdoc, "vram", vram, sizeof(vram)) &&
     bson_read_bytes(memdoc, "oamram", oam_ram, sizeof(oam_ram)) &&
@@ -2415,6 +2511,15 @@ bool memory_read_savestate(const u8 *src)
     bson_read_int32_array(bakdoc, "rtc-data-words", rtc_data_array, 2)))
     return false;
 
+  /* rtc-base-time is optional for forward-compat with states written
+   * before deterministic RTC; if absent, keep whatever load_gamepak
+   * captured at content load. */
+  {
+    u32 base_words[2] = {0, 0};
+    if (bson_read_int32_array(bakdoc, "rtc-base-time", base_words, 2))
+      rtc_base_time = (s64)((u64)base_words[0] | (((u64)base_words[1]) << 32));
+  }
+
   for (i = 0; i < DMA_CHAN_CNT; i++)
   {
     char tname[2] = {'0' + i, 0};
@@ -2445,7 +2550,7 @@ unsigned memory_write_savestate(u8 *dst)
   u32 rtc_data_array[2] = { (u32)rtc_data, (u32)(rtc_data >> 32) };
 
   bson_start_document(dst, "memory", wbptr);
-  bson_write_bytes(dst, "iwram", &iwram[0x8000 * SMC_DETECTION], 0x8000);
+  bson_write_bytes(dst, "iwram", &iwram[0x8000], 0x8000);
   bson_write_bytes(dst, "ewram", ewram, 0x40000);
   bson_write_bytes(dst, "vram", vram, sizeof(vram));
   bson_write_bytes(dst, "oamram", oam_ram, sizeof(oam_ram));
@@ -2476,6 +2581,11 @@ unsigned memory_write_savestate(u8 *dst)
   bson_write_int32(dst, "rtc-data-bit-cnt", rtc_data_bits);
   bson_write_int32(dst, "rtc-bit-cnt", rtc_bit_count);
   bson_write_int32array(dst, "rtc-data-words", rtc_data_array, 2);
+  {
+    u32 base_words[2] = { (u32)(u64)rtc_base_time,
+                          (u32)(((u64)rtc_base_time) >> 32) };
+    bson_write_int32array(dst, "rtc-base-time", base_words, 2);
+  }
   bson_finish_document(dst, wbptr);
 
   bson_start_document(dst, "dma", wbptr);
@@ -2503,17 +2613,87 @@ unsigned memory_write_savestate(u8 *dst)
 static s32 load_gamepak_raw(const char *name)
 {
   unsigned i, j;
-  gamepak_file_large = fopen(name, "rb");
+  u32 raw_size;
+  int64_t fsize;
+  gamepak_file_large = filestream_open(name, RETRO_VFS_FILE_ACCESS_READ,
+                                       RETRO_VFS_FILE_ACCESS_HINT_NONE);
   if(gamepak_file_large)
   {
+    if (gamepak_mini_rom)
+    {
+      free(gamepak_mini_rom);
+      gamepak_mini_rom = NULL;
+    }
+    gamepak_mini_materialized = false;
+
+    /* filestream_get_size() returns int64_t and can yield a negative
+     * value on error or a value above 4 GiB. Silently casting either to
+     * u32 produces a wrong raw_size that downstream code happily uses to
+     * malloc, memset and map. Reject both cases up front. */
+    fsize = filestream_get_size(gamepak_file_large);
+    if (fsize <= 0 || fsize > (int64_t)0x20000000)   /* > 512MiB: not a GBA ROM */
+    {
+      filestream_close(gamepak_file_large);
+      gamepak_file_large = NULL;
+      return -1;
+    }
+    raw_size = (u32)fsize;
+
     // Round size to 32KB pages
-    fseek(gamepak_file_large, 0, SEEK_END);
-    gamepak_size = (u32)ftell(gamepak_file_large);
-    fseek(gamepak_file_large, 0, SEEK_SET);
-    gamepak_size = (gamepak_size + 0x7FFF) & ~0x7FFF;
+    raw_size = (raw_size + 0x7FFF) & ~0x7FFF;
+    gamepak_file_blocks = raw_size >> 15;
+    gamepak_mirror_1m = (raw_size == 0x00100000);
+    gamepak_size = gamepak_mirror_1m ? 0x00400000 : raw_size;
+
+    // mGBA/VBA-M style path for 1MiB mirrored mini ROMs:
+    // materialize a dedicated 4MiB ROM image and map it directly.
+    if (gamepak_mirror_1m)
+    {
+      u32 map_blocks = gamepak_size >> 15;
+      u32 phyn;
+      gamepak_mini_rom = (u8*)malloc(gamepak_size);
+      if (gamepak_mini_rom)
+      {
+        u32 read_len = (u32)filestream_read(gamepak_file_large, gamepak_mini_rom, raw_size);
+        if (read_len < raw_size)
+          memset(gamepak_mini_rom + read_len, 0xFF, raw_size - read_len);
+        memcpy(gamepak_mini_rom + 0x100000, gamepak_mini_rom, 0x100000);
+        memcpy(gamepak_mini_rom + 0x200000, gamepak_mini_rom, 0x100000);
+        memcpy(gamepak_mini_rom + 0x300000, gamepak_mini_rom, 0x100000);
+
+        // Keep buffer[0] in sync with ROM start for header-based logic.
+        if (gamepak_buffer_count > 0)
+          memcpy(gamepak_buffers[0], gamepak_mini_rom, gamepak_buffer_blocksize);
+
+        map_null(read, 0x8000000, 0xD000000);
+        for (phyn = 0; phyn < map_blocks; phyn++)
+        {
+          u8 *blkptr = &gamepak_mini_rom[32 * 1024 * phyn];
+          map_rom_entry(read, phyn, blkptr, map_blocks);
+        }
+        update_gpio_romregs();
+
+        gamepak_mirror_1m = false;
+        gamepak_mini_materialized = true;
+        return 0;
+      }
+
+      /* Materialization failed (malloc returned NULL).  Fall back to the
+       * chunked path, but undo the gamepak_size = 4MiB lie: the chunked
+       * loader keys mapping off gamepak_file_blocks (= 32 for a 1 MiB
+       * file) and rom_blocks (= gamepak_size >> 15).  Leaving
+       * gamepak_size at 4 MiB tells map_rom_entry to map 128 pages even
+       * though we only have 32, producing wrong addresses for the
+       * mirrored upper 3 MiB.  Reset to the on-disk size and disable the
+       * mirror flag; the game will see only the first 1 MiB, but at
+       * least the mapping is consistent and the core does not crash. */
+      gamepak_size = raw_size;
+      gamepak_mirror_1m = false;
+      filestream_seek(gamepak_file_large, 0, SEEK_SET);
+    }
 
     // Load stuff in 1MB chunks
-    u32 buf_blocks = (gamepak_size + gamepak_buffer_blocksize-1) / (gamepak_buffer_blocksize);
+    u32 buf_blocks = (raw_size + gamepak_buffer_blocksize-1) / (gamepak_buffer_blocksize);
     u32 rom_blocks = gamepak_size >> 15;
     u32 ldblks = buf_blocks < gamepak_buffer_count ?
                     buf_blocks : gamepak_buffer_count;
@@ -2525,8 +2705,12 @@ static s32 load_gamepak_raw(const char *name)
     for (i = 0; i < ldblks; i++)
     {
       // Load 1MB chunk and map it
-      fread(gamepak_buffers[i], gamepak_buffer_blocksize, 1, gamepak_file_large);
-      for (j = 0; j < 32 && i*32 + j < rom_blocks; j++)
+      {
+        u32 read_len = (u32)filestream_read(gamepak_file_large, gamepak_buffers[i], gamepak_buffer_blocksize);
+        if (read_len < gamepak_buffer_blocksize)
+          memset(gamepak_buffers[i] + read_len, 0xFF, gamepak_buffer_blocksize - read_len);
+      }
+      for (j = 0; j < 32 && i*32 + j < gamepak_file_blocks; j++)
       {
         u32 phyn = i*32 + j;
         u8* blkptr = &gamepak_buffers[i][32 * 1024 * j];
@@ -2535,7 +2719,7 @@ static s32 load_gamepak_raw(const char *name)
         // Map it to the read handlers now
         map_rom_entry(read, phyn, blkptr, rom_blocks);
       }
-    }
+    } 
 
     return 0;
   }
@@ -2543,19 +2727,202 @@ static s32 load_gamepak_raw(const char *name)
   return -1;
 }
 
+static bool rom_has_signature(const u8 *rom, u32 rom_size, const char *sig)
+{
+  u32 i;
+  u32 sig_len = (u32)strlen(sig);
+  if (rom_size < sig_len)
+    return false;
+
+  for (i = 0; i + sig_len <= rom_size; i++)
+  {
+    if (memcmp(&rom[i], sig, sig_len) == 0)
+      return true;
+  }
+
+  return false;
+}
+
+enum
+{
+  ROM_SIG_EEPROM  = (1 << 0),
+  ROM_SIG_SRAM    = (1 << 1),
+  ROM_SIG_FLASH1M = (1 << 2),
+  ROM_SIG_FLASH5  = (1 << 3)
+};
+
+static u32 rom_scan_signatures_in_memory(void)
+{
+  u32 found = 0;
+  u32 size_left = gamepak_size;
+  u32 buf_idx = 0;
+
+  const char *sig_eeprom = "EEPROM_V";
+  const char *sig_sram = "SRAM_V";
+  const char *sig_flash1m = "FLASH1M_V";
+  const char *sig_flash512 = "FLASH512_V";
+  const char *sig_flash = "FLASH_V";
+
+  while (size_left > 0 && buf_idx < gamepak_buffer_count)
+  {
+    u32 chunk_size = (size_left > gamepak_buffer_blocksize) ? gamepak_buffer_blocksize : size_left;
+    u8 *chunk = gamepak_buffers[buf_idx];
+    u32 i;
+
+    for (i = 0; i < chunk_size - 10; i += 4)
+    {
+      if (chunk[i] == 'E' && !(found & ROM_SIG_EEPROM) && memcmp(&chunk[i], sig_eeprom, 8) == 0) found |= ROM_SIG_EEPROM;
+      else if (chunk[i] == 'S' && !(found & ROM_SIG_SRAM) && memcmp(&chunk[i], sig_sram, 6) == 0) found |= ROM_SIG_SRAM;
+      else if (chunk[i] == 'F' && !(found & ROM_SIG_FLASH1M) && memcmp(&chunk[i], sig_flash1m, 9) == 0) found |= ROM_SIG_FLASH1M;
+      else if (chunk[i] == 'F' && !(found & ROM_SIG_FLASH5)) {
+        if (memcmp(&chunk[i], sig_flash512, 10) == 0 || memcmp(&chunk[i], sig_flash, 7) == 0)
+          found |= ROM_SIG_FLASH5;
+      }
+    }
+
+    if ((found & (ROM_SIG_EEPROM | ROM_SIG_SRAM | ROM_SIG_FLASH1M | ROM_SIG_FLASH5)) ==
+        (ROM_SIG_EEPROM | ROM_SIG_SRAM | ROM_SIG_FLASH1M | ROM_SIG_FLASH5))
+      break;
+
+    size_left -= chunk_size;
+    buf_idx++;
+  }
+
+  return found;
+}
+
+static bool rom_is_pokemon_family(const u8 *rom)
+{
+  if (memcmp(&rom[0xA0], "POKEMON", 7) == 0)
+    return true;
+
+  if (memcmp(&rom[0xAC], "AXV", 3) == 0 ||  /* Ruby */
+      memcmp(&rom[0xAC], "AXP", 3) == 0 ||  /* Sapphire */
+      memcmp(&rom[0xAC], "BPE", 3) == 0 ||  /* Emerald */
+      memcmp(&rom[0xAC], "BPR", 3) == 0 ||  /* FireRed */
+      memcmp(&rom[0xAC], "BPG", 3) == 0)    /* LeafGreen */
+    return true;
+	
+  return false;
+}
+
+static void normalize_blank_backup_for_detected_type(void)
+{
+  u32 i;
+  u32 size = 0;
+  bool all_zero = true;
+
+  if (backup_type_reset == BACKUP_FLASH)
+    size = (flash_bank_cnt == FLASH_SIZE_128KB) ? (128 * 1024) : (64 * 1024);
+  else if (backup_type_reset == BACKUP_EEPROM)
+    size = 8 * 1024;
+  else if (backup_type_reset == BACKUP_SRAM)
+    size = 32 * 1024;
+
+  if (!size)
+    return;
+
+  for (i = 0; i < size; i++)
+  {
+    if (gamepak_backup[i] != 0x00)
+    {
+      all_zero = false;
+      break;
+    }
+  }
+
+  // Some frontends create blank save files filled with 0x00.
+  // Real flash/EEPROM idle state is 0xFF; normalize it for first boot.
+  if (all_zero)
+    memset(gamepak_backup, 0xFF, size);
+}
+
+static void detect_backup_subcircuit(const u8 *rom, u32 rom_size)
+{
+  bool has_eeprom = rom_has_signature(rom, rom_size, "EEPROM_V");
+  bool has_sram = rom_has_signature(rom, rom_size, "SRAM_V");
+  bool has_flash1m = rom_has_signature(rom, rom_size, "FLASH1M_V");
+  bool has_flash5 = rom_has_signature(rom, rom_size, "FLASH512_V") ||
+                    rom_has_signature(rom, rom_size, "FLASH_V");
+  u32 file_sigs = 0;
+
+  if (!has_eeprom && !has_sram && !has_flash1m && !has_flash5 &&
+      rom_is_pokemon_family(rom))
+  {
+    backup_type_reset = BACKUP_FLASH;
+    flash_bank_cnt = FLASH_SIZE_128KB;
+    flash_device_id = FLASH_DEVICE_SANYO_128KB;
+    return;
+  }
+
+  if (!has_eeprom && !has_sram && !has_flash1m && !has_flash5)
+    file_sigs = rom_scan_signatures_in_memory();
+
+  if (has_eeprom ||
+      (file_sigs & ROM_SIG_EEPROM))
+  {
+    backup_type_reset = BACKUP_EEPROM;
+    return;
+  }
+
+  if (has_sram ||
+      (file_sigs & ROM_SIG_SRAM))
+  {
+    backup_type_reset = BACKUP_SRAM;
+    return;
+  }
+
+  if (has_flash1m ||
+      (file_sigs & ROM_SIG_FLASH1M))
+  {
+    backup_type_reset = BACKUP_FLASH;
+    flash_bank_cnt = FLASH_SIZE_128KB;
+    flash_device_id = FLASH_DEVICE_SANYO_128KB;
+    return;
+  }
+
+  if (has_flash5 ||
+      (file_sigs & ROM_SIG_FLASH5))
+  {
+    backup_type_reset = BACKUP_FLASH;
+    flash_bank_cnt = FLASH_SIZE_64KB;
+    flash_device_id = FLASH_DEVICE_MACRONIX_64KB;
+    return;
+  }
+}
+
 u32 load_gamepak(const struct retro_game_info* info, const char *name,
                  int force_rtc, int force_rumble, int force_serial)
 {
-   gamepak_info_t gpinfo;
+   char game_code[5] = {0,0,0,0,0};
 
    if (load_gamepak_raw(name))
       return -1;
 
-   // Buffer 0 always has the first 1MB chunk of the ROM
-   memset(&gpinfo, 0, sizeof(gpinfo));
-   memcpy(gpinfo.gamepak_title, &gamepak_buffers[0][0xA0], 12);
-   memcpy(gpinfo.gamepak_code,  &gamepak_buffers[0][0xAC],  4);
-   memcpy(gpinfo.gamepak_maker, &gamepak_buffers[0][0xB0],  2);
+   gamepak_header_nonstandard =
+      (gamepak_buffers[0][3] != 0xEA) || (gamepak_buffers[0][0xB2] != 0x96);
+
+   /* Buffer 0 always has the first 1MB chunk of the ROM.
+    * Read game code regardless of header validity: ROM hacks usually
+    * preserve the code at 0xAC even when other header bytes are wrong. */
+   memcpy(game_code, &gamepak_buffers[0][0xAC], 4);
+
+   /* Sanitise game code: if all bytes are non-alphanumeric
+    * (homebrews, some NSP-extracted ROMs), use "UNKN" so
+    * load_game_config_over gets a consistent string to compare. */
+   {
+      int ci;
+      bool code_valid = false;
+      for (ci = 0; ci < 4; ci++) {
+         unsigned char c = (unsigned char)game_code[ci];
+         if ((c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')) {
+            code_valid = true;
+            break;
+         }
+      }
+      if (!code_valid)
+         memcpy(game_code, "UNKN", 4);
+   }
 
    idle_loop_target_pc = 0xFFFFFFFF;
    translation_gate_targets = 0;
@@ -2566,35 +2933,100 @@ u32 load_gamepak(const struct retro_game_info* info, const char *name,
    backup_type_reset = BACKUP_UNKN;
    serial_mode = force_serial;
 
-   load_game_config_over(&gpinfo);
+   load_game_config_over(game_code);
 
-   // Forced RTC / Rumble modes, override the autodetect logic.
+   if (backup_type_reset == BACKUP_UNKN)
+   {
+      u32 scan_size = gamepak_size < (1024*1024) ? gamepak_size : (1024*1024);
+      detect_backup_subcircuit(gamepak_buffers[0], scan_size);
+   }
+
+   bool is_128k_flash = (backup_type_reset == BACKUP_FLASH && flash_bank_cnt == FLASH_SIZE_128KB);
+   bool is_pokemon_engine = rom_is_pokemon_family(gamepak_buffers[0]) || is_128k_flash;
+
+   require_m1_hle_bios = false;
+   
+   bool title_altered = false;
+   bool is_expanded = (gamepak_size > 16777216);
+   
+   if (rom_is_pokemon_family(gamepak_buffers[0]))
+   {
+      char title[13];
+      memcpy(title, &gamepak_buffers[0][0xA0], 12);
+      title[12] = '\0';
+      
+      if (strncmp(title, "POKEMON FIRE", 12) != 0 &&
+          strncmp(title, "POKEMON LEAF", 12) != 0 &&
+          strncmp(title, "POKEMON EMER", 12) != 0 &&
+          strncmp(title, "POKEMON RUBY", 12) != 0 &&
+          strncmp(title, "POKEMON SAPP", 12) != 0)
+      {
+         title_altered = true;
+      }
+   }
+
+   bool is_hack = gamepak_header_nonstandard || !is_known_game || title_altered || (is_expanded && is_pokemon_engine);
+
+   if (is_hack && is_pokemon_engine)
+   {
+      backup_type_reset = BACKUP_FLASH;
+      flash_bank_cnt = FLASH_SIZE_128KB;
+      flash_device_id = FLASH_DEVICE_SANYO_128KB;
+      rtc_enabled = true;
+      require_m1_hle_bios = true;
+      
+      if (force_serial == SERIAL_MODE_AUTO)
+         serial_mode = SERIAL_MODE_SERIAL_POKE;
+   }
+   else if (!is_hack && rom_is_pokemon_family(gamepak_buffers[0]))
+   {
+      if (flash_bank_cnt == FLASH_SIZE_128KB)
+         rtc_enabled = true;
+
+      if (force_serial == SERIAL_MODE_AUTO)
+      {
+         if (strncmp(game_code, "AXV", 3) == 0 || strncmp(game_code, "AXP", 3) == 0)
+         {
+            serial_mode = SERIAL_MODE_SERIAL_POKE;
+         }
+         else
+         {
+            serial_mode = SERIAL_MODE_RFU;
+         }
+      }
+   }
+	
+   normalize_blank_backup_for_detected_type();
+
+   backup_type = backup_type_reset;
+   flash_mode = FLASH_BASE_MODE;
+   flash_bank_num = 0;
+
    if (force_rtc != FEAT_AUTODETECT)
       rtc_enabled = (force_rtc == FEAT_ENABLE);
    if (force_rumble != FEAT_AUTODETECT)
       rumble_enabled = (force_rumble == FEAT_ENABLE);
+
+   /* Capture the RTC baseline once per content load (and only here -
+    * not in init_memory/reset_gba, so a retro_reset does not change the
+    * baseline; the in-game clock instead snaps back to the load-time
+    * point since frame_counter is reset to 0).  This makes the entire
+    * RTC stream a deterministic function of frame_counter and
+    * rtc_base_time, both of which are persisted in the savestate. */
+   rtc_init_base_time();
 
    return 0;
 }
 
 s32 load_bios(char *name)
 {
-  FILE *fd = fopen(name, "rb");
-  if (!fd)
+  RFILE *fd = filestream_open(name, RETRO_VFS_FILE_ACCESS_READ,
+                              RETRO_VFS_FILE_ACCESS_HINT_NONE);
+
+  if(!fd)
     return -1;
 
-  if (!bios_rom_alloc)
-    bios_rom_alloc = malloc(0x4000);
-
-  if (bios_rom_alloc && fread(bios_rom_alloc, 0x4000, 1, fd))
-  {
-    bios_rom = bios_rom_alloc;
-    fclose(fd);
-    return 0;
-  }
-fail:
-  fclose(fd);
-  return -1;
+  filestream_read(fd, bios_rom, 0x4000);
+  filestream_close(fd);
+  return 0;
 }
-
-

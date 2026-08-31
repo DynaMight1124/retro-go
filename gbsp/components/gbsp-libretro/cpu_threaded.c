@@ -22,14 +22,14 @@
 // - block memory needs psr swapping and user mode reg swapping
 
 #include "common.h"
-
-#ifdef HAVE_DYNAREC
-
 #if defined(VITA)
 #include <psp2/kernel/sysmem.h>
 #include <stdio.h>
 #elif defined(PS2)
 #include <kernel.h>
+#endif
+#if defined(ESP_PLATFORM)
+#include "esp_cache.h"
 #endif
 
 u8 *last_rom_translation_ptr = NULL;
@@ -46,7 +46,7 @@ u8* ram_translation_cache;
 u8 *rom_translation_ptr;
 u8 *ram_translation_ptr;
 int sceBlock;
-#elif defined(_3DS)
+#elif defined(_3DS) 
 u8* rom_translation_cache_ptr;
 u8* ram_translation_cache_ptr;
 u8 *rom_translation_ptr = rom_translation_cache;
@@ -78,6 +78,10 @@ typedef struct
   u32 next_entry;
 } hashhdr_type;
 
+#ifdef ESP_PLATFORM
+#include "esp_attr.h"
+EXT_RAM_BSS_ATTR
+#endif
 u32 rom_branch_hash[ROM_BRANCH_HASH_SIZE];
 
 typedef struct
@@ -215,7 +219,9 @@ typedef struct
   u32 offset = opcode & 0x07FF                                                \
 
 /* Include the right emitter headers */
-#if defined(MIPS_ARCH)
+#if defined(RISCV_ARCH)
+  #include "riscv/riscv_emit.h"
+#elif defined(MIPS_ARCH)
   #include "mips/mips_emit.h"
 #elif defined(ARM_ARCH)
   #include "arm/arm_emit.h"
@@ -254,19 +260,59 @@ typedef struct
   void platform_cache_sync(void *baseaddr, void *endptr) {
     __builtin___clear_cache(baseaddr, endptr);
   }
+#elif defined(RISCV_ARCH)
+  #include "esp_log.h"
+  #include "esp32p4/rom/cache.h"
+  void platform_cache_sync(void *baseaddr, void *endptr) {
+    /* Flush data cache to PSRAM then invalidate i-cache.
+     * Range-based Cache_Invalidate_Addr may have issues with
+     * dynamically mapped PSRAM exec regions, so we also do a
+     * full L1 i-cache invalidation as a fallback. */
+    uintptr_t aligned_start = (uintptr_t)baseaddr & ~63UL;
+    uintptr_t aligned_end   = ((uintptr_t)endptr + 63) & ~63UL;
+    size_t size = aligned_end - aligned_start;
+    if (size == 0) return;
+
+    /* Step 1: write back dirty data-cache lines (L1 d-cache → L2 → PSRAM) */
+    esp_err_t err = esp_cache_msync((void *)aligned_start, size,
+                    ESP_CACHE_MSYNC_FLAG_DIR_C2M);
+    if (err != ESP_OK) {
+      ESP_LOGE("jit", "C2M failed: %s addr=%p sz=%u",
+               esp_err_to_name(err), (void*)aligned_start, (unsigned)size);
+    }
+
+    /* Step 2: invalidate all caches for region (L1 i+d, L2) */
+    err = esp_cache_msync((void *)aligned_start, size,
+                    ESP_CACHE_MSYNC_FLAG_DIR_M2C);
+    if (err != ESP_OK) {
+      ESP_LOGE("jit", "M2C failed: %s addr=%p sz=%u",
+               esp_err_to_name(err), (void*)aligned_start, (unsigned)size);
+    }
+
+    /* Step 3: nuclear fallback — invalidate ALL L1 i-cache entries.
+     * If Cache_Invalidate_Addr doesn't fully handle PSRAM exec mappings,
+     * this ensures no stale i-cache lines remain. */
+    Cache_Invalidate_All(CACHE_MAP_L1_ICACHE_MASK);
+
+    /* Step 4: fence.i */
+    __asm__ volatile("fence.i" ::: "memory");
+  }
 #else
   /* x86 CPUs have icache consistency checks */
   void platform_cache_sync(void *baseaddr, void *endptr) {}
 #endif
 
 void translate_icache_sync() {
-    // Cache emitted code can only grow
+    /* Flush from cache start (not just new code) because
+     * generate_branch_patch_unconditional patches exit jumps in
+     * previously translated blocks. Those patches must also be
+     * flushed from the data cache before instruction fetch. */
     if (last_rom_translation_ptr < rom_translation_ptr) {
-        platform_cache_sync(last_rom_translation_ptr, rom_translation_ptr);
+        platform_cache_sync(rom_translation_cache, rom_translation_ptr);
         last_rom_translation_ptr = rom_translation_ptr;
     }
     if (last_ram_translation_ptr < ram_translation_ptr) {
-        platform_cache_sync(last_ram_translation_ptr, ram_translation_ptr);
+        platform_cache_sync(ram_translation_cache, ram_translation_ptr);
         last_ram_translation_ptr = ram_translation_ptr;
     }
 }
@@ -287,7 +333,7 @@ void translate_icache_sync() {
 
 #define translate_arm_instruction()                                           \
   check_pc_region(pc);                                                        \
-  opcode = address32(pc_address_block, (pc & 0x7FFF));                        \
+  opcode = readaddress32(pc_address_block, (pc & 0x7FFF));                    \
   condition = block_data[block_data_position].condition;                      \
                                                                               \
   if((condition != last_condition) || (condition >= 0x20))                    \
@@ -1750,7 +1796,7 @@ void translate_icache_sync() {
   flag_status = block_data[block_data_position].flag_data;                    \
   check_pc_region(pc);                                                        \
   last_opcode = opcode;                                                       \
-  opcode = address16(pc_address_block, (pc & 0x7FFF));                        \
+  opcode = readaddress16(pc_address_block, (pc & 0x7FFF));                    \
   emit_trace_thumb_instruction(pc);                                           \
   u8 hiop = opcode >> 8;                                                      \
                                                                               \
@@ -1960,7 +2006,7 @@ void translate_icache_sync() {
         u32 aoff = (pc & ~2) + (imm*4) + 4;                                   \
         /* ROM + same page -> optimize as const load */                       \
         if (!ram_region && (((aoff + 4) >> 15) == (pc >> 15))) {              \
-          u32 value = address32(pc_address_block, (aoff & 0x7FFF));           \
+          u32 value = readaddress32(pc_address_block, (aoff & 0x7FFF));       \
           thumb_load_pc_pool_const(rdreg, value);                             \
         } else {                                                              \
           thumb_access_memory(load, imm, rdreg, 0, 0, pc_relative, aoff, u32);\
@@ -2602,9 +2648,11 @@ u8 function_cc *block_lookup_translate_##type(u32 pc)                         \
       {                                                                       \
         bhdr = (hashhdr_type*)&rom_translation_cache[blk_offset];             \
         if(bhdr->pc_value == key)                                             \
-          return &rom_translation_cache[                                      \
+        {                                                                     \
+          u8 *entry = &rom_translation_cache[                                 \
                   blk_offset + sizeof(hashhdr_type) + block_prologue_size];   \
-                                                                              \
+          return entry;                                                       \
+        }                                                                     \
         blk_offset = bhdr->next_entry;                                        \
         blk_offset_addr = &bhdr->next_entry;                                  \
       }                                                                       \
@@ -2622,6 +2670,9 @@ u8 function_cc *block_lookup_translate_##type(u32 pc)                         \
                                                                               \
         if (result)                                                           \
           return blkptr;                                                      \
+        /* Translation failed — invalidate hash entry so future lookups      \
+         * don't return an address pointing to non-existent code */           \
+        bhdr->pc_value = 0xFFFFFFFF;                                          \
       }                                                                       \
       return NULL;                                                            \
     }                                                                         \
@@ -2639,6 +2690,27 @@ block_lookup_translate_builder(thumb);
 
 u8 function_cc *block_lookup_address_dual(u32 pc)
 {
+  static int dual_call_count = 0;
+  /* Always trace first few BX/dual calls */
+  if (dual_call_count < 5) {
+    printf("BX_DUAL[%d]: target=0x%08x\n", dual_call_count, pc);
+    printf("  R0-R7:  %08x %08x %08x %08x  %08x %08x %08x %08x\n",
+           reg[0], reg[1], reg[2], reg[3], reg[4], reg[5], reg[6], reg[7]);
+    printf("  R8-R14: %08x %08x %08x %08x  %08x %08x %08x\n",
+           reg[8], reg[9], reg[10], reg[11], reg[12], reg[13], reg[14]);
+    printf("  PC=%08x CPSR=%08x MODE=%x BUS=%08x\n",
+           reg[15], reg[16], reg[17], reg[REG_BUS_VALUE]);
+    printf("  a0_pre_save=%08x jit_ra=%08x\n", reg[REG_SAVE4], reg[REG_SAVE2]);
+    /* Dump ROM data at literal pool area for first block */
+    if (dual_call_count == 0) {
+      printf("  ROM[0x08000200-0x08000250]:");
+      for (u32 _a = 0x08000200; _a < 0x08000250; _a += 4)
+        printf(" %08x", read_memory32(_a));
+      printf("\n");
+    }
+    fflush(stdout);
+    dual_call_count++;
+  }
   u32 thumb = pc & 0x01;
   if(thumb) {
     pc &= ~1;
@@ -2651,34 +2723,126 @@ u8 function_cc *block_lookup_address_dual(u32 pc)
   }
 }
 
+static u32 last_good_pc_arm = 0;
+
 u8 function_cc *block_lookup_address_arm(u32 pc)
 {
   unsigned i;
   for (i = 0; i < 4; i++) {
     u8 *ret = block_lookup_translate_arm(pc);
+    if (ret == (u8*)(~0))
+      break;
     if (ret) {
       translate_icache_sync();
+      last_good_pc_arm = pc;
       return ret;
     }
   }
-
-  printf("bad jump %x (%x)\n", pc, reg[REG_PC]);
-  fflush(stdout);
+  static int bad_arm_count = 0;
+  if (bad_arm_count < 3) {
+    printf("=== BAD ARM JUMP #%d ===\n", bad_arm_count);
+    printf("  target PC: 0x%08x  region: 0x%02x\n", pc, pc >> 24);
+    printf("  last good PC: 0x%08x\n", last_good_pc_arm);
+    printf("  R0-R7:  %08x %08x %08x %08x  %08x %08x %08x %08x\n",
+           reg[0], reg[1], reg[2], reg[3], reg[4], reg[5], reg[6], reg[7]);
+    printf("  R8-R14: %08x %08x %08x %08x  %08x %08x %08x\n",
+           reg[8], reg[9], reg[10], reg[11], reg[12], reg[13], reg[14]);
+    printf("  PC=%08x CPSR=%08x MODE=%x\n", reg[15], reg[16], reg[17]);
+    printf("  opcode 0x%08x = ", pc);
+    /* Decode the bad PC as ARM instruction for context */
+    if ((pc & 0x0FB00000) == 0x03A00000)
+      printf("MOV R%u, #%u\n", (pc >> 12) & 0xF, pc & 0xFF);
+    else if ((pc & 0x0E000000) == 0x0A000000)
+      printf("B/BL\n");
+    else
+      printf("(other)\n");
+    fflush(stdout);
+    bad_arm_count++;
+  }
+  /* Halt CPU to prevent infinite re-entry with same bad PC */
+  reg[CPU_HALT_STATE] = 1;
   return NULL;
 }
+
+static u32 last_good_pc_thumb = 0;
 
 u8 function_cc *block_lookup_address_thumb(u32 pc)
 {
   unsigned i;
   for (i = 0; i < 4; i++) {
     u8 *ret = block_lookup_translate_thumb(pc);
+    if (ret == (u8*)(~0))
+      break;
     if (ret) {
       translate_icache_sync();
+      last_good_pc_thumb = pc;
       return ret;
     }
   }
-  printf("bad jump %x (%x)\n", pc, reg[REG_PC]);
-  fflush(stdout);
+  static int bad_thumb_count = 0;
+  if (bad_thumb_count < 3) {
+    printf("=== BAD THUMB JUMP #%d ===\n", bad_thumb_count);
+    printf("  target PC: 0x%08x  region: 0x%02x\n", pc, pc >> 24);
+    printf("  last good PC (thumb): 0x%08x  (arm): 0x%08x\n",
+           last_good_pc_thumb, last_good_pc_arm);
+    printf("  R0-R7:  %08x %08x %08x %08x  %08x %08x %08x %08x\n",
+           reg[0], reg[1], reg[2], reg[3], reg[4], reg[5], reg[6], reg[7]);
+    printf("  R8-R14: %08x %08x %08x %08x  %08x %08x %08x\n",
+           reg[8], reg[9], reg[10], reg[11], reg[12], reg[13], reg[14]);
+    printf("  PC=%08x CPSR=%08x MODE=%x\n", reg[15], reg[16], reg[17]);
+    /* --- Diagnostic dumps to locate the source of the garbage BX target --- */
+    /* stored_pc of the block that actually executed the BX (saved by the
+     * indirect-branch stub), plus jit return addr and pre-save a0. */
+    printf("  BRANCHING BLOCK stored_pc=0x%08x jit_ra=0x%08x a0_pre=0x%08x\n",
+           reg[REG_SAVE3], reg[REG_SAVE2], reg[REG_SAVE4]);
+    /* THUMB opcodes of the block that executed the bad BX (halfwords, low
+     * addr first). Based on the branching block's stored_pc so we always
+     * dump the right block even after direct-chained jumps. */
+    {
+      u32 _base = reg[REG_SAVE3] & ~3u;
+      for (u32 _i = 0; _i < 0xB0; _i += 2) {          /* 0x160 bytes */
+        u32 _a = _base + _i * 2;
+        if ((_i & 7) == 0) printf("\n  THUMB @0x%08x:", _a);
+        u32 _w = read_memory32(_a);
+        printf(" %04x %04x", _w & 0xFFFF, (_w >> 16) & 0xFFFF);
+      }
+      printf("\n");
+    }
+    /* ARM opcodes + literal pool of the IRQ handler stub in IWRAM.
+     * Extended to 0xC0 bytes so it includes the handler-pointer pool near
+     * +0x9c that `ldr r0,[pc,#0x64]; bx r0` reads. */
+    {
+      u32 _base = last_good_pc_arm & ~3u;
+      for (u32 _i = 0; _i < 0xC0; _i += 4) {
+        if ((_i & 0x1f) == 0) printf("\n  ARM   @0x%08x:", _base + _i);
+        printf(" %08x", read_memory32(_base + _i));
+      }
+      printf("\n");
+    }
+    /* Stack contents around SP (to reveal popped/loaded R0) */
+    printf("  STACK @0x%08x:", reg[13]);
+    for (u32 _a = (reg[13] & ~3u); _a < (reg[13] & ~3u) + 0x40; _a += 4)
+      printf(" %08x", read_memory32(_a));
+    printf("\n");
+    /* IRQ vectors / user handler pointer in IWRAM */
+    printf("  IWRAM[0x03007ff0..]: %08x %08x %08x %08x\n",
+           read_memory32(0x03007ff0), read_memory32(0x03007ff4),
+           read_memory32(0x03007ff8), read_memory32(0x03007ffc));
+    /* Memory pointed to by candidate pointer registers (R0 source?) */
+    for (int _r = 0; _r < 15; _r++) {
+      u32 _p = reg[_r];
+      u32 _rgn = _p >> 24;
+      if (_rgn == 2 || _rgn == 3 || (_rgn >= 8 && _rgn <= 0xD)) {
+        printf("  [R%d=0x%08x]:", _r, _p);
+        for (u32 _a = (_p & ~3u); _a < (_p & ~3u) + 0x20; _a += 4)
+          printf(" %08x", read_memory32(_a));
+        printf("\n");
+      }
+    }
+    fflush(stdout);
+    bad_thumb_count++;
+  }
+  reg[CPU_HALT_STATE] = 1;
   return NULL;
 }
 
@@ -2710,7 +2874,7 @@ u8 function_cc *block_lookup_address_thumb(u32 pc)
   (condition == 0x0E)                                                         \
 
 #define arm_load_opcode()                                                     \
-  opcode = address32(pc_address_block, (block_end_pc & 0x7FFF));              \
+  opcode = readaddress32(pc_address_block, (block_end_pc & 0x7FFF));          \
   condition = opcode >> 28;                                                   \
                                                                               \
   opcode &= 0xFFFFFFF;                                                        \
@@ -2810,7 +2974,7 @@ u8 function_cc *block_lookup_address_thumb(u32 pc)
 
 #define thumb_load_opcode()                                                   \
   last_opcode = opcode;                                                       \
-  opcode = address16(pc_address_block, (block_end_pc & 0x7FFF));              \
+  opcode = readaddress16(pc_address_block, (block_end_pc & 0x7FFF));          \
                                                                               \
   block_end_pc += 2                                                           \
 
@@ -3010,6 +3174,17 @@ if (ram_region) {                                                             \
   }                                                                           \
 }                                                                             \
 
+static int tba_dbg = 0;
+
+/* Set true whenever a ROM-cache block (ROM/BIOS) gets a direct-patched
+ * external-exit jump INTO a RAM-cache block (EWRAM/IWRAM target). Such a
+ * cross-cache link becomes STALE when flush_translation_cache_ram() recycles
+ * the RAM cache, because the ROM source block survives with a hard jump to
+ * recycled RAM-cache memory -> wild execution / memory corruption.
+ * flush_translation_cache_ram() consults this flag and also flushes ROM when
+ * set, so no stale ROM->RAM jump can survive a RAM flush. Games that never
+ * create such links pay nothing. */
+static bool rom_links_into_ram = false;
 
 bool translate_block_arm(u32 pc, bool ram_region)
 {
@@ -3034,6 +3209,7 @@ bool translate_block_arm(u32 pc, bool ram_region)
   s32 i;
   u32 flag_status;
   block_exit_type external_block_exits[MAX_EXITS];
+  int tba_local = tba_dbg++;
   generate_block_extra_vars_arm();
   arm_fix_pc();
 
@@ -3067,6 +3243,15 @@ bool translate_block_arm(u32 pc, bool ram_region)
     scan_block(arm, no);
   }
 
+  if(tba_local < 10)
+  {
+    printf("tba[%d]: start=0x%08x end=0x%08x exits=%u jit=%p\n",
+           tba_local, block_start_pc, block_end_pc, block_exit_position,
+           translation_ptr);
+    for(i = 0; i < (s32)block_exit_position; i++)
+      printf("  exit[%d]: target=0x%08x\n", i, block_exits[i].branch_target);
+  }
+
   for(i = 0; i < block_exit_position; i++)
   {
     branch_target = block_exits[i].branch_target;
@@ -3097,7 +3282,25 @@ bool translate_block_arm(u32 pc, bool ram_region)
     }
 
     update_pc_limits();
-    translate_arm_instruction();
+    if(tba_local < 10)
+    {
+      u32 _dbg_op = readaddress32(pc_address_block, (pc & 0x7FFF));
+      printf("  tr[%d] pc=0x%08x op=0x%08x cond=%x case=0x%02x jit=%p\n",
+             tba_local, pc, _dbg_op, _dbg_op >> 28, (_dbg_op >> 20) & 0xFF,
+             translation_ptr);
+    }
+    {
+      u8 *_pre = translation_ptr;
+      translate_arm_instruction();
+      if(tba_local < 3) {
+        /* Dump the JIT words generated for this ARM instruction */
+        u32 *_p = (u32*)_pre;
+        u32 *_e = (u32*)translation_ptr;
+        printf("    jit[%d]:", (int)(_e - _p));
+        while(_p < _e) { printf(" %08x", *_p++); }
+        printf("\n");
+      }
+    }
     block_data_position++;
 
     /* If it went too far the cache needs to be flushed and the process
@@ -3164,15 +3367,48 @@ bool translate_block_arm(u32 pc, bool ram_region)
   for(i = 0; i < external_block_exit_position; i++)
   {
     branch_target = external_block_exits[i].branch_target;
+    if(tba_local < 10)
+      printf("  ext_exit[%d]: target=0x%08x src=%p\n", i, branch_target,
+             external_block_exits[i].branch_source);
     if(branch_target == 0x00000008)
       translation_target = bios_swi_entrypoint;
     else
       translation_target = block_lookup_translate_arm(branch_target);
     if (!translation_target)
       return false;
+    if(tba_local < 10)
+      printf("  ext_exit[%d]: patching to %p\n", i, translation_target);
+    /* Track ROM-cache -> RAM-cache direct links (see rom_links_into_ram). */
+    if (!ram_region) {
+      u32 _tr = branch_target >> 24;
+      if (_tr == 0x02 || _tr == 0x03)
+        rom_links_into_ram = true;
+    }
     generate_branch_patch_unconditional(
       external_block_exits[i].branch_source, translation_target);
   }
+
+  if(tba_local < 5)
+  {
+    /* Hex dump of first 64 bytes of translated JIT code (after prologue) */
+    u8 *blk_start;
+    if(ram_region)
+      blk_start = ram_translation_ptr;   /* start from where we saved it */
+    else
+      blk_start = rom_translation_ptr;   /* already updated */
+    /* Actually dump from the block start (stored_pc area) */
+    u8 *dump_start = (u8*)external_block_exits[0].branch_source - 64; /* rough start */
+    /* Better: dump from known position */
+    printf("  JIT block[%d] stored_pc=0x%08x:\n", tba_local, stored_pc);
+    u8 *bs = (u8*)update_trampoline;  /* start of block */
+    u32 blen = (u32)(translation_ptr - bs);
+    if(blen > 512) blen = 512;
+    printf("  JIT @%p len=%u:", bs, blen);
+    for(u32 j = 0; j < blen; j += 4)
+      printf(" %08x", *(u32*)(bs + j));
+    printf("\n");
+  }
+
   return true;
 }
 
@@ -3327,6 +3563,12 @@ bool translate_block_thumb(u32 pc, bool ram_region)
       translation_target = block_lookup_translate_thumb(branch_target);
     if (!translation_target)
       return false;
+    /* Track ROM-cache -> RAM-cache direct links (see rom_links_into_ram). */
+    if (!ram_region) {
+      u32 _tr = branch_target >> 24;
+      if (_tr == 0x02 || _tr == 0x03)
+        rom_links_into_ram = true;
+    }
     generate_branch_patch_unconditional(
       external_block_exits[i].branch_source, translation_target);
   }
@@ -3347,9 +3589,6 @@ void flush_translation_cache_ram(void)
 {
   /* Flushes RAM caches avoiding doing too much work (ie. wiping unused memory) */
   flush_ram_count++;
-  /*printf("ram flush %d (pc %x), %x to %x, %x to %x\n",
-   flush_ram_count, reg[REG_PC], iwram_code_min, iwram_code_max,
-   ewram_code_min, ewram_code_max);*/
 
   last_ram_translation_ptr = ram_translation_cache;
   ram_translation_ptr = ram_translation_cache;
@@ -3379,6 +3618,15 @@ void flush_translation_cache_ram(void)
   ewram_code_min = ~0U;
   ewram_code_max =  0U;
   ram_block_tag = INITIAL_TOP_TAG;
+
+  /* If any ROM-cache block holds a direct jump into the (now recycled) RAM
+   * cache, that link is stale and would send execution into garbage. Flush
+   * the ROM cache too so those links are rebuilt. Only pays the cost when
+   * such cross-cache links actually exist. */
+  if (rom_links_into_ram) {
+    rom_links_into_ram = false;
+    flush_translation_cache_rom();
+  }
 }
 
 void flush_translation_cache_rom(void)
@@ -3417,5 +3665,3 @@ void flush_dynarec_caches(void)
   flush_translation_cache_ram();
 }
 
-
-#endif

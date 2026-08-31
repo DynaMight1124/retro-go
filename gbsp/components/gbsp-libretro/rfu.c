@@ -165,7 +165,7 @@ static t_client_broadcast rfu_peer_bcst[MAX_RFU_PEERS];
 
 // Constants used for the network protocol.
 
-#define NET_RFU_HEADER          0x52465531
+#define NET_RFU_HEADER          0x52465531       // RFU1
 
 #define NET_RFU_BROADCAST       0x00    // Host to everyone broadcast packet
 #define NET_RFU_CONNECT_REQ     0x01    // Client connection request
@@ -242,14 +242,19 @@ void rfu_reset() {
   // Clear all the received broadcasts.
   memset(&rfu_peer_bcst, 0, sizeof(rfu_peer_bcst));
 
-  // Re-seed random gen.
-  rand_seed(time(NULL));
+  // Re-seed random gen.  cpu_ticks is determined by the GBA program and
+  // is therefore replay-reproducible; time(NULL) is not, and would break
+  // record/replay or netplay rollback if used here.  The seed only needs
+  // to vary across resets within a session, which cpu_ticks already
+  // satisfies (rfu_reset is called from a GPIO pulse driven by the game).
   rand_seed(cpu_ticks);
 }
 
 static u16 new_devid() {
   while (1) {
-    u16 n = rand_gen() ^ time(NULL);
+    /* Mix in cpu_ticks (deterministic) rather than time(NULL) so the
+     * generated device ID is reproducible across record/replay. */
+    u16 n = rand_gen() ^ (u16)cpu_ticks;
     if (n)
       return n;
   }
@@ -865,8 +870,17 @@ void rfu_net_receive(const void* buf, size_t len, uint16_t client_id) {
 // Account for consumed cycles and return if a serial IRQ should be raised.
 bool rfu_update(unsigned cycles) {
   if (rfu_comstate == RFU_COMSTATE_WAITEVENT) {
-    // Force receive packets so that we can perhaps abort the wait
-    // This helps minimize latency (othweise we need to wait a full frame!)
+    /* Force receive packets so that we can perhaps abort the wait.
+     * This helps minimize latency (otherwise we need to wait a full
+     * frame!).
+     *
+     * REENTRANCY: netpacket_poll_receive synchronously dispatches to
+     * the frontend's netplay code, which may then call back into our
+     * netpacket_receive -> rfu_net_receive on the same thread.
+     * rfu_net_receive freely mutates rfu_state, rfu_host, rfu_client,
+     * rfu_peer_bcst[] and other rfu_* globals.  All reads below must
+     * re-fetch these globals after this point - do NOT cache rfu_state
+     * etc. into a local across this call. */
     netpacket_poll_receive();
 
     // Check if we are running our of time to respond.
