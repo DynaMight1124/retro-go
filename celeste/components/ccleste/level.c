@@ -14,6 +14,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>
+#include "esp_attr.h"
 
 extern void psfx(int id);
 
@@ -84,7 +85,7 @@ typedef struct {
     } data;
 } LevelObject;
 
-static LevelObject objects[MAX_OBJECTS];
+static EXT_RAM_BSS_ATTR LevelObject objects[MAX_OBJECTS];
 static int total_strawberries;
 static int collected_strawberries;
 static bool has_key_held;
