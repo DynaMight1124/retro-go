@@ -46,7 +46,7 @@ void bitmap_scale(uint32_t startx, uint32_t starty, uint32_t viswidth, uint32_t 
 uint32_t my_min(uint32_t a, uint32_t b) { return a < b ? a : b; }
 
 #ifdef RETRO_GO
-uint16_t Render_rgb[S16_PALETTE_ENTRIES * 3];
+uint16_t *Render_rgb = NULL;
 #else
 uint32_t Render_rgb[S16_PALETTE_ENTRIES * 3];
 #endif

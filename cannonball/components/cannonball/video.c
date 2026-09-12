@@ -33,6 +33,9 @@ video_profile_t Video_profile;
 void Video_Create(void)
 {
     if (!palette) palette = malloc(0x2000); // 8192 bytes to match 0x1FFF addressing
+#if defined(RETRO_GO) && CANNONBALL_DIRECT_RGB565
+    if (!Render_rgb) Render_rgb = rg_alloc(S16_PALETTE_ENTRIES * 3 * sizeof(uint16_t), MEM_FAST);
+#endif
 #if !defined(RETRO_GO) || !CANNONBALL_DIRECT_RGB565
     if (!Video_pixels) Video_pixels = malloc(S16_WIDTH_WIDE * S16_HEIGHT * sizeof(uint16_t));
     if (Video_pixels) Video_owns_pixels = 1;
@@ -44,6 +47,10 @@ void Video_Destroy(void)
     HWTiles_Destroy();
     if (Video_pixels && Video_owns_pixels) free(Video_pixels);
     if (palette) free(palette);
+#if defined(RETRO_GO) && CANNONBALL_DIRECT_RGB565
+    if (Render_rgb) free(Render_rgb);
+    Render_rgb = NULL;
+#endif
     palette = NULL;
     Video_pixels = NULL;
     Video_owns_pixels = 0;

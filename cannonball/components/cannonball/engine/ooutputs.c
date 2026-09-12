@@ -78,7 +78,7 @@ uint8_t is_centered;
 // 0x16: Motor X Change Latch
 int16_t motor_change_latch;
 // 0x18: Speed
-int16_t speed;
+static int16_t speed;
 // 0x1A: Road Curve
 int16_t curve;
 // 0x1E: Increment counter to index motor table for off-road/crash

@@ -105,7 +105,7 @@ uint32_t       noise_f;             /* current noise period */
 uint32_t       csm_req;             /* CSM  KEY ON / KEY OFF sequence request */
 
 uint32_t       irq_enable;          /* IRQ enable for timer B (bit 3) and timer A (bit 2); bit 7 - CSM mode (keyon to all slots, everytime timer A overflows) */
-uint32_t       status;              /* chip status (BUSY, IRQ Flags) */
+static uint32_t status;              /* chip status (BUSY, IRQ Flags) */
 uint8_t        connects[8];         /* channels connections */
 
 #ifdef USE_MAME_TIMERS
@@ -193,12 +193,20 @@ uint32_t       noise_tab[32];       /* 17bit Noise Generator periods */
 *   TL_RES_LEN - sinus resolution (X axis)
 */
 #define TL_TAB_LEN (13*2*TL_RES_LEN)
+#if defined(RETRO_GO)
+static signed int *tl_tab = NULL;
+#else
 static signed int tl_tab[TL_TAB_LEN];
+#endif
 
 #define ENV_QUIET        (TL_TAB_LEN>>3)
 
 /* sin waveform table in 'decibel' scale */
+#if defined(RETRO_GO)
+static unsigned int *sin_tab = NULL;
+#else
 static unsigned int sin_tab[SIN_LEN];
+#endif
 
 /* translate from D1L to volume index (16 D1L levels) */
 static uint32_t d1l_tab[16];
@@ -473,6 +481,12 @@ void YM_Create(float volume, uint32_t clock)
 void YM_Destroy()
 {
     free(YM_buffer);
+#if defined(RETRO_GO)
+    if (tl_tab) free(tl_tab);
+    if (sin_tab) free(sin_tab);
+    tl_tab = NULL;
+    sin_tab = NULL;
+#endif
 }
 
 
@@ -480,6 +494,13 @@ void YM_init_tables()
 {
     signed int i,x,n;
     double o,m;
+
+#if defined(RETRO_GO)
+    if (!tl_tab)
+        tl_tab = (signed int *)rg_alloc(TL_TAB_LEN * sizeof(signed int), MEM_FAST);
+    if (!sin_tab)
+        sin_tab = (unsigned int *)rg_alloc(SIN_LEN * sizeof(unsigned int), MEM_FAST);
+#endif
 
     for (x=0; x<TL_RES_LEN; x++)
     {

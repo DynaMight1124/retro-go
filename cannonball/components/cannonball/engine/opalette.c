@@ -17,7 +17,11 @@
 uint8_t OPalette_pal_manip_ctrl;
 
 // Sky Palette Manipulation Data (0x20 longs per palette, 0x1F separate palettes, then times 2 as for current/next sky on level transition)
+#ifdef RETRO_GO
+EXT_RAM_BSS_ATTR uint32_t pal_manip[(0x20 * 0x1F) * 2];
+#else
 uint32_t pal_manip[(0x20 * 0x1F) * 2];
+#endif
 
 // Palette Manipulation Area.
 //

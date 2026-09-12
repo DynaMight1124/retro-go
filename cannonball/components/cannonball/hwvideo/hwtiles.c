@@ -14,8 +14,12 @@
     All rights reserved.
 ***************************************************************************/
 
+#ifdef RETRO_GO
+uint8_t *HWTiles_text_ram = NULL; // Text RAM
+#else
 uint8_t HWTiles_text_ram[0x1000]; // Text RAM
-uint8_t HWTiles_tile_ram[0x10000]; // Tile RAM
+#endif
+uint8_t *HWTiles_tile_ram = NULL; // Tile RAM
 
 int16_t HWTiles_x_clamp;
     
@@ -98,6 +102,10 @@ void HWTiles_render8x8_tile_mask_clip_hires(
 
 void HWTiles_Create(void)
 {
+#ifdef RETRO_GO
+    if (HWTiles_text_ram == NULL) HWTiles_text_ram = rg_alloc(0x1000, MEM_FAST);
+#endif
+    if (HWTiles_tile_ram == NULL) HWTiles_tile_ram = malloc(0x10000);
     if (HWTiles_tiles == NULL) HWTiles_tiles = malloc(TILES_LENGTH * sizeof(uint32_t));
 
     uint8_t i;
@@ -111,6 +119,12 @@ void HWTiles_Destroy(void)
 {
     if (HWTiles_tiles) free(HWTiles_tiles);
     HWTiles_tiles = NULL;
+    if (HWTiles_tile_ram) free(HWTiles_tile_ram);
+    HWTiles_tile_ram = NULL;
+#ifdef RETRO_GO
+    if (HWTiles_text_ram) free(HWTiles_text_ram);
+    HWTiles_text_ram = NULL;
+#endif
 }
 
 // Convert S16 tiles to a more useable format

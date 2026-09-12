@@ -6,6 +6,7 @@
 #include <rg_system.h>
 #include <rg_utils.h>
 #include <esp_heap_caps.h>
+#include <esp_attr.h>
 
 // Render target-native RGB565 directly into Retro-Go's owned surface. Define
 // this to 0 at build time to retain the original selector + conversion path.
@@ -60,7 +61,7 @@ extern rg_task_t *audio_task_handle;
 #define S16_PALETTE_ENTRIES 4096
 
 #if defined(RETRO_GO) && CANNONBALL_DIRECT_RGB565
-extern uint16_t Render_rgb[S16_PALETTE_ENTRIES * 3];
+extern uint16_t *Render_rgb;
 static inline uint16_t Video_output_color(uint32_t selector)
 {
     return Render_rgb[selector & ((S16_PALETTE_ENTRIES * 3) - 1)];

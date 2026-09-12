@@ -45,7 +45,7 @@ int16_t acc_prev;
 int16_t steer;
 
 // +22: Flashing counter
-uint8_t flash;
+static uint8_t flash;
 
 // +24: Total number of minicars that have reached destination
 int8_t dest_total;

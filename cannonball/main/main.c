@@ -56,7 +56,7 @@ enum
 };
 
 extern char rom_base_path[256];
-extern uint16_t Render_rgb[S16_PALETTE_ENTRIES * 3];
+extern uint16_t *Render_rgb;
 extern uint16_t* Audio_mix_buffer;
 
 // Explicit declarations

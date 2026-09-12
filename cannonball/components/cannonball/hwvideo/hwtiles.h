@@ -10,8 +10,12 @@ enum
     HWTILES_CENTRE,
 };
 
+#ifdef RETRO_GO
+extern uint8_t *HWTiles_text_ram; // Text RAM
+#else
 extern uint8_t HWTiles_text_ram[0x1000]; // Text RAM
-extern uint8_t HWTiles_tile_ram[0x10000]; // Tile RAM
+#endif
+extern uint8_t *HWTiles_tile_ram; // Tile RAM
 
 void HWTiles_Create(void);
 void HWTiles_Destroy(void);
