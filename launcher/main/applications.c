@@ -705,11 +705,12 @@ void applications_init(void)
     application("Wolf3D", "wolf3d", "wl1 wl6 sod", "wolf4sdl", 0);
     application("Rise of the Triad", "rott", "wad zip", "rott", 0);
     application("MSX", "msx", "rom mx1 mx2 dsk", "fmsx", 0);
-    application("Celeste", "celeste", "p8", "celeste", 0);
-    application("Outrun", "cannonball", "ball", "cannonball", 0);
+    application("Celeste", "celeste", "p8", "retro-ports", 0);
+    application("Outrun", "cannonball", "ball", "retro-ports", 0);
     application("Tomb Raider", "openlara", "tr1", "openlara", 0);
     application("Pico-8", "pico8", "p8 png zip", "pico8", 0);
     application("Commodore 64", "c64", "crt zip prg d64 t64", "frodo", 0);
+    application("Open Tyrian", "opentyrian", "cdt", "retro-ports", 0);
 
     // Special app to bootstrap native esp32 binaries from the SD card
     // application("Bootstrap", "apps", "bin elf", "bootstrap", 0);

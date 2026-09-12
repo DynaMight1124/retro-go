@@ -1,0 +1,5 @@
+cmake_minimum_required(VERSION 3.5)
+set(COMPONENTS "main retro-go cannonball celeste opentyrian")
+set(RG_ENABLE_NETWORKING 0)
+include(../base.cmake)
+project(retro-ports)
