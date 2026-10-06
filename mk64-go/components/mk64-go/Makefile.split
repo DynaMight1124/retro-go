@@ -1,0 +1,5 @@
+STANDALONE_TEXTURE_MIO0_FILES := $(addprefix $(BUILD_DIR)/,$(patsubst %.png,%.mio0,$(wildcard $(TEXTURES_DIR)/standalone/*.png)))
+
+RAW_TEXTURE_FILES := $(addprefix $(BUILD_DIR)/,$(patsubst %.png,%,$(wildcard $(TEXTURES_DIR)/raw/*.png)))
+
+MIO0_FILES := $(STANDALONE_TEXTURE_MIO0_FILES)

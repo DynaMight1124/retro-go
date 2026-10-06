@@ -1,0 +1,73 @@
+MK64 Portable — license
+
+This repository contains work from several sources, under different terms.
+
+1. Original work of this project (MIT License)
+
+   The PSP port layer and its tooling, and the project's artwork:
+
+     src/port/psp/          (except gfx_scegu.c and psp_texture_manager.c/.h,
+                             see section 3)
+     src/port/segments.c, src/port/decoders.c, src/port/tkmk00_port.c,
+     src/port/ultra_shim.c, src/port/input_script.c, src/port/port.h,
+     src/port/audio_blobs.s
+     tools/psp/
+     Makefile.psp
+     icon/
+     README.md, docs/ (this project's own documentation)
+
+   Copyright (c) 2026 David Becker
+
+   Permission is hereby granted, free of charge, to any person obtaining a copy
+   of this software and associated documentation files (the "Software"), to deal
+   in the Software without restriction, including without limitation the rights
+   to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+   copies of the Software, and to permit persons to whom the Software is
+   furnished to do so, subject to the following conditions:
+
+   The above copyright notice and this permission notice shall be included in
+   all copies or substantial portions of the Software.
+
+   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+   IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+   FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+   AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+   LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+   OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+   THE SOFTWARE.
+
+2. Decompiled game code (no license granted)
+
+   Everything else — in particular src/ (outside src/port/), courses/, data/,
+   include/, asm/, assets/ and the build files inherited from the
+   decompilation — is the decompiled code and data layout of Mario Kart 64,
+   produced by the n64decomp/mk64 project. It is the copyrighted work of
+   Nintendo. No license to it is granted or implied by this repository; it is
+   distributed for the purposes of preservation and interoperability, and this
+   repository does not include the game's assets.
+
+3. Code adapted from other ports
+
+   src/port/gfx/gfx_pc.c, src/port/gfx/gfx_cc.c and src/port/audio/mixer.c
+   are adapted from sm64-port (https://github.com/sm64-port/sm64-port), which
+   publishes no license; they are used here on the same basis as that project.
+   src/port/psp/gfx_scegu.c (the sceGu rendering backend) derives from the PSP
+   port of sm64-port by Hayden Kowalchuk, on the same basis.
+   Parts of the audio mixer behaviour follow SpaghettiKart
+   (https://github.com/HarbourMasters/SpaghettiKart).
+
+   src/port/psp/psp_texture_manager.c and psp_texture_manager.h are
+   Copyright (c) 2020 Hayden Kowalchuk, BSD 3-Clause License
+   (http://www.opensource.org/licenses/BSD-3-Clause); the notice in the files
+   must be kept in redistributions.
+
+4. Third-party tools (submodules), under their own licenses
+
+   tools/torch              MIT (Lywx)
+   tools/decomp-permuter    MIT (Simon Lindholm and contributors)
+   tools/asm-differ         public domain (Unlicense)
+   doxygen-awesome-css      MIT (jothepro)
+   tools/blender/fast64     GPL-3.0 (a Blender add-on; not part of the built game)
+
+Mario Kart 64 is a trademark of Nintendo. This project is not affiliated with
+or endorsed by Nintendo.

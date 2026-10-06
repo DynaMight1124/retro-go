@@ -1,0 +1,50 @@
+course:
+  type: MK64:METADATA
+  offset: 0x0
+  id: 18
+  name: d.k.'s jungle parkway
+  debug_name: jungle
+  cup: SPECIAL_CUP
+  cup_index: 0
+  course_length: 893m
+  cpu_behaviour_ptr: D_0D0093C0
+  cpu_maximum_separation: 40.0f
+  cpu_minimum_separation: 0.1f
+  D_800DCBB4: D_800DCAF4
+  cpu_steering_sensitivity: 53
+  bomb_kart_spawns: # 7 bomb kart spawn locations
+    - [0x0032, 0x0003, 0.8333333, 0.0, 0.0, 0.0, 0.0]
+    - [0x0064, 0x0001, 0.8333333, 0.0, 0.0, 0.0, 0.0]
+    - [0x0096, 0x0003, 0.8333333, 0.0, 0.0, 0.0, 0.0]
+    - [0x00be, 0x0001, 0.8333333, 0.0, 0.0, 0.0, 0.0]
+    - [0x00fa, 0x0003, 0.8333333, 0.0, 0.0, 0.0, 0.0]
+    - [0x0000, 0x0000, 0.8333333, 0.0, 0.0, 0.0, 0.0]
+    - [0x0000, 0x0000, 0.8333333, 0.0, 0.0, 0.0, 0.0]
+  path_sizes: [0x0370, 0x0001, 0x0001, 0x0001, 0x01F4, 0x0000, 0x0000, 0x0000]
+
+  # unk common_textures data
+  cpu_CurveTargetSpeed: [4.1666665f, 5.5833334f, 6.1666665f, 6.75f]
+  cpu_NormalTargetSpeed: [3.75f, 5.1666665f, 5.75f, 6.3333334f]
+  D_0D0096B8: [3.3333332f, 3.9166667f, 4.5f, 5.0833334f]
+  cpu_OffTrackTargetSpeed: [3.75f, 5.1666665f, 5.75f, 6.3333334f]
+
+  # Course path
+  path_table:
+    [
+      d_course_dks_jungle_parkway_track_path,
+      "&nullPath",
+      "&nullPath",
+      "&nullPath",
+    ]
+
+  # Unused except in podium ceremony
+  path_table_unknown:
+    [
+      d_course_dks_jungle_parkway_unknown_path,
+      "&nullPath",
+      "&nullPath",
+      "&nullPath",
+    ]
+
+  sky_colors: [255, 174, 0, 255, 229, 124]
+  sky_colors2: [22, 145, 22, 0, 0, 0]

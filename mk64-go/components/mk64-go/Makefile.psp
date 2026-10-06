@@ -1,0 +1,381 @@
+# Mario Kart 64 -> Sony PSP port build.
+#
+#   export PATH="$HOME/pspdev/bin:$PATH"
+#   gmake -f Makefile.psp -j8            # -> build/psp/EBOOT.PBP
+#
+# Needs GNU make >= 4 (macOS: brew install make -> gmake), the pspdev toolchain,
+# the decomp host tools (tools/mio0, tools/n64graphics, tools/torch) and the
+# extracted assets (extract_assets.py us; torch code/header baserom.us.z64).
+#
+# The game code is the n64decomp/mk64 C source compiled for the PSP.  Everything
+# the N64 game DMAs out of the cartridge is linked into the executable instead
+# (same .s/.incbin files as the N64 build), and src/port/ replaces libultra, the
+# RSP graphics microcode (F3DEX -> sceGu) and the RSP audio microcode (C mixer).
+
+include util.mk
+
+VERSION    := us
+BUILD_DIR  := build/psp
+TARGET     := mk64
+ELF        := $(BUILD_DIR)/$(TARGET).elf
+PRX        := $(BUILD_DIR)/$(TARGET).prx
+EBOOT      := $(BUILD_DIR)/EBOOT.PBP
+BASEROM    := baserom.$(VERSION).z64
+
+PSPSDK     := $(shell psp-config --pspsdk-path)
+PSPDEV     := $(shell psp-config --pspdev-path)
+
+VERBOSE ?= 0
+ifeq ($(VERBOSE),0)
+  V := @
+endif
+
+COLOR ?= 1
+ifeq ($(COLOR),1)
+NO_COL  := \033[0m
+RED     := \033[0;31m
+GREEN   := \033[0;32m
+BLUE    := \033[0;34m
+YELLOW  := \033[0;33m
+endif
+PRINT := printf
+TOUCH := touch
+
+#==============================================================================#
+# Tools                                                                        #
+#==============================================================================#
+
+TOOLS_DIR     := tools
+PYTHON        ?= python3
+MIO0TOOL      := $(TOOLS_DIR)/mio0
+N64GRAPHICS   := $(TOOLS_DIR)/n64graphics
+ASSET_EXTRACT := $(PYTHON) $(TOOLS_DIR)/new_extract_assets.py
+ASM_BE        := $(PYTHON) $(TOOLS_DIR)/psp/asm_be.py
+ASSET_DIR     := assets
+DATA_DIR      := data
+TEXTURES_DIR  := textures
+
+CC      := psp-gcc
+AS      := psp-as
+LD      := psp-gcc
+OBJDUMP := psp-objdump
+
+#==============================================================================#
+# Sources                                                                      #
+#==============================================================================#
+
+# Game code (the decomp) - same directories the N64 build uses, minus libultra.
+# (rainbow_road_tluts and ceremony_rsp_init_80284EE0 are #included by other files, not compiled.)
+SRC_ASSETS_DIR := assets/code/ceremony_data assets/code/startup_logo assets/code/data_800E45C0 \
+                  assets/code/data_800E8700 assets/code/common_data
+GAME_SRC_DIRS  := src src/data src/buffers src/racing src/ending src/audio courses $(SRC_ASSETS_DIR)
+# Port layer (libultra replacement, F3DEX interpreter, audio mixer, PSP backends).
+PORT_SRC_DIRS  := src/port src/port/gfx src/port/audio src/port/psp src/port/net
+# Pure-C pieces of libultra that the game relies on for bit-exact behaviour.
+OS_C_FILES     := $(wildcard src/os/gu*.c) src/os/math/sinf.c src/os/math/cosf.c
+
+# Course data is compiled straight from its C sources (the N64 build packs and
+# mio0-compresses these into the ROM; the port skips that and keeps them as C).
+COURSE_DIRS  := $(shell find courses -mindepth 1 -type d | sort)
+COURSE_FILES := $(foreach dir,$(COURSE_DIRS),$(dir)/course_data.c $(dir)/course_offsets.c \
+                  $(dir)/course_displaylists.inc.c $(dir)/course_vertices.inc.c)
+
+C_FILES := $(filter-out %.inc.c,$(foreach dir,$(GAME_SRC_DIRS) $(PORT_SRC_DIRS),$(wildcard $(dir)/*.c))) \
+           $(OS_C_FILES) $(COURSE_FILES)
+
+# Binary data (textures, kart sprites, audio banks/sequences) - the same
+# .incbin assembly files the N64 build uses.  rsp.s (microcode) is not needed.
+S_FILES := $(filter-out $(DATA_DIR)/rsp.s,$(wildcard $(DATA_DIR)/*.s)) \
+           $(wildcard $(DATA_DIR)/karts/*.s) \
+           $(DATA_DIR)/sound_data/instrument_sets.s $(DATA_DIR)/sound_data/sequences.s \
+           src/port/audio_blobs.s
+
+# Generated: segmented address -> symbol tables (see tools/psp/gen_seg_tables.py).
+SEG_TABLES_C := $(BUILD_DIR)/port_seg_tables.c
+
+RECIPES_JSON := tools/psp/recipes.json
+RECIPES_BIN  := $(BUILD_DIR)/recipes.bin
+DATA_PSAR    := $(BUILD_DIR)/data.psar
+O_FILES := $(foreach f,$(C_FILES),$(BUILD_DIR)/$(f:.c=.o)) \
+           $(foreach f,$(S_FILES),$(BUILD_DIR)/$(f:.s=.o)) \
+           $(SEG_TABLES_C:.c=.o)
+
+DEP_FILES := $(O_FILES:.o=.d)
+
+# Generated at link time: an id of this build's code, carried by every ad hoc
+# packet so consoles on different builds refuse each other (tools/psp/gen_build_id.py).
+BUILD_ID_C := $(BUILD_DIR)/port_build_id.c
+BUILD_ID_O := $(BUILD_ID_C:.c=.o)
+# The Media Engine kernel helper (tools/psp/mekprx), embedded in the EBOOT and
+# written to data/ at boot: a release is the EBOOT alone.
+MEKPRX_C := $(BUILD_DIR)/port_mekprx.c
+MEKPRX_O := $(MEKPRX_C:.c=.o)
+
+ALL_DIRS := $(BUILD_DIR) $(addprefix $(BUILD_DIR)/,$(GAME_SRC_DIRS) $(PORT_SRC_DIRS) src/os src/os/math $(COURSE_DIRS) \
+            $(DATA_DIR) $(DATA_DIR)/karts $(DATA_DIR)/sound_data \
+            $(TEXTURES_DIR)/raw $(TEXTURES_DIR)/standalone $(TEXTURES_DIR)/startup_logo \
+            $(TEXTURES_DIR)/crash_screen $(TEXTURES_DIR)/trophy $(TEXTURES_DIR)/courses $(TEXTURES_DIR)/common)
+
+# Make sure build directory exists before compiling anything
+DUMMY != mkdir -p $(ALL_DIRS)
+
+#==============================================================================#
+# Flags                                                                        #
+#==============================================================================#
+
+# Ad hoc play and the Media Engine mixer are in every build; the ad hoc
+# transport is the PSP's unless a test build asks for the file mailbox
+# (EXTRA_CFLAGS=-DPORT_NET_FILE, two PPSSPP instances).  The data/ debug knobs
+# (docs/fps60.md) only exist with -DPORT_DEBUG_KNOBS.
+NET_TRANSPORT := $(if $(findstring PORT_NET_FILE,$(EXTRA_CFLAGS)),,PORT_NET_ADHOC=1)
+DEFINES := PORT_NET=1 $(NET_TRANSPORT) PORT_ME_AUDIO=1 PORT_GE_TL=1 PORT_DRAW_DIST=3000 PORT_MAX_VOICES=18 VERSION_US=1 F3DEX_GBI=1 F3D_OLD=1 NON_MATCHING=1 AVOID_UB=1 TARGET_PSP=1 _LANGUAGE_C=1 NO_SEGMENTED_MEMORY=1 \
+           PSP_LEGACY_TYPES_DEFINED=1 PSP_LEGACY_VOLATILE_TYPES_DEFINED=1
+C_DEFINES := $(foreach d,$(DEFINES),-D$(d))
+
+INCLUDE_DIRS := include $(BUILD_DIR) $(BUILD_DIR)/include src src/racing src/ending src/port src/port/gfx src/port/audio src/port/psp .
+DEF_INC_CFLAGS := $(foreach i,$(INCLUDE_DIRS),-I$(i)) $(C_DEFINES) -I$(PSPSDK)/include
+
+OPT_FLAGS ?= -O2 $(EXTRA_CFLAGS)
+# -fno-toplevel-reorder: keep globals in source order.  The decomp's data
+# tables sit in ROM order, and the game indexes past the end of several of
+# them into their neighbours (menu_items.c: D_800E8274[type - 0x12] reaches
+# back into D_800E8254 for the GAME SELECT banner and the OPTION/DATA
+# buttons, D_800E70A0[type - 0xA] runs on into D_800E70E8, ...).  GCC's
+# default reverse emission broke every such walk (issues #5, #6).
+CFLAGS  := $(OPT_FLAGS) -G0 -std=gnu99 -fsigned-char -fno-strict-aliasing -fwrapv -fno-common -fno-toplevel-reorder \
+           -Wall -Wno-unused-variable -Wno-unused-but-set-variable -Wno-unused-function -Wno-unused-parameter \
+           -Wno-missing-braces -Wno-char-subscripts -Wno-sign-compare -Wno-int-in-bool-context \
+           -Wno-error=incompatible-pointer-types -Wno-error=int-conversion \
+           $(DEF_INC_CFLAGS)
+ASFLAGS := -I include -I $(BUILD_DIR) -I .
+
+LDFLAGS := -specs=$(PSPSDK)/lib/prxspecs -Wl,-q,-T$(PSPSDK)/lib/linkfile.prx -Wl,-zmax-page-size=128 \
+           $(PSPSDK)/lib/prxexports.o -L$(PSPSDK)/lib -L$(PSPDEV)/psp/lib
+# N64 ROM-segment symbols that alias data linked in from the .s files.
+LDFLAGS += -Wl,--defsym=_sequencesSegmentRomStart=music_sequence_table_header \
+           -Wl,--defsym=_instrument_setsSegmentRomStart=instrument_sets \
+           -Wl,--defsym=_audio_banksSegmentRomStart=port_audiobanks \
+           -Wl,--defsym=_audio_tablesSegmentRomStart=port_audiotables \
+           -Wl,--defsym=D_0B002A00=texture_player_select+0x2A00
+LDFLAGS += -Wl,--defsym=_trigTablesSegmentStart=gSineTable -Wl,--defsym=_trigTablesSegmentRomStart=gSineTable
+
+# torch emits the gold reflection map in both the startup logo and ceremony segments.
+$(BUILD_DIR)/assets/code/startup_logo/startup_logo.o: CFLAGS += -Dreflection_map_gold=reflection_map_gold_logo
+# Only the extra libraries: psp-gcc's default spec appends -lc/-lpspuser/... last.
+# Listing those again scans the stub archives twice, which splits each SDK
+# library's import stubs into two runs and psp-fixup-imports then bails out.
+LIBS    := -lpspgu -lpspgum -lpspvfpu -lpspmath -lpspctrl -lpspge -lpspdisplay -lpspaudio -lpsppower -lpspdebug \
+           -lpspnet -lpspnet_adhoc -lpspnet_adhocctl -lpsputility -lpspwlan
+
+#==============================================================================#
+# Main targets                                                                 #
+#==============================================================================#
+
+ASSET_OBJS := $(filter $(BUILD_DIR)/assets/% $(BUILD_DIR)/courses/% $(BUILD_DIR)/data/% \
+                       $(BUILD_DIR)/src/port/audio_blobs.o $(BUILD_DIR)/src/data/textures.o \
+                       $(BUILD_DIR)/src/data/some_data.o $(BUILD_DIR)/src/data/data_segment2.o \
+                       $(BUILD_DIR)/src/data/path_spawn_metadata.o,$(O_FILES))
+# The asset objects keep GCC's default emission order: the recipe table
+# (tools/psp/recipes.json) records their layout inside the asset region, and
+# reordering them would need `assets-recipes` to be regenerated.
+$(ASSET_OBJS): CFLAGS += -ftoplevel-reorder
+ELF_ASSETS   := $(BUILD_DIR)/mk64_assets.elf
+ASSETS_BIN   := $(BUILD_DIR)/assets.bin
+LINK_NOLOAD  := $(BUILD_DIR)/linkfile_noload.prx
+LINK_PROGBITS:= $(BUILD_DIR)/linkfile_progbits.prx
+comma := ,
+LDFLAGS_BASE := $(filter-out -Wl$(comma)-q$(comma)-T$(PSPSDK)/lib/linkfile.prx,$(LDFLAGS))
+ASSET_SECTION_NOLOAD   = .assetdata (NOLOAD) : ALIGN(16) { __assets_start = .; *(.assetdata) *(.assetrodata) . = ALIGN(16); __assets_end = .; }
+ASSET_SECTION_PROGBITS = .assetdata : ALIGN(16) { __assets_start = .; *(.assetdata) *(.assetrodata) . = ALIGN(16); __assets_end = .; }
+
+
+default: all
+all: $(EBOOT) $(ASSETS_BIN)
+
+# mk64k.prx: the kernel-mode helper that boots the Media Engine (src/port/psp/me.c).
+$(BUILD_DIR)/mk64k.prx: tools/psp/mekprx/mek.c tools/psp/mekprx/me_stub.S tools/psp/mekprx/Makefile src/port/psp/me_share.h
+	$(V)$(MAKE) -C tools/psp/mekprx
+	$(V)cp tools/psp/mekprx/mk64k.prx $@
+$(MEKPRX_C): $(BUILD_DIR)/mk64k.prx tools/psp/embed_prx.py
+	$(V)$(PYTHON) tools/psp/embed_prx.py $< $@
+$(MEKPRX_O): $(MEKPRX_C)
+	$(V)$(CC) -c $(CFLAGS) -o $@ $<
+
+# Slow (minutes): find, for every asset symbol, how it derives from the ROM.
+# Needed only when the set of assets changes.  Keeps its mio0 cache in build/.
+assets-recipes: $(ASSETS_BIN)
+	python3 tools/psp/derive_recipes.py $(ASSETS_BIN) baserom.us.z64 -o $(RECIPES_JSON) --cache $(BUILD_DIR)/mio0.cache --report $(BUILD_DIR)/recipes_report.txt
+
+# The recipe blob rides in the EBOOT's DATA.PSAR (numbers only); it depends on
+# the link (pointer values) but not the other way round.
+$(RECIPES_BIN): $(wildcard $(RECIPES_JSON)) $(ASSETS_BIN) tools/psp/emit_recipes.py
+	$(V)if [ -f $(RECIPES_JSON) ]; then python3 tools/psp/emit_recipes.py $(RECIPES_JSON) $(ASSETS_BIN) -o $@; \
+	else echo "NOTE: $(RECIPES_JSON) missing - EBOOT cannot extract from a ROM (run: gmake -f Makefile.psp assets-recipes)"; printf 'MK64RCP0' > $@; fi
+
+# Compile everything but do not link - handy while porting.
+objs: $(O_FILES)
+
+clean:
+	$(RM) -r $(BUILD_DIR)
+
+.PHONY: default all assets-recipes objs clean
+
+define print
+  @$(PRINT) "$(GREEN)$(1) $(YELLOW)$(2)$(GREEN) -> $(BLUE)$(3)$(NO_COL)\n"
+endef
+
+#==============================================================================#
+# Texture generation (same recipes as the N64 build)                           #
+#==============================================================================#
+
+# RGBA32, RGBA16, IA16, IA8, IA4, IA1, I8, I4 (png -> raw texel data)
+$(BUILD_DIR)/%: %.png
+	$(call print,Converting:,$<,$@)
+	$(V)$(N64GRAPHICS) -i $@ -g $< -f $(lastword $(subst ., ,$@))
+
+$(BUILD_DIR)/textures/%.mio0: $(BUILD_DIR)/textures/%
+	$(V)$(MIO0TOOL) -c $< $@
+
+# Per-asset-group rules shipped with the decomp (kart sprites, character select,
+# course actor textures, ...).  They only need the variables defined above.
+ASSET_INCLUDES := $(shell find $(ASSET_DIR)/include -type f -name "*.mk")
+$(foreach inc,$(ASSET_INCLUDES),$(eval include $(inc)))
+
+STANDALONE_TEXTURE_MIO0_FILES := $(addprefix $(BUILD_DIR)/,$(patsubst %.png,%.mio0,$(wildcard $(TEXTURES_DIR)/standalone/*.png)))
+RAW_TEXTURE_FILES := $(addprefix $(BUILD_DIR)/,$(patsubst %.png,%,$(wildcard $(TEXTURES_DIR)/raw/*.png)))
+
+# Segment-5 texture addresses for each course's display lists.
+COURSE_TEXTURE_HEADERS := $(foreach dir,$(COURSE_DIRS),$(dir)/course_textures.linkonly.h)
+%/course_textures.linkonly.h: %/course_offsets.c tools/psp/gen_course_textures.py
+	$(V)$(PYTHON) tools/psp/gen_course_textures.py $(lastword $(subst /, ,$*))
+$(foreach dir,$(COURSE_DIRS),$(BUILD_DIR)/$(dir)/course_data.o $(BUILD_DIR)/$(dir)/course_displaylists.inc.o): $(COURSE_TEXTURE_HEADERS)
+
+# Torch emits RGBA16 textures and TLUTs as u16 arrays (native-endian on the
+# PSP) while the gfx importers read texel data big-endian like the N64.  Shadow
+# those .inc.c files with byte-swapped copies in the build dir, which precedes
+# the source tree in the include path.
+U16_INC_FILES := $(sort $(shell grep -rhA12 -E '^u16 [A-Za-z0-9_]+(\[[0-9]*\])+ = \{' assets/code courses --include=*.c | grep -oE '"[^"]+\.(rgba16|tlut|ia16)\.inc\.c"' | tr -d '"'))
+SWAPPED_INC_FILES := $(addprefix $(BUILD_DIR)/,$(U16_INC_FILES))
+$(BUILD_DIR)/%.inc.c: %.inc.c tools/psp/swap_u16_inc.py
+	@mkdir -p $(dir $@)
+	$(V)$(PYTHON) tools/psp/swap_u16_inc.py $< $@
+
+# So does the display-list interpreter and its GE backend (max_fps_experiments).
+$(BUILD_DIR)/src/port/gfx/gfx_pc.o $(BUILD_DIR)/src/port/psp/gfx_scegu.o: CFLAGS += -O3
+# Hot audio code gets the heavier optimisation level.
+$(BUILD_DIR)/src/port/audio/mixer.o $(BUILD_DIR)/src/audio/synthesis.o: CFLAGS += -O3 -funroll-loops
+
+$(BUILD_DIR)/src/crash_screen.o: $(BUILD_DIR)/textures/crash_screen/crash_screen_font.ia1.inc.c
+$(BUILD_DIR)/textures/crash_screen/crash_screen_font.ia1.inc.c: textures/crash_screen/crash_screen_font.ia1.png
+	$(V)$(N64GRAPHICS) -i $@ -g $< -f ia1 -s u8
+
+#==============================================================================#
+# Compilation                                                                  #
+#==============================================================================#
+
+# Rebuild everything when the compile flags change (EXTRA_CFLAGS=... on the
+# command line must not leave objects built with other flags behind).
+CFLAGS_STAMP := $(BUILD_DIR)/cflags.stamp
+$(shell mkdir -p $(BUILD_DIR); [ -f $(CFLAGS_STAMP) ] && [ "$$(cat $(CFLAGS_STAMP))" = "$(CFLAGS)" ] || echo "$(CFLAGS)" > $(CFLAGS_STAMP))
+
+$(BUILD_DIR)/%.o: %.c $(SWAPPED_INC_FILES) $(CFLAGS_STAMP)
+	$(call print,Compiling:,$<,$@)
+	$(V)$(CC) -c $(CFLAGS) -MMD -MP -MF $(BUILD_DIR)/$*.d -o $@ $<
+
+$(SEG_TABLES_C): tools/psp/gen_seg_tables.py $(wildcard courses/*/course_data.h courses/*/course_displaylists.inc.h) $(wildcard yamls/us/*.yml)
+	$(call print,Generating:,$@,)
+	$(V)$(PYTHON) tools/psp/gen_seg_tables.py $@
+
+$(SEG_TABLES_C:.c=.o): $(SEG_TABLES_C)
+	$(call print,Compiling:,$<,$@)
+	$(V)$(CC) -c $(CFLAGS) -o $@ $<
+
+# Data .s files: rewrite .word/.hword to big-endian bytes (the game reads these
+# tables as raw ROM data), then assemble.
+$(BUILD_DIR)/%.s: %.s
+	$(V)$(ASM_BE) $< $@
+
+$(BUILD_DIR)/%.o: $(BUILD_DIR)/%.s $(STANDALONE_TEXTURE_MIO0_FILES) $(RAW_TEXTURE_FILES)
+	$(call print,Assembling:,$<,$@)
+	$(V)$(AS) $(ASFLAGS) -o $@ $<
+
+.PRECIOUS: $(BUILD_DIR)/%.s
+
+#==============================================================================#
+# Link + package                                                               #
+#==============================================================================#
+
+# ---------------------------------------------------------------------------
+# Asset split: the ROM-derived data objects have their .data/.rodata renamed
+# to .assetdata/.assetrodata, which the linker collects into one region after
+# .bss.  The shipped link makes that region NOLOAD (symbols, no bytes); a second
+# identical link with the region as PROGBITS feeds tools/psp/make_assets.py,
+# which writes assets.bin (bytes + R_MIPS_32 fix-ups).  psp/assets_load.c reads
+# it back at boot.  The EBOOT then contains no Nintendo data.
+$(LINK_NOLOAD): $(PSPSDK)/lib/linkfile.prx Makefile.psp
+	$(V)sed 's|^  _end = \.;|  $(ASSET_SECTION_NOLOAD)\n  _end = .;|' $< > $@
+$(LINK_PROGBITS): $(PSPSDK)/lib/linkfile.prx Makefile.psp
+	$(V)sed 's|^  _end = \.;|  $(ASSET_SECTION_PROGBITS)\n  _end = .;|' $< > $@
+
+# The asset objects are left out: the link renames their sections in place, and
+# their contents are the ROM's, not the code's.
+$(BUILD_ID_C): $(filter-out $(ASSET_OBJS),$(O_FILES)) tools/psp/gen_build_id.py
+	$(V)$(PYTHON) tools/psp/gen_build_id.py $@ $(filter-out $(ASSET_OBJS),$(O_FILES))
+$(BUILD_ID_O): $(BUILD_ID_C)
+	$(V)$(CC) -c $(CFLAGS) -o $@ $<
+
+$(ELF): $(O_FILES) $(BUILD_ID_O) $(MEKPRX_O) $(LINK_NOLOAD)
+	$(call print,Linking:,$@,)
+	$(V)for o in $(ASSET_OBJS); do psp-objcopy --preserve-dates --rename-section .data=.assetdata --rename-section .rodata=.assetrodata $$o; done
+	$(V)$(LD) $(LDFLAGS_BASE) -Wl,-q,-T$(LINK_NOLOAD) -o $@ $(O_FILES) $(BUILD_ID_O) $(MEKPRX_O) $(LIBS)
+	$(V)psp-fixup-imports $@
+
+$(ELF_ASSETS): $(O_FILES) $(LINK_PROGBITS) $(ELF)
+	$(V)$(LD) $(LDFLAGS_BASE) -Wl,-q,-T$(LINK_PROGBITS) -o $@ $(O_FILES) $(BUILD_ID_O) $(MEKPRX_O) $(LIBS)
+
+$(ASSETS_BIN): $(ELF_ASSETS) $(ELF) tools/psp/make_assets.py
+	$(V)python3 tools/psp/make_assets.py $(ELF_ASSETS) $(ELF) -o $@
+
+$(PRX): $(ELF)
+	$(V)psp-prxgen $< $@
+
+PSP_EBOOT_TITLE := MK64 Portable
+# XMB icon (144x80 PNG) and background (480x272 PNG); fall back to NULL if absent.
+PSP_EBOOT_ICON  ?= $(wildcard icon/MK64-ICON0.png)
+PSP_EBOOT_PIC1  ?= $(wildcard icon/MK64-PIC1.png)
+PSP_EBOOT_ICON  := $(if $(PSP_EBOOT_ICON),$(PSP_EBOOT_ICON),NULL)
+PSP_EBOOT_PIC1  := $(if $(PSP_EBOOT_PIC1),$(PSP_EBOOT_PIC1),NULL)
+
+$(BUILD_DIR)/PARAM.SFO:
+	$(V)mksfoex "$(PSP_EBOOT_TITLE)" $@
+
+$(DATA_PSAR): $(RECIPES_BIN) tools/psp/make_psar.py $(wildcard icon/MK64-PIC1.png)
+	$(V)python3 tools/psp/make_psar.py --recipes $(RECIPES_BIN) $(if $(wildcard icon/MK64-PIC1.png),--pic1 icon/MK64-PIC1.png,) -o $@
+
+$(EBOOT): $(PRX) $(BUILD_DIR)/PARAM.SFO $(DATA_PSAR) $(wildcard icon/MK64-ICON0.png icon/MK64-PIC1.png)
+	$(V)pack-pbp $@ $(BUILD_DIR)/PARAM.SFO $(PSP_EBOOT_ICON) NULL NULL $(PSP_EBOOT_PIC1) NULL $(PRX) $(DATA_PSAR)
+	@ls -lh $@
+
+# ---------------------------------------------------------------------------
+# release: clean build -> release/MK64Portable/ (EBOOT.PBP + README.txt), the
+# folder players drop into ms0:/PSP/GAME/, zipped as release/MK64Portable-<ver>.zip.
+# The FPS overlay is off by default and toggled by holding SELECT for 3 s, so
+# release builds keep it.  The dev EBOOT in build/psp is the same build.
+RELEASE_DIR := release
+RELEASE_VERSION ?= dev
+release:
+	$(MAKE) -f Makefile.psp clean
+	$(MAKE) -f Makefile.psp all EXTRA_CFLAGS="$(EXTRA_CFLAGS)"
+	rm -rf $(RELEASE_DIR)
+	mkdir -p $(RELEASE_DIR)/MK64Portable
+	cp $(EBOOT) $(RELEASE_DIR)/MK64Portable/EBOOT.PBP
+	printf 'MK64 Portable $(RELEASE_VERSION)\n\nAn unofficial fan port for the PSP. It contains no game data: it needs a ROM\nof Mario Kart 64 (USA) that you own. Not affiliated with or endorsed by Nintendo.\n\n1. Copy the MK64Portable folder to ms0:/PSP/GAME/ on your Memory Stick.\n2. Put your Mario Kart 64 (USA) ROM (.z64, .n64 or .v64) in that folder, next to EBOOT.PBP.\n3. Start MK64 Portable from the XMB. The first start reads the ROM and builds the game\n   data (about 13 MB) into a data/ folder; later starts skip this. Your save is kept there too.\n\nSingle-player races run at 60 fps; heavy stretches drop to 30 fps for a moment.\nAd hoc multiplayer: WLAN switch on, pick 2P/3P/4P GAME on every PSP, then HOST or JOIN.\nEvery PSP needs this same version of MK64 Portable.\n\nControls: steer with the analog nub or the D-pad; Cross = A, Square = B, Circle or L = Z,\nR = hop, Triangle = C-up, Start = pause. Hold Select for 3 seconds to show the FPS counter.\n' > $(RELEASE_DIR)/MK64Portable/README.txt
+	(cd $(RELEASE_DIR) && (md5 MK64Portable/EBOOT.PBP || md5sum MK64Portable/EBOOT.PBP) > MD5SUMS.txt && rm -f MK64Portable-$(RELEASE_VERSION).zip && zip -q -r MK64Portable-$(RELEASE_VERSION).zip MK64Portable)
+	@ls -lh $(RELEASE_DIR) $(RELEASE_DIR)/MK64Portable
+
+.PHONY: release
+
+-include $(DEP_FILES)
+
+# Remove built-in rules
+.SUFFIXES:

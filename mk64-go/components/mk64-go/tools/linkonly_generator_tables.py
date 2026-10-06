@@ -1,0 +1,23 @@
+# Extracted from tools/linkonly_generator.py (course name abbreviations)
+abbreviations = {
+    "banshee_boardwalk":  "BB",
+    "big_donut":          "BD",
+    "block_fort":         "BF",
+    "bowsers_castle":     "BC",
+    "choco_mountain":     "CM",
+    "dks_jungle_parkway": "DKJ",
+    "double_deck":        "DD",
+    "frappe_snowland":    "FS",
+    "kalimari_desert":    "KD",
+    "koopa_troopa_beach": "KTB",
+    "luigi_raceway":      "LR",
+    "mario_raceway":      "MR",
+    "moo_moo_farm":       "MMF",
+    "rainbow_road":       "RR",
+    "royal_raceway":      "RRW",
+    "sherbet_land":       "SL",
+    "skyscraper":         "SS",
+    "toads_turnpike":     "TT",
+    "wario_stadium":      "WS",
+    "yoshi_valley":       "YV",
+}

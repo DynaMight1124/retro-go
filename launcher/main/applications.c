@@ -701,6 +701,7 @@ void applications_init(void)
     // application("Neo Geo Pocket Color", "ngp", "ngp ngc zip", "ngpocket-go", 0);
     application("DOOM", "doom", "wad zip", "prboom-go", 0);
     application("MSX", "msx", "rom mx1 mx2 dsk", "fmsx", 0);
+    application("Mario Kart 64", "mk64", "z64 n64 v64", "mk64-go", 0);
 
     // Special app to bootstrap native esp32 binaries from the SD card
     // application("Bootstrap", "apps", "bin elf", "bootstrap", 0);

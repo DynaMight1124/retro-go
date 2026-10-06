@@ -1,0 +1,2108 @@
+#include <ultra64.h>
+#include <macros.h>
+#include <decode.h>
+#include <mk64.h>
+#include <defines.h>
+#include <sounds.h>
+#include "code_800029B0.h"
+#include "math_util.h"
+#include "kart_attributes.h"
+#include "path.h"
+#include "cpu_vehicles_camera_path.h"
+#include "render_player.h"
+#include "player_controller.h"
+#include "render_objects.h"
+#include "code_80057C60.h"
+#include "effects.h"
+#include "audio/external.h"
+#include "spawn_players.h"
+#include "menu_items.h"
+#include <course.h>
+
+s32 D_8018D900[8];
+s16 D_8018D920[8];
+s32 gPlayerStarEffectStartTime[8];
+s32 gPlayerBooEffectStartTime[8];
+s32 gPlayerOtherScreensAlpha[8]; // Used for the alpha of the other screens in split-screen mode
+s32 D_8018D990[8];
+
+UNUSED void func_unnamed(void) {
+}
+
+s32 func_8008C1D8(UNUSED s32* arg0) {
+    return 0;
+}
+
+void func_8008C1E0(UNUSED s32* arg0, UNUSED s32 arg1) {
+    arg1 = 4;
+}
+
+UNUSED void func_unnamed1(UNUSED s32 arg0) {
+}
+
+UNUSED void func_unnamed2(UNUSED s32 arg0) {
+}
+
+UNUSED void func_unnamed3(void) {
+}
+
+void func_8008C204(void) {
+}
+
+UNUSED void func_unnamed4(void) {
+}
+
+UNUSED void func_8008C214(void) {
+}
+
+UNUSED void func_unnamed5(void) {
+}
+
+UNUSED void func_unnamed6(void) {
+}
+
+UNUSED void func_unnamed7(void) {
+}
+
+UNUSED void func_unnamed8(void) {
+}
+
+UNUSED void func_8008C23C(void) {
+}
+
+UNUSED void func_unnamed9(void) {
+}
+UNUSED void func_unnamed10(void) {
+}
+UNUSED void func_unnamed11(void) {
+}
+UNUSED void func_unnamed12(void) {
+}
+UNUSED void func_unnamed13(void) {
+}
+UNUSED void func_unnamed14(void) {
+}
+UNUSED void func_unnamed15(void) {
+}
+UNUSED void func_unnamed16(void) {
+}
+UNUSED void func_unnamed17(void) {
+}
+UNUSED void func_unnamed18(void) {
+}
+UNUSED void func_unnamed19(void) {
+}
+UNUSED void func_unnamed20(void) {
+}
+UNUSED void func_unnamed21(void) {
+}
+
+UNUSED void func_unnamed22(UNUSED s32 arg0, UNUSED s32 arg1) {
+    arg1 = 4;
+}
+
+UNUSED void func_unnamed23(void) {
+}
+
+UNUSED void func_unnamed24(void) {
+}
+
+UNUSED void func_unnamed25(void) {
+}
+
+UNUSED void func_unnamed26(void) {
+}
+
+UNUSED void func_unnamed27(void) {
+}
+
+UNUSED void func_unnamed28(void) {
+}
+
+UNUSED void func_unnamed29(void) {
+}
+
+UNUSED void func_unnamed30(void) {
+}
+
+UNUSED void func_unnamed31(void) {
+}
+
+UNUSED void func_unnamed32(void) {
+}
+
+UNUSED void func_unnamed33(void) {
+}
+
+void func_8008C310(Player* player) {
+    // The << 9 is a hacky way to check for VERTICAL_TUMBLE_TRIGGER
+    if ((player->triggers & HIGH_TUMBLE_TRIGGER) || (player->triggers & LOW_TUMBLE_TRIGGER) ||
+        ((player->triggers << 9) < 0) || (player->triggers & HIT_BY_STAR_TRIGGER)) {
+        player->kartGraphics = ((u16) player->kartGraphics | EXPLOSION);
+    }
+}
+
+UNUSED void func_unnamed34(void) {
+}
+
+void clean_effect(Player* player, s8 playerIndex) {
+
+    if ((player->effects & HIT_BY_GREEN_SHELL_EFFECT) == HIT_BY_GREEN_SHELL_EFFECT) {
+        func_8008C6D0(player, playerIndex);
+    }
+
+    if (((player->effects & BANANA_SPINOUT_EFFECT) == BANANA_SPINOUT_EFFECT) ||
+        (player->effects & DRIVING_SPINOUT_EFFECT) == DRIVING_SPINOUT_EFFECT) {
+        remove_spinout_effects(player, playerIndex);
+    }
+    if ((player->effects & BANANA_NEAR_SPINOUT_EFFECT) == BANANA_NEAR_SPINOUT_EFFECT) {
+        remove_banana_near_spinout_effect(player, playerIndex);
+    }
+    if ((player->kartProps & DRIVING_NEAR_SPINOUT) != 0) {
+        remove_driving_near_spinout_effect(player, playerIndex);
+    }
+    if ((player->effects & MUSHROOM_EFFECT) == MUSHROOM_EFFECT) {
+        remove_mushroom_effect(player);
+    }
+    if ((player->effects & UNKNOWN_EFFECT_0x80000) == UNKNOWN_EFFECT_0x80000) {
+        func_8008D760(player);
+    }
+    if ((player->effects & UNKNOWN_EFFECT_0x800000) == UNKNOWN_EFFECT_0x800000) {
+        func_8008D97C(player);
+    }
+    if ((player->effects & EXPLOSION_CRASH_EFFECT) == EXPLOSION_CRASH_EFFECT) {
+        func_8008E884(player, playerIndex);
+    }
+    if ((player->effects & HIT_BY_STAR_EFFECT) == HIT_BY_STAR_EFFECT) {
+        remove_hit_by_star_effect(player, playerIndex);
+    }
+    if ((player->effects & BOOST_RAMP_ASPHALT_EFFECT) == BOOST_RAMP_ASPHALT_EFFECT) {
+        remove_boost_ramp_asphalt_effect(player);
+    }
+    if ((player->effects & BOOST_RAMP_WOOD_EFFECT) == BOOST_RAMP_WOOD_EFFECT) {
+        remove_boost_ramp_wood_effect(player);
+    }
+    if ((player->effects & EARLY_START_SPINOUT_EFFECT) == EARLY_START_SPINOUT_EFFECT) {
+        func_8008F3E0(player);
+    }
+    if ((player->effects & TERRAIN_TUMBLE_EFFECT) == TERRAIN_TUMBLE_EFFECT) {
+        func_8008F5A4(player, playerIndex);
+    }
+    if ((player->effects & UNKNOWN_EFFECT_0x10000000) == UNKNOWN_EFFECT_0x10000000) {
+        func_8008FEDC(player, playerIndex);
+    }
+    player->kartProps = (s16) (player->kartProps & ~BACK_UP);
+    player->effects = (s32) (player->effects & ~AB_SPIN_EFFECT);
+}
+
+void func_8008C528(Player* player, s8 playerIndex) {
+    UNUSED s32 sp24;
+    s32 temp_v1;
+    clean_effect(player, playerIndex);
+    func_8008C310(player);
+    temp_v1 = player->characterId;
+    player->unk_0C2 = 0;
+    player->kartHopJerk = D_800E37B0[temp_v1];
+    player->kartHopAcceleration = 0.0f;
+
+    player->kartHopVelocity = D_800E3790[temp_v1];
+    player->unk_0A8 = 0;
+    player->effects = player->effects | HIT_BY_GREEN_SHELL_EFFECT;
+    player->effects = player->effects & ~DRIFTING_EFFECT;
+    player->unk_0C0 = 0;
+    player->unk_236 = 2;
+    player->unk_042 = 0;
+    if (((player->type & PLAYER_HUMAN) == PLAYER_HUMAN) &&
+        ((player->type & PLAYER_INVISIBLE_OR_BOMB) != PLAYER_INVISIBLE_OR_BOMB)) {
+        func_800C90F4(playerIndex, (temp_v1 * 0x10) + 0x29008005);
+        func_800C9060(playerIndex, SOUND_ACTION_EXPLOSION);
+    } else {
+        play_cpu_sound_effect(playerIndex, player);
+    }
+    player->triggers = (s32) (player->triggers & ~LOW_TUMBLE_TRIGGER);
+}
+
+void func_8008C62C(Player* player, s8 playerIndex) {
+
+    player_decelerate_alternative(player, 5.0f);
+    player->unk_0A8 += (s16) 0xA0;
+    player->unk_042 += (s16) DEGREES(10);
+    if (player->unk_0A8 >= 0x2000) {
+        player->unk_0A8 = 0;
+        player->unk_236 = (s16) (player->unk_236 - 1);
+        if (player->unk_236 == 0) {
+            player->unk_0A8 = 0x2000;
+            func_8008C6D0(player, playerIndex);
+            if (gModeSelection == BATTLE) {
+                pop_player_balloon(player, playerIndex);
+            }
+        }
+    }
+}
+
+void func_8008C6D0(Player* player, s8 playerIndex) {
+
+    player->unk_206 = 0;
+    player->slopeAccel = 0;
+    player->effects = (s32) (player->effects & ~HIT_BY_GREEN_SHELL_EFFECT);
+    player->unk_0A8 = 0;
+    player->unk_0C0 = 0;
+    player->steerPosition = 0;
+    player->unk_236 = 0;
+    player->unk_078 = 0;
+    player->currentSpeed = 0.0f;
+    D_80165190[0][playerIndex] = 1;
+    D_80165190[1][playerIndex] = 1;
+    D_80165190[2][playerIndex] = 1;
+    D_80165190[3][playerIndex] = 1;
+    player->unk_042 = 0;
+}
+
+void add_spinout_effect(Player* player, s8 playerIndex) {
+    clean_effect(player, playerIndex);
+    if (((player->effects & BANANA_SPINOUT_EFFECT) != BANANA_SPINOUT_EFFECT) &&
+        ((player->effects & DRIVING_SPINOUT_EFFECT) != DRIVING_SPINOUT_EFFECT)) {
+        player->effects &= ~DRIFTING_EFFECT;
+
+        if ((player->unk_0C0 / DEGREES(1)) >= 0) {
+            player->effects |= DRIVING_SPINOUT_EFFECT;
+        } else {
+            player->effects |= BANANA_SPINOUT_EFFECT;
+        }
+
+        player->kartGraphics |= WHIRRR;
+        // clang-format off
+        player->unk_0C0 = 0; player->steerPosition = 0; player->unk_078 = 0; player->unk_0AE = player->rotation[1]; player->unk_0B2 = 2;
+        // clang-format on
+        D_80165190[0][playerIndex] = 1;
+        D_80165190[1][playerIndex] = 1;
+        D_80165190[2][playerIndex] = 1;
+        D_80165190[3][playerIndex] = 1;
+        gPlayerCurrentSpeed[playerIndex] = player->currentSpeed;
+        gTimerBoostTripleACombo[playerIndex] = 0;
+        gIsPlayerTripleAButtonCombo[playerIndex] = false;
+        gCountASwitch[playerIndex] = 0;
+        gFrameSinceLastACombo[playerIndex] = 0;
+        D_8018D920[playerIndex] = 0;
+
+        if (((player->type & PLAYER_HUMAN) == PLAYER_HUMAN) &&
+            ((player->type & PLAYER_INVISIBLE_OR_BOMB) != PLAYER_INVISIBLE_OR_BOMB)) {
+            func_800C90F4(playerIndex, (player->characterId * 0x10) + 0x29008003);
+        } else {
+            play_cpu_sound_effect(playerIndex, player);
+        }
+    }
+}
+
+void remove_spinout_effects(Player* player, s8 playerId) {
+    player->effects &= ~BANANA_SPINOUT_EFFECT;
+    player->effects &= ~DRIVING_SPINOUT_EFFECT;
+    player->unk_0A8 = 0;
+    player->rotation[1] = player->unk_0AE;
+    player->steerPosition = 0;
+    player->unk_0C0 = 0;
+    player->effects &= ~BANANA_NEAR_SPINOUT_EFFECT;
+
+    D_80165190[0][playerId] = 1;
+    D_80165190[1][playerId] = 1;
+    D_80165190[2][playerId] = 1;
+    D_80165190[3][playerId] = 1;
+
+    player->unk_046 &= ~INSTANT_SPINOUT;
+
+    if ((gIsPlayerTripleAButtonCombo[playerId] == true) && ((player->type & PLAYER_HUMAN) == PLAYER_HUMAN)) {
+        player->currentSpeed = (f32) (player->currentSpeed + 100.0f);
+    }
+    if ((gModeSelection == VERSUS) && ((player->type & PLAYER_CPU) == PLAYER_CPU) && (!gDemoMode) &&
+        ((player->lakituProps & HELD_BY_LAKITU) == 0) && (gGPCurrentRaceRankByPlayerId[playerId] != 0)) {
+        player->triggers = (s32) (player->triggers | VERTICAL_TUMBLE_TRIGGER);
+    }
+}
+
+void func_8008C9EC(Player* player, s8 playerIndex) {
+    s16 stackPadding1;
+    s16 stackPadding2;
+    s16 sp30[5] = { DEGREES(6), DEGREES(6), DEGREES(12), DEGREES(9), DEGREES(10) };
+
+    player->unk_206 = 0;
+    player->slopeAccel = 0;
+    if ((player->unk_046 & INSTANT_SPINOUT) == INSTANT_SPINOUT) {
+        player_decelerate_alternative(player, 100.0f);
+    } else {
+        if ((player->type & PLAYER_HUMAN) == PLAYER_HUMAN) {
+            player_decelerate_alternative(player, 1.0f);
+        } else {
+            player_decelerate_alternative(player, 4.0f);
+        }
+        if (!(player->type & PLAYER_HUMAN)) {
+            player_decelerate_alternative(player, 30.0f);
+        }
+    }
+    if ((player->effects & BANANA_SPINOUT_EFFECT) == BANANA_SPINOUT_EFFECT) {
+        player->rotation[1] -= sp30[player->unk_0B2];
+        D_8018D920[playerIndex] -= sp30[player->unk_0B2];
+        stackPadding1 = (u16) D_8018D920[playerIndex] / (0x10000 / (0x168 / (sp30[player->unk_0B2] / DEGREES(1))));
+        if (stackPadding1 == 0) {
+            player->unk_0B2--;
+            if (player->unk_0B2 <= 0) {
+                if (gModeSelection == BATTLE) {
+                    pop_player_balloon(player, playerIndex);
+                }
+                remove_spinout_effects(player, playerIndex);
+            }
+        }
+    } else {
+        player->rotation[1] += sp30[player->unk_0B2];
+        D_8018D920[playerIndex] -= sp30[player->unk_0B2];
+        stackPadding2 = (u16) D_8018D920[playerIndex] / (0x10000 / (0x168 / (sp30[player->unk_0B2] / DEGREES(1))));
+        if (stackPadding2 == 0) {
+            player->unk_0B2--;
+            if (player->unk_0B2 <= 0) {
+                remove_spinout_effects(player, playerIndex);
+                if (gModeSelection == BATTLE) {
+                    pop_player_balloon(player, playerIndex);
+                }
+            }
+        }
+    }
+    if ((gIsPlayerTripleAButtonCombo[playerIndex] == true) && ((player->type & PLAYER_HUMAN) == PLAYER_HUMAN)) {
+        gTimerBoostTripleACombo[playerIndex] = 0x00000078;
+        if (player->currentSpeed <= 90.0f) {
+            player->currentSpeed = 90.0f;
+        }
+    }
+}
+
+void trigger_hit_banana(Player* player, s8 playerIndex) {
+    clean_effect(player, playerIndex);
+
+    player->triggers &= ~HIT_BANANA_TRIGGER;
+    player->swerveTimer = 0;
+    player->swerveAccelInit = 3.0f;
+    player->swerveDirection = 1;
+    player->effects &= ~DRIFTING_EFFECT;
+
+    if (((player->steerPosition >> 16) >= 20) || ((player->steerPosition >> 16) <= -20) ||
+        (((player->speed / 18.0f) * 216.0f) <= 30.0f) || ((player->effects & MIDAIR_EFFECT) != 0) ||
+        (((player->type & PLAYER_HUMAN) == 0) && ((player->effects & LOST_RACE_EFFECT) == 0))) {
+        add_spinout_effect(player, playerIndex);
+    } else {
+        player->effects |= BANANA_NEAR_SPINOUT_EFFECT;
+    }
+}
+
+// almost identical to apply_driving_near_spinout_effect, see there for more documentation
+void apply_banana_near_spinout_effect(Player* player, s8 playerIndex) {
+    f32 swerve_accel_init;
+    s16 swerve_timer;
+    s16 swerve_direction;
+    s16 swerve_velo_current;
+
+    swerve_accel_init = player->swerveAccelInit;
+    swerve_timer = player->swerveTimer;
+    swerve_direction = player->swerveDirection;
+    swerve_timer++;
+    swerve_velo_current = (swerve_timer * swerve_accel_init) - (0.2 * (swerve_timer * swerve_timer));
+    if ((swerve_timer != 0) && (swerve_velo_current < 0)) {
+        swerve_timer = 0;
+        swerve_direction = -swerve_direction;
+        swerve_accel_init *= 0.8;
+        // requires braking to recover. A driving spinout allows just releasing gas as well
+        if ((player->effects & BRAKING_EFFECT) == BRAKING_EFFECT) {
+            player->effects |= BANANA_SPINOUT_SAVE_EFFECT;
+        }
+        if (swerve_accel_init <= 1.0f) {
+            player->effects &= ~BANANA_NEAR_SPINOUT_EFFECT;
+            if ((player->effects & BANANA_SPINOUT_SAVE_EFFECT) != BANANA_SPINOUT_SAVE_EFFECT) {
+                add_spinout_effect(player, playerIndex);
+                swerve_timer = 0;
+            } else {
+                player->kartGraphics |= WHISTLE;
+                player->effects &= ~BANANA_SPINOUT_SAVE_EFFECT;
+                if ((player->type & PLAYER_HUMAN) == PLAYER_HUMAN) {
+                    func_800C90F4(playerIndex, (player->characterId * 0x10) + 0x29008008);
+                    swerve_timer = 0;
+                }
+            }
+        }
+    }
+    swerve_velo_current *= swerve_direction;
+    if ((swerve_velo_current <= 0) && (swerve_direction == 1)) {
+        swerve_velo_current = 0;
+    }
+    if ((swerve_velo_current >= 0) && (swerve_direction == -1)) {
+        swerve_velo_current = 0;
+    }
+    player->unk_078 += swerve_velo_current * 18;
+    player->swerveAccelInit = swerve_accel_init;
+    player->swerveTimer = swerve_timer;
+    player->swerveDirection = swerve_direction;
+    if (player->effects & MIDAIR_EFFECT) {
+        add_spinout_effect(player, playerIndex);
+        player->effects &= ~BANANA_NEAR_SPINOUT_EFFECT;
+    }
+}
+
+void remove_banana_near_spinout_effect(Player* player, UNUSED s8 playerIndex) {
+    player->effects &= ~BANANA_NEAR_SPINOUT_EFFECT;
+}
+
+void trigger_driving_spinout(Player* player, s8 playerIndex) {
+    clean_effect(player, playerIndex);
+
+    player->triggers &= ~DRIVING_SPINOUT_TRIGGER;
+    player->swerveTimer = 0;
+    player->swerveAccelInit = 2.0f;
+    player->swerveDirection = 1;
+    player->effects &= ~DRIFTING_EFFECT;
+    player->kartProps |= DRIVING_NEAR_SPINOUT;
+}
+
+void apply_driving_near_spinout_effect(Player* player, s8 playerIndex) {
+    f32 swerve_accel_init;
+    s16 swerve_timer;
+    s16 swerve_direction;
+    s16 swerve_velo_current;
+
+    // These properties are only used for swerving before spinouts
+    swerve_accel_init = player->swerveAccelInit;
+    swerve_timer = player->swerveTimer;
+    swerve_direction = player->swerveDirection;
+    swerve_timer++;
+
+    // Standard physics formula: Velo_current = velo_init + (accel_init * time) + (accel_jerk * time**2) / 2
+    swerve_velo_current = (swerve_accel_init * swerve_timer) - (0.1 * (swerve_timer * swerve_timer)); 
+
+    // Once one swerve finishes, setup to start a smaller one in the opposite direction
+    if ((swerve_timer != 0) && (swerve_velo_current < 0)) { // (10 * swerve_accel_init < swerve_timer))
+        swerve_timer = 0;
+        swerve_direction = -swerve_direction;
+        swerve_accel_init *= 0.9;
+        if (((player->effects & BRAKING_EFFECT) == BRAKING_EFFECT) || !(player->kartProps & THROTTLE)) {
+            player->effects |= BANANA_SPINOUT_SAVE_EFFECT;
+        }
+        // stop swerving once they are small enough
+        if (swerve_accel_init <= 1.3) {
+            player->kartProps &= ~DRIVING_NEAR_SPINOUT;
+            if ((player->effects & BANANA_SPINOUT_SAVE_EFFECT) != BANANA_SPINOUT_SAVE_EFFECT) {
+                add_spinout_effect(player, playerIndex);
+                swerve_timer = 0;
+            } else {
+                player->kartGraphics |= WHISTLE;
+                player->effects &= ~BANANA_SPINOUT_SAVE_EFFECT;
+                if ((player->type & PLAYER_HUMAN) == PLAYER_HUMAN) {
+                    func_800C90F4(playerIndex, (player->characterId * 0x10) + 0x29008008);
+                    swerve_timer = 0;
+                }
+            }
+        }
+    }
+    swerve_velo_current *= swerve_direction;
+    if ((swerve_velo_current <= 0) && (swerve_direction == 1)) {
+        swerve_velo_current = 0;
+    }
+    if ((swerve_velo_current >= 0) && (swerve_direction == -1)) {
+        swerve_velo_current = 0;
+    }
+    /* unk_078 contributes to rotational velocity (spin). It looks to be set each frame in steering code
+    (e.g. func_80033AE0), so it does not accumulate values from swerve_velo_current over multiple frames */
+    player->unk_078 += swerve_velo_current * 20;
+    player->swerveAccelInit = swerve_accel_init;
+    player->swerveTimer = swerve_timer;
+    player->swerveDirection = swerve_direction;
+    if (player->effects & MIDAIR_EFFECT) {
+        add_spinout_effect(player, playerIndex);
+        player->kartProps &= ~DRIVING_NEAR_SPINOUT;
+    }
+}
+
+void remove_driving_near_spinout_effect(Player* player, UNUSED s8 playerIndex) {
+    player->kartProps &= ~DRIVING_NEAR_SPINOUT;
+}
+
+void trigger_shroom(Player* player, s8 playerIndex) {
+
+    clean_effect(player, playerIndex);
+
+    player->effects |= MUSHROOM_EFFECT;
+    player->triggers &= ~SHROOM_TRIGGER;
+    player->unk_DB4.unk0 = 0;
+    player->unk_DB4.unk8 = 8.0f;
+
+    if (D_8015F890 != 1) {
+        if (((player->type & PLAYER_HUMAN) == PLAYER_HUMAN) &&
+            ((player->type & PLAYER_INVISIBLE_OR_BOMB) != PLAYER_INVISIBLE_OR_BOMB)) {
+            func_800C9250(playerIndex);
+            func_800C9060(playerIndex, 0x1900A40B);
+        }
+    } else {
+        if (player == gPlayerOne) {
+            func_800C9250(playerIndex);
+            func_800C9060(playerIndex, 0x1900A40B);
+        }
+    }
+
+    player->boostTimer = 0x50;
+}
+
+void apply_mushroom_effect(Player* player) {
+    player->currentSpeed = (f32) player->topSpeed;
+    if (player->boostTimer > 0) {
+        --player->boostTimer;
+    }
+
+    if (player->boostTimer != 0) {
+        move_f32_towards(&player->boostPower, 400.0f, 0.5f);
+    } else {
+        move_f32_towards(&player->boostPower, 0.0f, 0.1f);
+    }
+
+    if (player->boostPower <= 1.0f) {
+        player->effects &= ~MUSHROOM_EFFECT;
+    }
+}
+
+void remove_mushroom_effect(Player* player) {
+    player->effects &= ~MUSHROOM_EFFECT;
+    player->boostPower = 0.0f;
+}
+
+void func_8008D570(Player* player, s8 playerIndex) {
+    clean_effect(player, playerIndex);
+
+    player->unk_0AE = player->rotation[1];
+    player->effects |= UNKNOWN_EFFECT_0x80000;
+    player->effects &= ~DRIFTING_EFFECT;
+    player->triggers &= ~UNUSED_TRIGGER_0x1000;
+    player->kartHopJerk = D_800E3730[player->characterId];
+    player->kartHopAcceleration = 0.0f;
+    player->kartHopVelocity = (f32) D_800E3710[player->characterId];
+    player->unk_0B2 = 1;
+    player->unk_0C0 = 0;
+    player->steerPosition = 0;
+    player->unk_078 = 0;
+    D_8018D920[playerIndex] = 0;
+
+    if (((player->type & PLAYER_HUMAN) == PLAYER_HUMAN) &&
+        ((player->type & PLAYER_INVISIBLE_OR_BOMB) != PLAYER_INVISIBLE_OR_BOMB)) {
+        func_800C9060(playerIndex, 0x19008002);
+    }
+
+    if (((player->type & PLAYER_HUMAN) == PLAYER_HUMAN) &&
+        ((player->type & PLAYER_INVISIBLE_OR_BOMB) != PLAYER_INVISIBLE_OR_BOMB)) {
+        func_800C90F4(playerIndex, (player->characterId * 0x10) + 0x2900800C);
+    }
+}
+
+void func_8008D698(Player* player, s8 playerIndex) {
+    s16 temp;
+
+    if (player->unk_0B2 == 0) {
+        player->rotation[1] = player->unk_0AE;
+        temp = 0;
+    } else {
+        player->rotation[1] -= DEGREES(10);
+        D_8018D920[playerIndex] -= DEGREES(10);
+        temp = ((u16) D_8018D920[playerIndex] / DEGREES(10));
+    }
+    if (temp == 0) {
+        --player->unk_0B2;
+        if (player->unk_0B2 <= 0) {
+            player->unk_0B2 = 0;
+        }
+        if ((player->unk_0B2 == 0) && ((player->effects & MIDAIR_EFFECT) != MIDAIR_EFFECT)) {
+            func_8008D760(player);
+        }
+    }
+}
+
+void func_8008D760(Player* player) {
+    player->unk_0A8 = 0;
+    player->steerPosition = 0;
+    player->unk_0C0 = 0;
+    player->rotation[1] = player->unk_0AE;
+    player->effects &= ~UNKNOWN_EFFECT_0x80000;
+    player->kartGravity = gKartGravityTable[player->characterId];
+    player->type &= ~PLAYER_UNKNOWN_0x80;
+}
+
+void func_8008D7B0(Player* player, s8 playerIndex) {
+    clean_effect(player, playerIndex);
+
+    player->unk_0AE = player->rotation[1];
+    player->effects |= UNKNOWN_EFFECT_0x800000;
+    player->effects &= ~DRIFTING_EFFECT;
+    player->triggers &= ~UNUSED_TRIGGER_0x20000;
+    player->kartHopJerk = D_800E3770[player->characterId];
+    player->kartHopAcceleration = 0.0f;
+    player->kartHopVelocity = D_800E3750[player->characterId];
+    D_8018D920[playerIndex] = 0;
+    player->unk_0B2 = 4;
+    player->unk_0C0 = 0;
+    player->steerPosition = 0;
+    player->unk_078 = 0;
+
+    if (((player->type & PLAYER_HUMAN) == PLAYER_HUMAN) &&
+        ((player->type & PLAYER_INVISIBLE_OR_BOMB) != PLAYER_INVISIBLE_OR_BOMB)) {
+        func_800C90F4(playerIndex, (player->characterId * 0x10) + 0x29008003);
+    }
+}
+
+void func_8008D8B4(Player* player, s8 playerIndex) {
+    s16 temp;
+
+    if (player->unk_0B2 == 0) {
+        player->rotation[1] = player->unk_0AE;
+        temp = 0;
+    } else {
+        player->rotation[1] -= DEGREES(10);
+        D_8018D920[playerIndex] -= DEGREES(10);
+        temp = ((u16) (D_8018D920[playerIndex]) / DEGREES(10));
+    }
+    if (temp == 0) {
+        --player->unk_0B2;
+        if (player->unk_0B2 <= 0) {
+            player->unk_0B2 = 0;
+        }
+        if ((player->unk_0B2 == 0) && ((player->effects & MIDAIR_EFFECT) != MIDAIR_EFFECT)) {
+            func_8008D97C(player);
+        }
+    }
+}
+
+void func_8008D97C(Player* player) {
+    player->unk_0A8 = 0;
+    player->steerPosition = 0;
+    player->unk_0C0 = 0;
+    player->rotation[1] = player->unk_0AE;
+    player->effects &= ~UNKNOWN_EFFECT_0x800000;
+    player->kartGravity = gKartGravityTable[player->characterId];
+}
+
+void func_8008D9C0(Player* player) {
+    player->unk_DA0 += 8.0f;
+    if (player->unk_DA0 >= 140.0f) {
+        player->unk_DA0 = 140.0f;
+    }
+
+    if (player->unk_D98 == 1) {
+        player->unk_D9C += player->unk_DA0;
+        if (2002.0f <= player->unk_D9C) {
+            player->unk_DA0 = 10.0f;
+            player->unk_D98 *= -1;
+        }
+    }
+    if (player->unk_D98 == -1) {
+        player->unk_D9C -= player->unk_DA0;
+        if (player->unk_D9C <= -2002.0f) {
+            player->unk_DA0 = 10.0f;
+            player->unk_D98 *= -1;
+        }
+    }
+}
+
+void trigger_squish(Player* player, s8 playerIndex) {
+    clean_effect(player, playerIndex);
+
+    if ((player->effects & SQUISH_EFFECT) == 0) {
+        player->unk_DB4.unk2 = 0;
+        player->unk_238 = 0;
+        player->unk_DB4.unk10 = 4.5f;
+        D_8018D990[playerIndex] = 0;
+        player->effects &= ~(POST_SQUISH_EFFECT | DRIFTING_EFFECT);
+        D_80165190[0][playerIndex] = 1;
+        D_80165190[1][playerIndex] = 1;
+        D_80165190[2][playerIndex] = 1;
+        D_80165190[3][playerIndex] = 1;
+        player->unk_D98 = 1;
+        player->unk_D9C = 0.0f;
+        player->unk_DA0 = 65.0f;
+
+        if ((player->triggers & THWOMP_SQUISH_TRIGGER) != 0) {
+            player->unk_046 |= 0x80;
+        }
+
+        if (((player->type & PLAYER_HUMAN) != 0) && ((player->effects & SQUISH_EFFECT) == 0)) {
+            func_800C90F4(playerIndex, (player->characterId * 0x10) + SOUND_ARG_LOAD(0x29, 0x00, 0x80, 0x05));
+        }
+
+        player->effects |= SQUISH_EFFECT;
+        if (((player->type) & PLAYER_CPU) != 0) {
+            play_cpu_sound_effect(playerIndex, player);
+        }
+    }
+}
+
+void apply_hit_effect(Player* player, s8 playerIndex) {
+    player->unk_0C2 = 0;
+    player->unk_0A8 = 0;
+    player->steerPosition = 0;
+    player->unk_0C0 = 0;
+    player->unk_08C = 0.0f;
+    player->currentSpeed = 0.0f;
+    // clang-format off
+    if ((player->collision.surfaceDistance[2] >= 600.0f) || ((player->effects & LOST_RACE_EFFECT) != 0)) { D_8018D990[playerIndex] = 3; } // placed block on same line to match
+    // clang-format on
+
+    switch (D_8018D990[playerIndex]) {
+        case 0:
+            player->unk_DB4.unk10 = 4.5f;
+            if (player->unk_238 < 0x3D) {
+                ++player->unk_238;
+            }
+
+            if ((player->unk_046 & 0x80) != 0) {
+                if ((player->triggers & THWOMP_SQUISH_TRIGGER) == 0) {
+                    D_8018D990[playerIndex] = 1;
+                    player->unk_238 = 0;
+                    if ((player->type & PLAYER_HUMAN) != 0) {
+                        func_800C9060(playerIndex, 0x1901904B);
+                        break;
+                    }
+                }
+            } else {
+                ++player->unk_238;
+                if (player->unk_238 >= 0x1E) {
+                    D_8018D990[playerIndex] = 1;
+                    player->unk_238 = 0;
+                    if ((player->type & PLAYER_HUMAN) != 0) {
+                        func_800C9060(playerIndex, 0x1901904B);
+                        break;
+                    }
+                }
+                break;
+            }
+
+            break;
+        case 1:
+            player->unk_DB4.unk10 = 4.5f;
+            player->pos[1] += 0.13;
+            ++player->unk_238;
+
+            if ((player->unk_046 & 0x80) != 0) {
+                if (player->unk_238 >= 0x32) {
+                    D_8018D990[playerIndex] = 2;
+                    player->unk_238 = 0;
+                    player->unk_046 &= 0xFF7F;
+                }
+            } else if (player->unk_238 >= 0x50) {
+                D_8018D990[playerIndex] = 2;
+                player->unk_238 = 0;
+            }
+
+            player->unk_DA0 += 6.0f;
+            if (player->unk_DA0 >= 90.0f) {
+                player->unk_DA0 = 90.0f;
+            }
+
+            player->unk_D9C += player->unk_DA0;
+            if (3458.0f <= player->unk_D9C) {
+                player->unk_DA0 = 0.0f;
+                break;
+            }
+            break;
+        case 2:
+            ++player->unk_238;
+            if (player->unk_238 >= 0x259) {
+                D_8018D990[playerIndex] = 3;
+                player->unk_238 = 0;
+            }
+
+            if (player->collision.surfaceDistance[2] >= 600.0f) {
+                D_8018D990[playerIndex] = 3;
+            }
+
+            player->unk_DB4.unk10 = 4.5f;
+            player->pos[1] -= 0.085;
+
+            if ((player->effects & MIDAIR_EFFECT) != MIDAIR_EFFECT) {
+                D_8018D990[playerIndex] = 3;
+                player->unk_238 = 0;
+            }
+
+            func_8008D9C0(player);
+            break;
+        case 3:
+            player->unk_DB4.unk10 = 3.0f;
+            player->effects &= ~SQUISH_EFFECT;
+            player->unk_DB4.unk2 = 0;
+            player->effects |= POST_SQUISH_EFFECT;
+            player->size = 1.0f;
+            player->boundingBoxSize = gKartBoundingBoxSizeTable[player->characterId];
+            D_80165190[0][playerIndex] = 1;
+            D_80165190[1][playerIndex] = 1;
+            D_80165190[2][playerIndex] = 1;
+            D_80165190[3][playerIndex] = 1;
+
+            if ((player->type & PLAYER_HUMAN) != 0) {
+                func_800C90F4(playerIndex, (player->characterId * 0x10) + 0x29008008);
+            }
+            break;
+    }
+}
+
+void trigger_lightning_strike(Player* player, s8 playerIndex) {
+    clean_effect(player, playerIndex);
+
+    player->triggers &= ~LIGHTNING_STRIKE_TRIGGER;
+    player->effects |= (LIGHTNING_EFFECT | LIGHTNING_STRIKE_EFFECT);
+    player->effects &= ~DRIFTING_EFFECT;
+    player->unk_08C *= 0.6;
+    player->unk_0B0 = 0;
+    player->size = 1.0f;
+    gPlayerStarEffectStartTime[playerIndex] = gCourseTimer;
+    player->unk_0AE = player->rotation[1];
+    player->unk_0B2 = 2;
+    player->unk_0C0 = 0;
+    player->steerPosition = 0;
+    player->unk_078 = 0;
+
+    D_80165190[0][playerIndex] = 1;
+    D_80165190[1][playerIndex] = 1;
+    D_80165190[2][playerIndex] = 1;
+    D_80165190[3][playerIndex] = 1;
+
+    D_8018D920[playerIndex] = 0;
+
+    if (((player->type & PLAYER_HUMAN) == PLAYER_HUMAN) &&
+        ((player->type & PLAYER_INVISIBLE_OR_BOMB) != PLAYER_INVISIBLE_OR_BOMB)) {
+        func_800C90F4(playerIndex, (player->characterId * 0x10) + 0x29008003);
+    } else {
+        play_cpu_sound_effect(playerIndex, player);
+    }
+    if (gModeSelection == BATTLE) {
+        pop_player_balloon(player, playerIndex);
+    }
+}
+
+void apply_lightning_effect(Player* player, s8 playerIndex) {
+    s16 test;
+    if (((player->effects & ENEMY_BONK_EFFECT) == ENEMY_BONK_EFFECT) &&
+        ((player->effects & SQUISH_EFFECT) != SQUISH_EFFECT)) {
+        player->effects &= ~LIGHTNING_STRIKE_EFFECT;
+        player->unk_0A8 = 0;
+        player->steerPosition = 0;
+        player->unk_0C0 = 0;
+        player->rotation[1] = player->unk_0AE;
+        remove_lightning_effect(player, playerIndex);
+        D_80165190[0][playerIndex] = 1;
+        D_80165190[1][playerIndex] = 1;
+        D_80165190[2][playerIndex] = 1;
+        D_80165190[3][playerIndex] = 1;
+        trigger_squish(player, playerIndex);
+    } else if ((player->effects & LIGHTNING_STRIKE_EFFECT) == LIGHTNING_STRIKE_EFFECT) {
+        player->rotation[1] -= DEGREES(8);
+        D_8018D920[playerIndex] -= DEGREES(8);
+        test = (u16) D_8018D920[playerIndex] / DEGREES(8);
+        if (test == 0) {
+            player->unk_0B2--;
+            if (player->unk_0B2 <= 0) {
+                player->unk_0A8 = 0;
+                player->effects &= ~LIGHTNING_STRIKE_EFFECT;
+                player->steerPosition = 0;
+                player->unk_0C0 = 0;
+                player->rotation[1] = player->unk_0AE;
+                D_80165190[0][playerIndex] = 1;
+                D_80165190[1][playerIndex] = 1;
+                D_80165190[2][playerIndex] = 1;
+                D_80165190[3][playerIndex] = 1;
+            }
+        }
+        player_decelerate_alternative(player, 1.0f);
+    } else {
+        player->unk_0B0 += 1;
+        player->unk_08C = (f32) ((f64) player->unk_08C * 0.6);
+        if ((player->unk_0B0 == 1) && (player->type & PLAYER_HUMAN)) {
+            func_800C90F4(playerIndex, (player->characterId * 0x10) + 0x29008005);
+        }
+        if ((player->unk_0B0 >= 0) && (player->unk_0B0 < 0x1CC)) {
+            move_f32_towards(&player->size, 0.7f, 0.1f);
+            move_f32_towards(&player->boundingBoxSize,
+                             (f32) ((f64) gKartBoundingBoxSizeTable[player->characterId] * 0.9), 0.1f);
+        } else {
+            remove_lightning_effect(player, playerIndex);
+            if (player->type & PLAYER_HUMAN) {
+                func_800C90F4(playerIndex, (player->characterId * 0x10) + 0x29008008);
+            }
+        }
+    }
+}
+
+void remove_lightning_effect(Player* player, UNUSED s8 playerIndex) {
+    move_f32_towards(&player->size, 1.0f, 0.1f);
+    move_f32_towards(&player->boundingBoxSize, gKartBoundingBoxSizeTable[player->characterId], 0.1f);
+
+    player->effects &= ~LIGHTNING_EFFECT;
+    player->size = 1.0f;
+    player->boundingBoxSize = gKartBoundingBoxSizeTable[player->characterId];
+    player->unk_DB4.unk10 = 3.0f;
+    player->unk_DB4.unk2 = 0;
+    player->effects |= POST_SQUISH_EFFECT;
+
+    if ((player->effects & LIGHTNING_STRIKE_EFFECT) == LIGHTNING_STRIKE_EFFECT) {
+        player->rotation[1] = player->unk_0AE;
+    }
+
+    player->effects &= ~LIGHTNING_STRIKE_EFFECT;
+}
+
+void func_8008E4A4(Player* player, s8 playerIndex) {
+    player->unk_206 = 0;
+    player->slopeAccel = 0;
+    player->unk_0C0 = 0;
+    player->steerPosition = 0;
+    player->unk_0C2 = 0xF;
+    player->unk_042 += DEGREES(15);
+    player->unk_08C = 0.0f;
+    player->currentSpeed = 0.0f;
+    player->velocity[0] = 0.0f;
+    player->velocity[2] = 0.0f;
+    player->effects &= ~(BANANA_SPINOUT_EFFECT | DRIVING_SPINOUT_EFFECT);
+
+    if ((player->effects & MIDAIR_EFFECT) != MIDAIR_EFFECT) {
+        ++player->unk_0E0;
+    }
+
+    if (player->unk_0E0 == 3) {
+        player->effects &= ~EXPLOSION_CRASH_EFFECT;
+        player->unk_0A8 = 0;
+        player->unk_236 = 0;
+        D_80165190[0][playerIndex] = 1;
+        D_80165190[1][playerIndex] = 1;
+        D_80165190[2][playerIndex] = 1;
+        D_80165190[3][playerIndex] = 1;
+        player->unk_042 = 0;
+        player->type &= ~PLAYER_UNKNOWN_0x80;
+
+        if ((gIsPlayerTripleAButtonCombo[playerIndex] == true) && ((player->type & PLAYER_HUMAN) == PLAYER_HUMAN)) {
+            player->currentSpeed += 100.0f;
+        }
+        if (gModeSelection == BATTLE) {
+            pop_player_balloon(player, playerIndex);
+        }
+    } else {
+        player->unk_0A8 += 0x80;
+        if (player->unk_0A8 >= 0x2000) {
+            player->unk_0A8 = 0;
+            --player->unk_236;
+            if (player->unk_236 == 0) {
+                player->effects &= ~EXPLOSION_CRASH_EFFECT;
+                player->unk_236 = 0;
+                D_80165190[0][playerIndex] = 1;
+                D_80165190[1][playerIndex] = 1;
+                D_80165190[2][playerIndex] = 1;
+                D_80165190[3][playerIndex] = 1;
+                player->unk_042 = 0;
+
+                if (gModeSelection == BATTLE) {
+                    pop_player_balloon(player, playerIndex);
+                }
+                if ((gIsPlayerTripleAButtonCombo[playerIndex] == true) &&
+                    ((player->type & PLAYER_HUMAN) == PLAYER_HUMAN)) {
+                    player->currentSpeed += 100.0f;
+                }
+
+                player->type &= ~PLAYER_UNKNOWN_0x80;
+            }
+        }
+    }
+}
+
+void trigger_vertical_tumble(Player* player, s8 playerIndex) {
+    clean_effect(player, playerIndex);
+    func_8008C310(player);
+
+    player->unk_0A8 = 0;
+    player->effects |= EXPLOSION_CRASH_EFFECT;
+    player->effects &= ~DRIFTING_EFFECT;
+    player->kartHopJerk = 0.0f;
+    player->kartHopAcceleration = 0.0f;
+    player->kartHopVelocity = 0.0f;
+    player->kartHopJerk = D_800E3730[player->characterId];
+    player->kartHopVelocity = D_800E3710[player->characterId];
+    player->unk_236 = 4;
+    player->unk_042 = 0;
+    player->unk_0E0 = 0;
+
+    if (((player->type & PLAYER_HUMAN) == PLAYER_HUMAN) &&
+        ((player->type & PLAYER_INVISIBLE_OR_BOMB) != PLAYER_INVISIBLE_OR_BOMB)) {
+        if (((gModeSelection == VERSUS) && ((player->type & PLAYER_CPU) != 0)) && (!gDemoMode)) {
+            func_800CA24C(playerIndex);
+        }
+
+        if (1) {}
+
+        func_800C90F4(playerIndex, (player->characterId * 0x10) + 0x29008005);
+        if (((gModeSelection == VERSUS) && ((player->type & PLAYER_CPU) != 0)) && (!gDemoMode)) {
+            func_800CA24C(playerIndex);
+        }
+        func_800C9060(playerIndex, SOUND_ACTION_EXPLOSION);
+    } else {
+        play_cpu_sound_effect(playerIndex, player);
+    }
+
+    player->triggers &= ~(VERTICAL_TUMBLE_TRIGGER | HIT_PADDLE_BOAT_TRIGGER);
+    player->kartGraphics |= CRASH;
+    gTimerBoostTripleACombo[playerIndex] = 0;
+    gIsPlayerTripleAButtonCombo[playerIndex] = false;
+    gCountASwitch[playerIndex] = 0;
+    gFrameSinceLastACombo[playerIndex] = 0;
+}
+
+void func_8008E884(Player* player, s8 playerIndex) {
+    player->effects &= ~EXPLOSION_CRASH_EFFECT;
+    player->unk_0A8 = 0;
+    player->unk_236 = 0;
+    D_80165190[0][playerIndex] = 1;
+    D_80165190[1][playerIndex] = 1;
+    D_80165190[2][playerIndex] = 1;
+    D_80165190[3][playerIndex] = 1;
+    player->unk_042 = 0;
+}
+
+void apply_hit_by_star_effect(Player* player, s8 playerIndex) {
+    player->unk_206 = 0;
+    player->slopeAccel = 0;
+    player->unk_0C0 = 0;
+    player->steerPosition = 0;
+    player->unk_0C2 = 0xF;
+    player->unk_042 += DEGREES(15);
+    player->unk_08C /= 2;
+    player->currentSpeed = 0.0f;
+    player->effects &= ~(BANANA_SPINOUT_EFFECT | DRIVING_SPINOUT_EFFECT);
+
+    if ((player->effects & MIDAIR_EFFECT) != MIDAIR_EFFECT) {
+        ++player->unk_0E0;
+    }
+
+    if (player->unk_0E0 == 4) {
+        player->effects &= ~HIT_BY_STAR_EFFECT;
+        player->unk_0A8 = 0;
+        player->unk_236 = 0;
+        D_80165190[3][playerIndex] = 1;
+        D_80165190[0][playerIndex] = 1;
+        D_80165190[1][playerIndex] = 1;
+        D_80165190[2][playerIndex] = 1;
+        player->unk_042 = 0;
+
+        if ((gIsPlayerTripleAButtonCombo[playerIndex] == true) && ((player->type & PLAYER_HUMAN) == PLAYER_HUMAN)) {
+            player->currentSpeed += 100.0f;
+        }
+
+        if (gModeSelection == BATTLE) {
+            pop_player_balloon(player, playerIndex);
+        }
+    } else {
+        player->unk_0A8 = (s16) (player->unk_0A8 + 0x90);
+        if (((s32) player->unk_0A8) >= 0x2000) {
+            player->unk_0A8 = 0;
+            --player->unk_236;
+            if (player->unk_236 == 0) {
+                player->effects &= ~HIT_BY_STAR_EFFECT;
+                player->unk_236 = 0;
+                D_80165190[0][playerIndex] = 1;
+                D_80165190[1][playerIndex] = 1;
+                D_80165190[2][playerIndex] = 1;
+                D_80165190[3][playerIndex] = 1;
+                player->unk_042 = 0;
+                if ((gIsPlayerTripleAButtonCombo[playerIndex] == true) &&
+                    ((player->type & PLAYER_HUMAN) == PLAYER_HUMAN)) {
+                    player->currentSpeed += 100.0f;
+                }
+
+                if (gModeSelection == BATTLE) {
+                    pop_player_balloon(player, playerIndex);
+                }
+            }
+        }
+    }
+}
+
+void trigger_high_tumble(Player* player, s8 playerIndex) {
+    clean_effect(player, playerIndex);
+    func_8008C310(player);
+
+    player->unk_0A8 = 0;
+    player->effects &= ~DRIFTING_EFFECT;
+    player->kartHopJerk = 0.0f;
+    player->kartHopAcceleration = 0.0f;
+    player->kartHopVelocity = 0.0f;
+    player->kartHopJerk = D_800E3730[player->characterId];
+    player->kartHopVelocity = D_800E3710[player->characterId];
+    player->unk_236 = 4;
+    player->unk_042 = 0;
+    player->unk_0E0 = 0;
+
+    if (((player->type & PLAYER_HUMAN) == PLAYER_HUMAN) &&
+        ((player->type & PLAYER_INVISIBLE_OR_BOMB) != PLAYER_INVISIBLE_OR_BOMB)) {
+        func_800C90F4(playerIndex, (player->characterId * 0x10) + 0x29008005);
+        func_800C9060(playerIndex, SOUND_ACTION_EXPLOSION);
+    } else {
+        play_cpu_sound_effect(playerIndex, player);
+    }
+
+    player->effects |= HIT_BY_STAR_EFFECT;
+    player->kartGraphics |= CRASH;
+    player->triggers &= ~(HIT_BY_STAR_TRIGGER | HIGH_TUMBLE_TRIGGER);
+
+    gTimerBoostTripleACombo[playerIndex] = 0;
+    gIsPlayerTripleAButtonCombo[playerIndex] = false;
+    gCountASwitch[playerIndex] = 0;
+    gFrameSinceLastACombo[playerIndex] = 0;
+}
+
+void remove_hit_by_star_effect(Player* player, s8 playerIndex) {
+    player->effects &= ~HIT_BY_STAR_EFFECT;
+    player->unk_0A8 = 0;
+    player->unk_236 = 0;
+    D_80165190[0][playerIndex] = 1;
+    D_80165190[1][playerIndex] = 1;
+    D_80165190[2][playerIndex] = 1;
+    D_80165190[3][playerIndex] = 1;
+    player->unk_042 = 0;
+}
+
+void trigger_asphalt_ramp_boost(Player* player, s8 playerId) {
+    clean_effect(player, playerId);
+
+    player->effects |= BOOST_RAMP_ASPHALT_EFFECT;
+    player->triggers &= ~BOOST_RAMP_ASPHALT_TRIGGER;
+    player->unk_DB4.unk0 = 0;
+    player->unk_DB4.unk8 = 8.0f;
+    if (D_8015F890 != 1) {
+        if (((player->type & PLAYER_HUMAN) == PLAYER_HUMAN) && ((player->type & PLAYER_INVISIBLE_OR_BOMB) == 0)) {
+            func_800C90F4(playerId, (player->characterId * 0x10) + 0x29008001);
+            func_800C9060(playerId, 0x1900A40B);
+        }
+    } else if (player == gPlayerOne) {
+        func_800C90F4(playerId, (player->characterId * 0x10) + 0x29008001);
+        func_800C9060(playerId, 0x1900A40B);
+    }
+    player->kartProps &= ~BACK_UP;
+    player->effects &= ~AB_SPIN_EFFECT;
+}
+
+void apply_boost_ramp_asphalt_effect(Player* player) {
+    f64 temp_f0;
+
+    player->currentSpeed = player->topSpeed;
+    if ((u16) player->unk_256 > 0) {
+        player->currentSpeed = 0.0f;
+    }
+    if ((player->surfaceType != BOOST_RAMP_ASPHALT) && ((player->effects & MIDAIR_EFFECT) != MIDAIR_EFFECT)) {
+        move_f32_towards(&player->boostPower, 0, 1.0f);
+    } else {
+        move_f32_towards(&player->boostPower, 400.0f, 0.01f);
+    }
+    if (player->boostPower <= 1.0f) {
+        player->effects &= ~BOOST_RAMP_ASPHALT_EFFECT;
+        player->boostPower = 0.0f;
+        if (player->unk_0C2 >= 0x33) {
+            temp_f0 = 0.7;
+            player->currentSpeed = (player->currentSpeed * temp_f0);
+            player->unk_08C = (player->unk_08C * temp_f0);
+        }
+    }
+}
+
+void remove_boost_ramp_asphalt_effect(Player* player) {
+    player->effects &= ~BOOST_RAMP_ASPHALT_EFFECT;
+    player->boostPower = 0.0f;
+}
+
+void trigger_wood_ramp_boost(Player* player, s8 playerId) {
+    clean_effect(player, playerId);
+
+    player->effects |= BOOST_RAMP_WOOD_EFFECT;
+    player->triggers &= ~BOOST_RAMP_WOOD_TRIGGER;
+
+    if (D_8015F890 != 1) {
+        if (((player->type & PLAYER_HUMAN) == PLAYER_HUMAN) && ((player->type & PLAYER_INVISIBLE_OR_BOMB) == 0)) {
+            func_800C90F4(playerId, (player->characterId * 0x10) + 0x29008001);
+            func_800C9060(playerId, 0x1900A40B);
+        }
+    } else if (player == gPlayerOne) {
+        func_800C90F4(playerId, (player->characterId * 0x10) + 0x29008001);
+        func_800C9060(playerId, 0x1900A40B);
+    }
+
+    player->kartProps &= ~BACK_UP;
+    player->effects &= ~AB_SPIN_EFFECT;
+}
+
+void apply_boost_ramp_wood_effect(Player* player) {
+    player->currentSpeed = gTopSpeedTable[0][player->characterId];
+
+    if ((player->surfaceType != BOOST_RAMP_WOOD) && ((player->effects & MIDAIR_EFFECT) != MIDAIR_EFFECT)) {
+        move_f32_towards(&player->boostPower, 0, 1.0f);
+    } else {
+        move_f32_towards(&player->boostPower, 300.0f, 0.1f);
+    }
+
+    if (player->boostPower <= 1.0f) {
+        player->effects &= ~BOOST_RAMP_WOOD_EFFECT;
+        player->boostPower = 0.0f;
+        player->currentSpeed /= 2;
+        player->unk_08C /= 2;
+    }
+}
+
+void remove_boost_ramp_wood_effect(Player* player) {
+    player->effects &= ~BOOST_RAMP_WOOD_EFFECT;
+    player->boostPower = 0.0f;
+}
+
+void func_8008F104(Player* player, s8 playerIndex) {
+    clean_effect(player, playerIndex);
+
+    player->unk_0AE = player->rotation[1];
+    player->unk_0B2 = 2;
+    player->unk_0C0 = 0;
+    player->steerPosition = 0;
+    player->effects |= EARLY_START_SPINOUT_EFFECT;
+    player->unk_078 = 0;
+    D_8018D920[playerIndex] = -0x8000;
+
+    if (((player->type & PLAYER_HUMAN) == PLAYER_HUMAN) &&
+        ((player->type & PLAYER_INVISIBLE_OR_BOMB) != PLAYER_INVISIBLE_OR_BOMB)) {
+        func_800C90F4(playerIndex, (player->characterId * 0x10) + 0x29008003);
+    }
+}
+
+void func_8008F1B8(Player* player, s8 arg1) {
+    s16 temp;
+
+    player->unk_08C = (player->unk_210 * 0.05);
+    if (player->unk_0B2 < 0) {
+        if ((player->kartProps & EARLY_SPINOUT_LEFT) == EARLY_SPINOUT_LEFT) {
+            player->rotation[1] += DEGREES(1);
+            D_8018D920[arg1] += DEGREES(1);
+
+            temp = ((u16) D_8018D920[arg1] / DEGREES(1));
+            if (temp == 180) {
+                player->effects &= ~EARLY_START_SPINOUT_EFFECT;
+                player->type &= ~PLAYER_UNKNOWN_0x80;
+                player->currentSpeed /= 3.0f;
+            }
+        } else {
+
+            player->rotation[1] -= DEGREES(1);
+            D_8018D920[arg1] -= DEGREES(1);
+            temp = ((u16) D_8018D920[arg1] / DEGREES(1));
+            if (temp == 180) {
+                player->effects &= ~EARLY_START_SPINOUT_EFFECT;
+                player->type &= ~PLAYER_UNKNOWN_0x80;
+                player->currentSpeed /= 3.0f;
+            }
+        }
+    } else {
+        if ((player->unk_0B2 & 1) != 0) {
+            player->rotation[1] -= DEGREES(2);
+            D_8018D920[arg1] -= DEGREES(2);
+            temp = ((u16) D_8018D920[arg1] / DEGREES(2));
+            if (temp < 71) {
+                --player->unk_0B2;
+            }
+            player->kartProps |= EARLY_SPINOUT_LEFT;
+            player->kartProps &= ~EARLY_SPINOUT_RIGHT;
+            return;
+        }
+        player->rotation[1] += DEGREES(2);
+        D_8018D920[arg1] += DEGREES(2);
+        temp = ((u16) D_8018D920[arg1] / DEGREES(2));
+        if (temp >= 110) {
+            --player->unk_0B2;
+        }
+        player->kartProps |= EARLY_SPINOUT_RIGHT;
+        player->kartProps &= ~EARLY_SPINOUT_LEFT;
+    }
+}
+
+void func_8008F3E0(Player* player) {
+    player->effects &= ~EARLY_START_SPINOUT_EFFECT;
+}
+
+void func_8008F3F4(Player* player, UNUSED s8 arg1) {
+    player->unk_0A8 += 0x80;
+    player->unk_042 += DEGREES(10);
+    player->steerPosition = 0;
+    player->currentSpeed = 0.0f;
+    player->unk_08C /= 2;
+    if (player->unk_0A8 >= 0x2000) {
+        player->unk_0A8 = 0;
+        --player->unk_236;
+        if (player->unk_236 == 0) {
+            player->effects &= ~TERRAIN_TUMBLE_EFFECT;
+            func_80090778(player);
+            func_80090868(player);
+        }
+    }
+}
+
+void func_8008F494(Player* player, s8 playerIndex) {
+    if ((((player->effects & BANANA_SPINOUT_EFFECT) != 0) || ((player->effects & DRIVING_SPINOUT_EFFECT) != 0) ||
+         ((player->effects & EXPLOSION_CRASH_EFFECT)) || ((player->effects & HIT_BY_STAR_EFFECT)) ||
+         ((player->effects & HIT_BY_GREEN_SHELL_EFFECT) != 0)) &&
+        (gModeSelection == BATTLE)) {
+        player->kartProps |= UNKNOWN_BATTLE_VAR;
+    }
+
+    clean_effect(player, playerIndex);
+    func_8008F86C(player, playerIndex);
+
+    player->unk_0A8 = 0;
+    player->effects |= TERRAIN_TUMBLE_EFFECT;
+    player->effects &= ~DRIFTING_EFFECT;
+    player->unk_236 = 0x1E;
+    player->unk_042 = 0;
+
+    if (((player->type & PLAYER_HUMAN) != 0) && ((player->type & PLAYER_INVISIBLE_OR_BOMB) == 0) &&
+        ((player->lakituProps & HELD_BY_LAKITU) == 0) && ((player->oobProps & UNDER_OOB_OR_FLUID_LEVEL) == 0) &&
+        ((player->oobProps & PASS_OOB_OR_FLUID_LEVEL) == 0)) {
+        func_800C90F4(playerIndex, (player->characterId * 0x10) + 0x29008004);
+    }
+}
+
+void func_8008F5A4(Player* player, s8 playerIndex) {
+
+    if ((player->kartProps & UNKNOWN_BATTLE_VAR) != 0) {
+        pop_player_balloon(player, playerIndex);
+        player->kartProps &= ~UNKNOWN_BATTLE_VAR;
+    }
+
+    player->unk_206 = 0;
+    player->slopeAccel = 0;
+    player->effects &= ~TERRAIN_TUMBLE_EFFECT;
+    player->unk_0A8 = 0;
+    player->unk_0C0 = 0;
+    player->steerPosition = 0;
+    player->unk_236 = 0;
+    player->unk_078 = 0;
+    player->currentSpeed = 0.0f;
+
+    D_80165190[0][playerIndex] = 1;
+    D_80165190[1][playerIndex] = 1;
+    D_80165190[2][playerIndex] = 1;
+    D_80165190[3][playerIndex] = 1;
+    player->unk_042 = 0;
+}
+
+void apply_star_effect(Player* player, s8 playerIndex) {
+    if (((s32) gCourseTimer - gPlayerStarEffectStartTime[playerIndex]) >= STAR_EFFECT_DURATION - 1) {
+        D_8018D900[playerIndex] = 1;
+
+        if (((player->type & PLAYER_HUMAN) == PLAYER_HUMAN) &&
+            ((player->type & PLAYER_INVISIBLE_OR_BOMB) != PLAYER_INVISIBLE_OR_BOMB)) {
+            if (D_8018D900[playerIndex] == 1) {
+                func_800CA730(playerIndex);
+                D_8018D900[playerIndex] = 0;
+            }
+        } else if (D_8018D900[playerIndex] == 1) {
+            func_800CAACC((u8) playerIndex);
+            D_8018D900[playerIndex] = 0;
+        }
+    }
+
+    if (((s32) gCourseTimer - gPlayerStarEffectStartTime[playerIndex]) >= STAR_EFFECT_DURATION) {
+        player->effects &= ~STAR_EFFECT;
+    }
+}
+
+// Star item
+void trigger_star(Player* player, s8 playerIndex) {
+    clean_effect(player, playerIndex);
+
+    player->effects |= STAR_EFFECT;
+    player->triggers &= ~STAR_TRIGGER;
+    gPlayerStarEffectStartTime[playerIndex] = gCourseTimer;
+    D_8018D900[playerIndex] = 1;
+
+    if (((player->type & PLAYER_HUMAN) == PLAYER_HUMAN) &&
+        ((player->type & PLAYER_INVISIBLE_OR_BOMB) != PLAYER_INVISIBLE_OR_BOMB)) {
+        if (D_8018D900[playerIndex] == 1) {
+            func_800CA59C(playerIndex);
+            D_8018D900[playerIndex] = 2;
+        }
+        // This may be in charge of ending the star sound. Still unknown though.
+    } else if (D_8018D900[playerIndex] == 1) {
+        func_800CA984(playerIndex);
+        D_8018D900[playerIndex] = 2;
+    }
+}
+
+void func_8008F86C(Player* player, s8 playerIndex) {
+    player->effects &= ~STAR_EFFECT;
+    if (((player->type & PLAYER_HUMAN) == PLAYER_HUMAN) &&
+        ((player->type & PLAYER_INVISIBLE_OR_BOMB) != PLAYER_INVISIBLE_OR_BOMB)) {
+        func_800CA730(playerIndex);
+        return;
+    }
+    func_800CAACC(playerIndex);
+}
+
+void apply_boo_effect(Player* player, s8 playerIndex) {
+    s32 time_elapsed;
+    time_elapsed = ((s32) gCourseTimer) - gPlayerBooEffectStartTime[playerIndex];
+    if (time_elapsed < BOO_EFFECT_DURATION) {
+        player->alpha -= 2;
+
+        if (player->alpha <= ALPHA_BOO_EFFECT) {
+            player->alpha = ALPHA_BOO_EFFECT;
+        }
+        // Player becomes invisible to other players
+        gPlayerOtherScreensAlpha[playerIndex] -= 2;
+        if (gPlayerOtherScreensAlpha[playerIndex] <= 0) {
+            gPlayerOtherScreensAlpha[playerIndex] = 0;
+        }
+    } else {
+        // Player returns to normal visibility
+        player->alpha += 4;
+        if (player->alpha >= 0xF0) {
+            player->alpha = ALPHA_MAX;
+            gPlayerOtherScreensAlpha[playerIndex] = ALPHA_MAX;
+            player->effects &= ~BOO_EFFECT;
+            if ((player->type & PLAYER_HUMAN) != 0) {
+                func_800CB064(playerIndex);
+            }
+        }
+
+        gPlayerOtherScreensAlpha[playerIndex] += 8;
+        if (gPlayerOtherScreensAlpha[playerIndex] >= 0xF0) {
+            gPlayerOtherScreensAlpha[playerIndex] = ALPHA_MAX;
+            player->alpha = ALPHA_MAX;
+            player->effects &= ~BOO_EFFECT;
+            if ((player->type & PLAYER_HUMAN) != 0) {
+                func_800CB064(playerIndex);
+            }
+        }
+    }
+}
+
+void trigger_boo(Player* player, s8 playerIndex) {
+    s16 temp_v1;
+    // become boo
+    if ((player->type & PLAYER_HUMAN) != 0) {
+        player->kartProps |= BECOME_INVISIBLE;
+
+        for (temp_v1 = 0; temp_v1 < 10; ++temp_v1) {
+            player->particlePool0[temp_v1].isAlive = 0;
+            player->particlePool0[temp_v1].timer = 0;
+            player->particlePool0[temp_v1].type = 0;
+        }
+    }
+
+    clean_effect(player, playerIndex);
+
+    player->effects |= BOO_EFFECT;
+    player->triggers &= ~BOO_TRIGGER;
+    gPlayerBooEffectStartTime[playerIndex] = gCourseTimer;
+    gPlayerOtherScreensAlpha[playerIndex] = ALPHA_MAX;
+
+    if ((player->type & PLAYER_HUMAN) != 0) {
+        func_800CAFC0(playerIndex);
+    }
+}
+
+void func_8008FB30(Player* player, s8 playerIndex) {
+    player->alpha += 8;
+    if (player->alpha >= 0xF0) {
+        player->alpha = ALPHA_MAX;
+        gPlayerOtherScreensAlpha[playerIndex] = ALPHA_MAX;
+
+        player->effects &= ~BOO_EFFECT;
+        if ((player->type & PLAYER_HUMAN) != 0) {
+            func_800CB064(playerIndex);
+        }
+    }
+
+    gPlayerOtherScreensAlpha[playerIndex] += 0x10;
+    if (gPlayerOtherScreensAlpha[playerIndex] >= 0xE0) {
+        gPlayerOtherScreensAlpha[playerIndex] = ALPHA_MAX;
+        player->alpha = ALPHA_MAX;
+        player->effects &= ~BOO_EFFECT;
+        if ((player->type & PLAYER_HUMAN) != 0) {
+            func_800CB064(playerIndex);
+        }
+    }
+}
+
+void func_8008FC1C(Player* player) {
+    s32 playerIndex;
+
+    if ((player->type & PLAYER_UNKNOWN_0x40) != 0) {
+        playerIndex = get_player_index_for_player(player);
+        player->type = (PLAYER_HUMAN | PLAYER_START_SEQUENCE | PLAYER_CPU);
+        func_80056A94(playerIndex);
+    }
+}
+
+void func_8008FC64(Player* player, s8 arg1) {
+    player->alpha -= 4;
+    if (player->alpha < 5) {
+        player->alpha = ALPHA_MIN;
+        player->triggers &= ~LOSE_BATTLE_EFFECT;
+        player->triggers |= BECOME_BOMB_EFFECT;
+        player->type |= PLAYER_UNKNOWN_0x40;
+
+        func_8008FDA8(player, arg1);
+        func_800569F4(arg1);
+    }
+}
+
+void func_8008FCDC(Player* player, s8 playerIndex) {
+    player->alpha += 2;
+    if (player->alpha >= 0xF0) {
+        player->alpha = ALPHA_MAX;
+        player->triggers &= ~BECOME_BOMB_EFFECT;
+    }
+
+    func_80056A40(playerIndex, (u32) player->alpha);
+}
+
+void func_8008FD4C(Player* player, UNUSED s8 arg1) {
+    s16 temp_v0;
+
+    player->triggers |= LOSE_BATTLE_EFFECT;
+    player->kartProps |= BECOME_INVISIBLE;
+
+    for (temp_v0 = 0; temp_v0 < 10; ++temp_v0) {
+        player->particlePool0[temp_v0].isAlive = 0;
+        player->particlePool0[temp_v0].timer = 0;
+        player->particlePool0[temp_v0].type = 0;
+    }
+}
+// become bomb
+void func_8008FDA8(Player* player, UNUSED s8 arg1) {
+    s16 temp_v0;
+    player->kartProps |= BECOME_INVISIBLE;
+    for (temp_v0 = 0; temp_v0 < 10; ++temp_v0) {
+        player->particlePool0[temp_v0].isAlive = 0;
+        player->particlePool0[temp_v0].timer = 0;
+        player->particlePool0[temp_v0].type = 0;
+    }
+}
+
+void func_8008FDF4(Player* player, s8 playerIndex) {
+    clean_effect(player, playerIndex);
+
+    player->effects &= ~DRIFTING_EFFECT;
+    player->kartHopJerk = D_800E37F0[player->characterId];
+    player->kartHopAcceleration = 0.0f;
+    player->kartHopVelocity = D_800E37D0[player->characterId];
+    player->triggers &= ~UNUSED_TRIGGER_0x10000;
+    player->effects |= UNKNOWN_EFFECT_0x10000000;
+}
+
+void func_8008FE84(Player* player, UNUSED s8 playerIndex) {
+    player->effects &= ~DRIFTING_EFFECT;
+    if ((player->effects & MIDAIR_EFFECT) != MIDAIR_EFFECT) {
+        player->effects &= ~UNKNOWN_EFFECT_0x10000000;
+        player->currentSpeed /= 2;
+        player->unk_08C /= 2;
+    }
+}
+
+void func_8008FEDC(Player* player, UNUSED s8 playerIndex) {
+    player->effects &= ~UNKNOWN_EFFECT_0x10000000;
+    player->kartHopJerk = 0.0f;
+    player->kartHopVelocity = 0.0f;
+    player->kartHopAcceleration = 0.0f;
+}
+
+void course_update_path_point(Player* player, s8 playerId) {
+    s16 pathPoint;
+
+#if !ENABLE_CUSTOM_COURSE_ENGINE
+    switch (gCurrentCourseId) {
+        case COURSE_BOWSER_CASTLE:
+            pathPoint = gNearestPathPointByPlayerId[playerId];
+            if ((pathPoint >= 0x235) && (pathPoint < 0x247)) {
+                player->nearestPathPointId = 0x214;
+            } else if ((pathPoint >= 0x267) && (pathPoint < 0x277)) {
+                player->nearestPathPointId = 0x25B;
+            } else {
+                player->nearestPathPointId = gNearestPathPointByPlayerId[playerId];
+                if (player->nearestPathPointId < 0) {
+                    player->nearestPathPointId = gPathCountByPathIndex[0] + player->nearestPathPointId;
+                }
+            }
+            break;
+        case COURSE_BANSHEE_BOARDWALK:
+            pathPoint = gNearestPathPointByPlayerId[playerId];
+            if ((pathPoint >= 0x12C) && (pathPoint < 0x13C)) {
+                player->nearestPathPointId = 0x12CU;
+            } else {
+                player->nearestPathPointId = gNearestPathPointByPlayerId[playerId];
+                if (player->nearestPathPointId < 0) {
+                    player->nearestPathPointId = gPathCountByPathIndex[0] + player->nearestPathPointId;
+                }
+            }
+            break;
+        case COURSE_YOSHI_VALLEY:
+        case COURSE_RAINBOW_ROAD:
+            player->nearestPathPointId = gCopyNearestPathPointByPlayerId[playerId];
+            break;
+        case COURSE_FRAPPE_SNOWLAND:
+            pathPoint = gNearestPathPointByPlayerId[playerId];
+#ifdef VERSION_EU
+            if (((pathPoint >= 0xF0) && (pathPoint < 0x11E)) || ((gCopyNearestPathPointByPlayerId[playerId] >= 0xF0) &&
+                                                                 (gCopyNearestPathPointByPlayerId[playerId] < 0x11E)))
+#else
+            if ((pathPoint >= 0xF0) && (pathPoint < 0x105))
+#endif
+            {
+                player->nearestPathPointId = 0xF0U;
+            } else {
+                player->nearestPathPointId = gCopyNearestPathPointByPlayerId[playerId];
+                if (player->nearestPathPointId < 0) {
+                    player->nearestPathPointId = gPathCountByPathIndex[0] + player->nearestPathPointId;
+                }
+            }
+            break;
+        case COURSE_ROYAL_RACEWAY:
+            pathPoint = gNearestPathPointByPlayerId[playerId];
+            if ((pathPoint >= 0x258) && (pathPoint < 0x2A4)) {
+                player->nearestPathPointId = 0x258U;
+            } else {
+                player->nearestPathPointId = gCopyNearestPathPointByPlayerId[playerId];
+                if (player->nearestPathPointId < 0) {
+                    player->nearestPathPointId = gPathCountByPathIndex[0] + player->nearestPathPointId;
+                }
+            }
+            break;
+        case COURSE_DK_JUNGLE:
+            pathPoint = gNearestPathPointByPlayerId[playerId];
+            if ((pathPoint >= 0xB9) && (pathPoint < 0x119)) {
+                player->nearestPathPointId = 0xB9U;
+            } else {
+                player->nearestPathPointId = gNearestPathPointByPlayerId[playerId];
+                if (player->nearestPathPointId < 0) {
+                    player->nearestPathPointId = gPathCountByPathIndex[0] + player->nearestPathPointId;
+                }
+            }
+            break;
+        case COURSE_BLOCK_FORT:
+        case COURSE_SKYSCRAPER:
+        case COURSE_DOUBLE_DECK:
+        case COURSE_BIG_DONUT:
+            player->nearestPathPointId = 0U;
+            break;
+        default:
+            player->nearestPathPointId = gNearestPathPointByPlayerId[playerId];
+            if (player->nearestPathPointId < 0) {
+                player->nearestPathPointId = gPathCountByPathIndex[0] + player->nearestPathPointId;
+            }
+            break;
+    }
+#else
+
+#endif
+}
+
+void func_80090178(Player* player, s8 playerId, Vec3f arg2, Vec3f arg3) {
+    u16 test;
+    TrackPathPoint* temp_v1;
+    f32 spF8[4] = { 0.0f, 0.0f, -700.0f, 700.0f };
+    f32 spE8[4] = { 700.0f, -700.0f, 0.0f, 0.0f };
+    f32 spD8[4] = { 0.0f, 0.0f, -650.0f, 650.0f };
+    f32 spC8[4] = { 650.0f, -650.0f, 0.0f, 0.0f };
+    f32 spB8[4] = { 0.0f, 0.0f, -400.0f, 400.0f };
+    f32 spA8[4] = { 400.0f, -400.0f, 0.0f, 0.0f };
+    f32 sp98[4] = { 0.0f, 0.0f, -350.0f, 350.0f };
+    f32 sp88[4] = { 350.0f, -350.0f, 0.0f, 0.0f };
+    f32 sp78[4] = { 0.0f, 0.0f, -675.0f, 675.0f };
+    f32 sp68[4] = { 675.0f, -675.0f, 0.0f, 0.0f };
+    f32 sp58[4] = { 0.0f, 0.0f, -550.0f, 550.0f };
+    f32 sp48[4] = { 550.0f, -550.0f, 0.0f, 0.0f };
+    f32 sp38[4] = { 0.0f, 0.0f, -575.0f, 575.0f };
+    f32 sp28[4] = { 575.0f, -575.0f, 0.0f, 0.0f };
+    f32 sp18[4] = { 10.0f, -10.0f, -575.0f, 575.0f };
+    f32 sp08[4] = { 575.0f, -575.0f, 10.0f, -10.0f };
+
+    switch (gCurrentCourseId) {
+        case COURSE_YOSHI_VALLEY:
+            test = player->nearestPathPointId;
+            temp_v1 = &gTrackPaths[gCopyPathIndexByPlayerId[playerId]][test];
+            arg2[0] = temp_v1->posX;
+            arg2[1] = temp_v1->posY;
+            arg2[2] = temp_v1->posZ;
+            temp_v1 = &gTrackPaths[gCopyPathIndexByPlayerId[playerId]]
+                                  [(player->nearestPathPointId + 5) %
+                                   (gPathCountByPathIndex[gCopyPathIndexByPlayerId[playerId]] + 1)];
+            arg3[0] = temp_v1->posX;
+            arg3[1] = temp_v1->posY;
+            arg3[2] = temp_v1->posZ;
+            break;
+        case COURSE_BLOCK_FORT:
+            arg2[0] = spF8[playerId];
+            arg2[1] = 0.0f;
+            arg2[2] = spE8[playerId];
+            arg3[0] = spD8[playerId];
+            arg3[1] = 0.0f;
+            arg3[2] = spC8[playerId];
+            break;
+        case COURSE_SKYSCRAPER:
+            arg2[0] = spB8[playerId];
+            arg2[1] = 480.0f;
+            arg2[2] = spA8[playerId];
+            arg3[0] = sp98[playerId];
+            arg3[1] = 480.0f;
+            arg3[2] = sp88[playerId];
+            break;
+        case COURSE_DOUBLE_DECK:
+            arg2[0] = sp78[playerId];
+            arg2[1] = 0.0f;
+            arg2[2] = sp68[playerId];
+            arg3[0] = sp58[playerId];
+            arg3[1] = 0.0f;
+            arg3[2] = sp48[playerId];
+            break;
+        case COURSE_BIG_DONUT:
+            arg2[0] = sp38[playerId];
+            arg2[1] = 200.0f;
+            arg2[2] = sp28[playerId];
+            arg3[0] = sp18[playerId];
+            arg3[1] = 200.0f;
+            arg3[2] = sp08[playerId];
+            break;
+        default:
+            test = player->nearestPathPointId;
+            temp_v1 = &gTrackPaths[0][test];
+            arg2[0] = temp_v1->posX;
+            arg2[1] = temp_v1->posY;
+            arg2[2] = temp_v1->posZ;
+            temp_v1 = &gTrackPaths[0][(player->nearestPathPointId + 5) % (gPathCountByPathIndex[0] + 1)];
+            arg3[0] = temp_v1->posX;
+            arg3[1] = temp_v1->posY;
+            arg3[2] = temp_v1->posZ;
+            break;
+    }
+}
+
+void func_80090778(Player* player) {
+    s32 playerIndex = get_player_index_for_player(player);
+
+    player->unk_078 = 0;
+    player->steerPosition = 0;
+    player->unk_0C0 = 0;
+    player->lakituProps |= LAKITU_SCENE;
+    player->effects &= ~DRIFTING_EFFECT;
+    player->unk_222 = 0;
+    player->unk_08C = 0.0f;
+
+    clean_effect(player, playerIndex);
+    func_8008F86C(player, playerIndex);
+
+    player->unk_DB4.unk0 = 0;
+    player->unk_0C2 = 0;
+    player->unk_DB4.unk8 = 0.0f;
+    if ((player->effects & LIGHTNING_EFFECT) == LIGHTNING_EFFECT) {
+        if ((player->effects & LIGHTNING_STRIKE_EFFECT) == LIGHTNING_STRIKE_EFFECT) {
+            player->effects &= ~LIGHTNING_STRIKE_EFFECT;
+            player->unk_0A8 = 0;
+            player->steerPosition = 0;
+            player->unk_0C0 = 0;
+            player->rotation[1] = player->unk_0AE;
+        }
+        remove_lightning_effect(player, playerIndex);
+    }
+    player->effects &= ~AB_SPIN_EFFECT;
+}
+
+void func_80090868(Player* player) {
+    s32 playerIndex;
+
+    player->unk_078 = 0;
+    player->steerPosition = 0;
+    player->unk_0C0 = 0;
+    player->unk_08C = 0.0f;
+    playerIndex = get_player_index_for_player(player);
+
+    if ((player->lakituProps & HELD_BY_LAKITU) != HELD_BY_LAKITU) {
+        player->unk_D98 = 1;
+        player->unk_D9C = 0.0f;
+        player->unk_DA0 = 0.5f;
+        course_update_path_point(player, playerIndex);
+        player->unk_222 = 0;
+        player->lakituProps |= HELD_BY_LAKITU;
+        player->unk_0C8 = 0;
+        if ((player->oobProps & UNDER_OOB_OR_FLUID_LEVEL) == UNDER_OOB_OR_FLUID_LEVEL) {
+            if ((gCurrentCourseId == COURSE_BOWSER_CASTLE) || (gCurrentCourseId == COURSE_BIG_DONUT)) {
+                player->lakituProps |= LAKITU_LAVA;
+            } else {
+                player->lakituProps |= LAKITU_WATER;
+            }
+            // removing the water effect for Sherbet Land makes sense. Perhaps rainbow road and skyscraper
+            // had lava instead of an abyss initially?
+            if ((gCurrentCourseId == COURSE_SHERBET_LAND) || (gCurrentCourseId == COURSE_SKYSCRAPER) ||
+                (gCurrentCourseId == COURSE_RAINBOW_ROAD)) {
+                player->lakituProps &= ~(LAKITU_LAVA | LAKITU_WATER);
+            }
+        }
+    }
+}
+
+void func_80090970(Player* player, s8 playerId, s8 arg2) {
+    UNUSED s32 stackPadding0;
+    UNUSED s32 stackPadding1;
+    Vec3f sp44;
+    Vec3f sp38;
+    TrackPathPoint* pathPoint;
+    UNUSED s32 stackPadding2;
+    UNUSED s32 stackPadding3;
+
+    player->unk_0C2 = 0x000C;
+    player->unk_078 = 0;
+    player->steerPosition = 0;
+    player->unk_0C0 = 0;
+    player->unk_08C = 0.0f;
+    clean_effect(player, playerId);
+    switch (player->unk_222) {
+        case 0:
+            if ((player->lakituProps & LAKITU_RETRIEVAL) == LAKITU_RETRIEVAL) {
+                if ((player->unk_0C8 < 0x3C) || ((player->lakituProps & HELD_BY_LAKITU) != HELD_BY_LAKITU)) {
+                    player->unk_0C8++;
+                    if (player->unk_0C8 >= 0x3C) {
+                        player->unk_0C8 = 0x003C;
+                    }
+                } else {
+                    move_f32_towards(&player->pos[1], D_801652A0[playerId] + 100.0f, 0.012f);
+                    move_s16_towards(&player->unk_0CC[arg2], 0, 0.2f);
+                    if ((D_801652A0[playerId] + 40.0f) <= player->pos[1]) {
+                        player->unk_222 = 1;
+                        player->lakituProps |= LAKITU_FIZZLE;
+                        player->alpha = 0x00FF;
+                    }
+                }
+            } else if ((player->lakituProps & HELD_BY_LAKITU) == HELD_BY_LAKITU) {
+                move_f32_towards(&player->pos[1], player->unk_074 + 100.0f, 0.025f);
+                move_s16_towards(&player->unk_0CC[arg2], 0, 0.2f);
+                if ((player->unk_074 + 40.0f) <= player->pos[1]) {
+                    player->unk_222 = 1;
+                    player->lakituProps |= LAKITU_FIZZLE;
+                    player->alpha = 0x00FF;
+                }
+            }
+            if ((player->effects & BOO_EFFECT) == BOO_EFFECT) {
+                func_8008FB30(player, playerId);
+            }
+            break;
+        case 1:
+            if (((player->type & PLAYER_HUMAN) == PLAYER_HUMAN) && ((player->type & PLAYER_CPU) == 0)) {
+                func_8009E088(playerId, 0xA);
+            }
+            if ((player->lakituProps & LAKITU_RETRIEVAL) == LAKITU_RETRIEVAL) {
+                move_f32_towards(&player->pos[1], D_801652A0[playerId] + 40.0f, 0.02f);
+                player->alpha -= 8;
+                if (player->alpha < 9) {
+                    player->alpha = 0;
+                    player->unk_222 = 2;
+                    player->lakituProps &= ~LAKITU_RETRIEVAL;
+                }
+            } else {
+                move_f32_towards(&player->pos[1], player->oldPos[1] + 40.0f, 0.02f);
+                player->alpha -= 8;
+                if (player->alpha < 9) {
+                    player->alpha = 0;
+                    player->unk_222 = 2;
+                }
+            }
+            player->lakituProps &= ~LAKITU_WATER;
+            break;
+        case 2:
+            func_80090178(player, playerId, sp44, sp38);
+            // Fakematch found by Verti, who knows what's going on here
+            player->rotation[1] = (u16) -get_xz_angle_between_points(sp44, sp38) & 0xFFFF;
+            player->pos[0] = sp44[0];
+            player->pos[1] = sp44[1] + 40.0f;
+            player->pos[2] = sp44[2];
+            player->unk_222 = 3;
+            break;
+        case 3:
+            D_80165330[playerId] = 0;
+            if (((player->type & PLAYER_HUMAN) == PLAYER_HUMAN) && ((player->type & PLAYER_CPU) == 0)) {
+                func_8009E020(playerId, 0x14);
+            }
+            func_80090178(player, playerId, sp44, sp38);
+            player->pos[0] = sp44[0];
+            player->pos[1] = sp44[1] + 40.0f;
+            player->pos[2] = sp44[2];
+            player->pos[2] = player->pos[2] + coss((playerId * 0x1C70) - player->rotation[1]) * -5.0f;
+            player->pos[0] = player->pos[0] + sins((playerId * 0x1C70) - player->rotation[1]) * -5.0f;
+            player->alpha += 8;
+            if (player->alpha >= 0xF0) {
+                player->alpha = 0x00FF;
+                player->unk_222 = 4;
+                player->lakituProps &= ~LAKITU_FIZZLE;
+                player->unk_0C8 = 0;
+            }
+            break;
+        case 4:
+            if ((player->unk_0C8 == 0x0096) || (player->unk_0C8 == 0x00C8) || (player->unk_0C8 == 0x00FA)) {
+                player->pos[2] = player->pos[2] + coss(-player->rotation[1]) * -10.0f;
+                player->pos[0] = player->pos[0] + sins(-player->rotation[1]) * -10.0f;
+            }
+            if (player->unk_0C8 == 0x00FC) {
+                pathPoint = gTrackPaths[0];
+                player->pos[0] = pathPoint->posX;
+                player->pos[1] = pathPoint->posY;
+                player->pos[2] = pathPoint->posZ;
+            }
+            move_f32_towards(&player->pos[1], (player->unk_074 + player->boundingBoxSize) - 2.0f, 0.04f);
+            player->unk_0C8++;
+            if (((player->effects & MIDAIR_EFFECT) != MIDAIR_EFFECT) || (player->effects & ENEMY_BONK_EFFECT)) {
+                player->lakituProps &= ~LAKITU_LAVA;
+                if (player->unk_0C8 >= 0x5B) {
+                    if (player->type & PLAYER_HUMAN) {
+                        func_800C9018(playerId, SOUND_ARG_LOAD(0x01, 0x00, 0xFA, 0x28));
+                    }
+                    if (gModeSelection == BATTLE) {
+                        pop_player_balloon(player, playerId);
+                    }
+                    player->lakituProps &= ~HELD_BY_LAKITU;
+                    player->oobProps &= ~UNDER_FLUID_LEVEL;
+                    if ((player->lakituProps & FROZEN_EFFECT) != FROZEN_EFFECT) {
+                        player->lakituProps &= ~LAKITU_SCENE;
+                        if ((player->topSpeed * 0.9) <= player->currentSpeed) {
+                            func_8008F104(player, playerId);
+                        }
+                    }
+                }
+            }
+            break;
+    }
+    player->unk_DA0 += 8.0f;
+    if (player->unk_DA0 >= 180.0f) {
+        player->unk_DA0 = 180.0f;
+    }
+    if (player->unk_D98 == 1) {
+        player->unk_D9C += player->unk_DA0;
+        if (player->unk_D9C >= (f32) DEGREES(10)) {
+            player->unk_DA0 = 0.0f;
+            player->unk_D98 *= -1;
+        }
+    }
+    if (player->unk_D98 == -1) {
+        player->unk_D9C -= player->unk_DA0;
+        if (player->unk_D9C <= (f32) -DEGREES(10)) {
+            player->unk_DA0 = 0.0f;
+            player->unk_D98 *= -1;
+        }
+    }
+}
+
+#define BLOCK_ITEM_USE_EFFECTS                                                                                        \
+    LIGHTNING_EFFECT | UNKNOWN_EFFECT_0x10000000 | POST_SQUISH_EFFECT | SQUISH_EFFECT | HIT_BY_STAR_EFFECT |          \
+        EXPLOSION_CRASH_EFFECT | UNKNOWN_EFFECT_0x800000 | BOOST_RAMP_ASPHALT_EFFECT | LIGHTNING_STRIKE_EFFECT |      \
+        TERRAIN_TUMBLE_EFFECT | EARLY_START_SPINOUT_EFFECT | BANANA_NEAR_SPINOUT_EFFECT | HIT_BY_GREEN_SHELL_EFFECT | \
+        STAR_EFFECT | BANANA_SPINOUT_EFFECT | DRIVING_SPINOUT_EFFECT | BOOST_RAMP_WOOD_EFFECT
+
+bool prevent_item_use(Player* player) {
+    s32 phi_v0 = 0;
+    if ((((((player->lakituProps & HELD_BY_LAKITU) == HELD_BY_LAKITU) ||
+           ((player->lakituProps & LAKITU_SCENE) == LAKITU_SCENE)) ||
+          ((player->type & PLAYER_UNKNOWN_0x40) != 0)) ||
+         ((player->type & PLAYER_CINEMATIC_MODE) != 0)) ||
+        ((player->type & PLAYER_EXISTS) == 0)) {
+        return true;
+    }
+
+    switch (player->currentItemCopy) {
+        case ITEM_MUSHROOM:
+        case ITEM_DOUBLE_MUSHROOM:
+        case ITEM_TRIPLE_MUSHROOM:
+        case ITEM_SUPER_MUSHROOM:
+            if ((player->effects & MIDAIR_EFFECT) != 0) {
+                return true;
+            }
+            phi_v0 = BLOCK_ITEM_USE_EFFECTS;
+            goto prevent_item_use_label;
+        case ITEM_STAR:
+            phi_v0 = BOO_EFFECT | BLOCK_ITEM_USE_EFFECTS;
+            /* fall through */
+        case ITEM_BOO:
+            phi_v0 = BOO_EFFECT | BLOCK_ITEM_USE_EFFECTS;
+            goto prevent_item_use_label;
+        prevent_item_use_label:
+            /* fall through */
+        default:
+            if ((player->effects & phi_v0) != 0) {
+                return true;
+            }
+            return false;
+    }
+}
+
+//UNUSED
+void func_800911B4(Player* player, s8 arg1) {
+    s32 temp_v0;
+
+    player->unk_0AE = player->rotation[1];
+    player->kartProps |= (UNUSED_0x1000 | UNUSED_0x800);
+    player->kartProps &= ~UNUSED_0x400;
+    player->kartProps |= UNUSED_0x2000;
+    player->kartHopJerk = 0.002f;
+    player->kartHopAcceleration = 0.0f;
+    player->kartHopVelocity = 2.6f;
+    player->unk_0B2 = 2;
+    player->unk_0C0 = 0;
+    player->steerPosition = 0;
+    player->unk_078 = 0;
+    D_8018D920[arg1] = 0;
+
+    for (temp_v0 = 0; temp_v0 < ARRAY_COUNT(player->particlePool3); temp_v0++) {
+        player->particlePool3[temp_v0].isAlive = 0;
+        player->particlePool3[temp_v0].timer = 0;
+        player->particlePool3[temp_v0].type = 0;
+    }
+}
+
+// unused
+void func_80091298(Player* player, s8 arg1) {
+    s16 var_v1;
+    UNUSED s32 stackPadding1;
+    Vec3f spC = { 27.167f, 25.167f, 23.167f };
+
+    player->kartProps |= UNUSED_0x2000;
+    if (player->unk_0B2 == 0) {
+        var_v1 = 0;
+    } else {
+        player->rotation[1] -= DEGREES(20);
+        D_8018D920[arg1] -= DEGREES(20);
+        var_v1 = (u16) D_8018D920[arg1] / DEGREES(20);
+    }
+    if (((var_v1 == 9) && (player->unk_0B2 == 1)) || ((var_v1 == 0) && (player->unk_0B2 == 2)) ||
+        (player->unk_0B2 == 0)) {
+        player->unk_0B2--;
+        if (player->unk_0B2 <= 0) {
+            player->unk_0B2 = 0;
+        }
+        if (player->unk_0B2 == 0) {
+            if ((player->pos[1] - (player->boundingBoxSize + 1.0f)) <= spC[arg1]) {
+                player->pos[1] = (f32) ((f64) (spC[arg1] + player->boundingBoxSize) + 1.08);
+                player->unk_DB4.unk18 = 0;
+                player->unk_0A8 = 0;
+                player->steerPosition = 0;
+                player->unk_0C0 = 0;
+                player->unk_DB4.unkC = 3.0f;
+                player->kartProps &= ~UNUSED_0x800;
+                player->kartGravity = gKartGravityTable[player->characterId];
+                player->unk_0D4[0] = 0;
+                player->type |= PLAYER_START_SEQUENCE;
+                player->speed = 0.0f;
+                player->unk_08C = 0.0f;
+                player->currentSpeed = 0.0f;
+                if (arg1 == 0) {
+                    D_801658BC = 1;
+                }
+            }
+        }
+    }
+}
+
+void func_80091440(s8 arg0) {
+    if ((gPlayers[arg0].kartProps & UNUSED_0x800) == 0) {
+        gPlayers[arg0].kartProps |= (UNUSED_0x2000 | UNUSED_0x400);
+        gPlayers[arg0].type &= ~PLAYER_START_SEQUENCE;
+    }
+}

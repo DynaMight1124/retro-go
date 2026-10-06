@@ -1,0 +1,1490 @@
+#include <ultra64.h>
+#ifdef PORT_INPUT_SCRIPT
+#include <stdio.h>
+#include "port/port.h"
+#endif
+#include <PR/ultratypes.h>
+#include <macros.h>
+#include <common_structs.h>
+#include <segments.h>
+#include <decode.h>
+
+#include "memory.h"
+#ifndef TARGET_N64
+#include "port/port.h"
+#ifndef TARGET_PSP
+#include "segment_bridge.h"
+#endif
+#endif
+#include "main.h"
+#include "code_800029B0.h"
+#include "math_util.h"
+#include "courses/courseTable.h"
+#include "defines.h"
+
+s32 sGfxSeekPosition;
+s32 sPackedSeekPosition;
+
+uintptr_t sPoolFreeSpace;
+struct MainPoolBlock* sPoolListHeadL;
+struct MainPoolBlock* sPoolListHeadR;
+
+struct MainPoolState* gMainPoolState = NULL;
+
+struct UnkStruct_802B8CD4 D_802B8CD4[] = { 0 };
+s32 D_802B8CE4 = 0; // pad
+s32 memoryPadding[2];
+
+enum PackedOp {
+    PG_LIGHTS_0               = 0x00, /* 0..0x14 mappés sur unpack_lights */
+    /* Presets de combine renommés pour refléter les macros G_CC_* */
+    PG_SETCOMBINE_CC_MODULATERGBA      = 0x15,
+    PG_SETCOMBINE_CC_MODULATERGBDECALA = 0x16,
+    PG_SETCOMBINE_CC_SHADE             = 0x17,
+    PG_RMODE_OPA             = 0x18,
+    PG_RMODE_TEXEDGE         = 0x19,
+    PG_TILECFG_A             = 0x1A,
+    PG_TILECFG_B             = 0x1B,
+    PG_TILECFG_C             = 0x1C,
+    PG_TILECFG_D             = 0x1D,
+    PG_TILECFG_E             = 0x1E,
+    PG_TILECFG_F             = 0x1F,
+    PG_TIMG_LOADBLOCK_0      = 0x20,
+    PG_TIMG_LOADBLOCK_1      = 0x21,
+    PG_TIMG_LOADBLOCK_2      = 0x22,
+    PG_TIMG_LOADBLOCK_3      = 0x23,
+    PG_TIMG_LOADBLOCK_4      = 0x24,
+    PG_TIMG_LOADBLOCK_5      = 0x25,
+    PG_TEXTURE_ON            = 0x26,
+    PG_TEXTURE_OFF           = 0x27,
+    PG_VTX1                  = 0x28,
+    PG_TRI1                  = 0x29,
+    PG_ENDDL                 = 0x2A,
+    PG_DL                    = 0x2B,
+    PG_TILECFG_G             = 0x2C,
+    PG_CULLDL                = 0x2D,
+    PG_SETCOMBINE_ALT        = 0x2E,
+    PG_RMODE_XLU             = 0x2F,
+    PG_SPLINE3D              = 0x30,
+    PG_VTX_BASE              = 0x32, /* 0x33..0x52 → variant vtx2 */
+    PG_SETCOMBINE_CC_DECALRGBA  = 0x53,
+    PG_RMODE_OPA_DECAL       = 0x54,
+    PG_RMODE_XLU_DECAL       = 0x55,
+    PG_SETGEOMETRYMODE       = 0x56,
+    PG_CLEARGEOMETRYMODE     = 0x57,
+    PG_TRI2                  = 0x58,
+    PG_EOF                   = 0xFF,
+};
+
+/**
+ * @brief Returns the address of the next available memory location and updates the memory pointer
+ * to reference the next location of available memory based provided size to allocate.
+ * @param size of memory to allocate.
+ * @return Address of free memory
+ */
+void* get_next_available_memory_addr(uintptr_t size) {
+    uintptr_t freeSpace = (uintptr_t) gNextFreeMemoryAddress;
+    size = ALIGN16(size);
+    gNextFreeMemoryAddress += size;
+    return (void*) freeSpace;
+}
+
+/**
+ * @brief Stores the physical memory addr for segmented memory in `gSegmentTable` using the segment number as an index.
+ *
+ * This function takes a segment number and a pointer to a memory address, and stores the address in the `gSegmentTable`
+ * array at the specified segment index. The stored address is truncated to a 29-bit value to ensure that it fits within
+ * the memory address. This allows converting between segmented memory and physical memory.
+ *
+ * @param segment A segment number from 0x0 to 0xF to set the base address.
+ * @param addr A pointer containing the physical memory address of the data.
+ * @return The stored base address, truncated to a 29-bit value.
+ */
+uintptr_t set_segment_base_addr(s32 segment, void* addr) {
+#ifdef TARGET_N64
+    gSegmentTable[segment] = (uintptr_t) addr & 0x1FFFFFFF;
+#else
+    gSegmentTable[segment] = (uintptr_t) addr;
+#endif
+    return gSegmentTable[segment];
+}
+
+/**
+ * @brief Returns the physical memory location of a segment.
+ * @param permits segment numbers from 0x0 to 0xF.
+ */
+void* get_segment_base_addr(s32 segment) {
+#ifdef TARGET_N64
+    return (void*) (gSegmentTable[segment] | 0x80000000);
+#else
+    return (void*) gSegmentTable[segment];
+#endif
+}
+
+/**
+ * @brief converts an RSP segment + offset address to a normal memory address
+ */
+void* segmented_to_virtual(const void* addr) {
+#ifndef TARGET_N64
+    return port_seg_to_ptr((uintptr_t) addr);
+#else
+    size_t segment = (uintptr_t) addr >> 24;
+    size_t offset = (uintptr_t) addr & 0x00FFFFFF;
+
+    return (void*) ((gSegmentTable[segment] + offset) | 0x80000000);
+#endif
+}
+
+void move_segment_table_to_dmem(void) {
+    s32 i;
+
+    for (i = 0; i < 16; i++) {
+        gSPSegment(gDisplayListHead++, i, gSegmentTable[i]);
+    }
+}
+
+/**
+ * @brief Sets the starting location for allocating memory and calculates pool size.
+ *
+ * Default memory size, 701.984 Kilobytes.
+ */
+void initialize_memory_pool(uintptr_t poolStart, uintptr_t poolEnd) {
+
+    poolStart = ALIGN16(poolStart);
+    // Truncate to a 16-byte boundary.
+    poolEnd &= ~0xF;
+
+    gFreeMemorySize = (poolEnd - poolStart) - 0x10;
+    gNextFreeMemoryAddress = poolStart;
+}
+
+/**
+ * @brief Allocates memory and adjusts gFreeMemorySize.
+ */
+void* allocate_memory(size_t size) {
+    uintptr_t freeSpace;
+
+    size = ALIGN16(size);
+    gFreeMemorySize -= size;
+    freeSpace = gNextFreeMemoryAddress;
+    gNextFreeMemoryAddress += size;
+
+    return (void*) freeSpace;
+}
+
+UNUSED void func_802A7D54(s32 arg0, s32 arg1) {
+    gD_80150158[arg0].unk0 = arg0;
+    gD_80150158[arg0].unk8 = arg1;
+}
+
+/**
+ * @brief Allocate and DMA.
+ */
+void* load_data(uintptr_t startAddr, uintptr_t endAddr) {
+    void* allocated;
+    uintptr_t size = endAddr - startAddr;
+
+    allocated = allocate_memory(size);
+    if (allocated != 0) {
+        dma_copy((u8*) allocated, (u8*) startAddr, size);
+    }
+    return (void*) allocated;
+}
+
+UNUSED void main_pool_init(uintptr_t start, uintptr_t end) {
+    start = ALIGN16(start);
+    end = ALIGN16(end - 15);
+
+    sPoolFreeSpace = (end - start) - 16;
+
+    sPoolListHeadL = (struct MainPoolBlock*) start;
+    sPoolListHeadR = (struct MainPoolBlock*) end;
+    sPoolListHeadL->prev = NULL;
+    sPoolListHeadL->next = NULL;
+    sPoolListHeadR->prev = NULL;
+    sPoolListHeadR->next = NULL;
+}
+
+/**
+ * Allocate a block of memory from the pool of given size, and from the
+ * specified side of the pool (MEMORY_POOL_LEFT or MEMORY_POOL_RIGHT).
+ * If there is not enough space, return NULL.
+ */
+UNUSED void* main_pool_alloc(uintptr_t size, uintptr_t side) {
+    struct MainPoolBlock* newListHead;
+    void* addr = NULL;
+
+    size = ALIGN16(size) + 8;
+    if (sPoolFreeSpace >= size) {
+        sPoolFreeSpace -= size;
+        if (side == MEMORY_POOL_LEFT) {
+            newListHead = (struct MainPoolBlock*) ((u8*) sPoolListHeadL + size);
+            sPoolListHeadL->next = newListHead;
+            newListHead->prev = sPoolListHeadL;
+            addr = (u8*) sPoolListHeadL + 8;
+            sPoolListHeadL = newListHead;
+        } else {
+            newListHead = (struct MainPoolBlock*) ((u8*) sPoolListHeadR - size);
+            sPoolListHeadR->prev = newListHead;
+            newListHead->next = sPoolListHeadR;
+            sPoolListHeadR = newListHead;
+            addr = (u8*) sPoolListHeadR + 8;
+        }
+    }
+    return addr;
+}
+/**
+ * Free a block of memory that was allocated from the pool. The block must be
+ * the most recently allocated block from its end of the pool, otherwise all
+ * newer blocks are freed as well.
+ * Return the amount of free space left in the pool.
+ */
+UNUSED uintptr_t main_pool_free(void* addr) {
+    struct MainPoolBlock* block = (struct MainPoolBlock*) ((u8*) addr - 8);
+    struct MainPoolBlock* oldListHead = (struct MainPoolBlock*) ((u8*) addr - 8);
+
+    if (oldListHead < sPoolListHeadL) {
+        while (oldListHead->next != NULL) {
+            oldListHead = oldListHead->next;
+        }
+        sPoolListHeadL = block;
+        sPoolListHeadL->next = NULL;
+        sPoolFreeSpace += (uintptr_t) oldListHead - (uintptr_t) sPoolListHeadL;
+    } else {
+        while (oldListHead->prev != NULL) {
+            oldListHead = oldListHead->prev;
+        }
+        sPoolListHeadR = block->next;
+        sPoolListHeadR->prev = NULL;
+        sPoolFreeSpace += (uintptr_t) sPoolListHeadR - (uintptr_t) oldListHead;
+    }
+    return sPoolFreeSpace;
+}
+// main_pool_realloc
+UNUSED void* main_pool_realloc(void* addr, uintptr_t size) {
+    void* newAddr = NULL;
+    struct MainPoolBlock* block = (struct MainPoolBlock*) ((u8*) addr - 8);
+
+    if (block->next == sPoolListHeadL) {
+        main_pool_free(addr);
+        newAddr = main_pool_alloc(size, MEMORY_POOL_LEFT);
+    }
+    return newAddr;
+}
+
+UNUSED uintptr_t main_pool_available(void) {
+    return sPoolFreeSpace - 8;
+}
+
+UNUSED uintptr_t main_pool_push_state(void) {
+    struct MainPoolState* prevState = gMainPoolState;
+    uintptr_t freeSpace = sPoolFreeSpace;
+    struct MainPoolBlock* lhead = sPoolListHeadL;
+    struct MainPoolBlock* rhead = sPoolListHeadR;
+
+    gMainPoolState = main_pool_alloc(sizeof(*gMainPoolState), MEMORY_POOL_LEFT);
+    gMainPoolState->freeSpace = freeSpace;
+    gMainPoolState->listHeadL = lhead;
+    gMainPoolState->listHeadR = rhead;
+    gMainPoolState->prev = prevState;
+    return sPoolFreeSpace;
+}
+
+/**
+ * Restore pool state from a previous call to main_pool_push_state. Return the
+ * amount of free space left in the pool.
+ */
+UNUSED uintptr_t main_pool_pop_state(void) {
+    sPoolFreeSpace = gMainPoolState->freeSpace;
+    sPoolListHeadL = gMainPoolState->listHeadL;
+    sPoolListHeadR = gMainPoolState->listHeadR;
+    gMainPoolState = gMainPoolState->prev;
+    return sPoolFreeSpace;
+}
+// similar to sm64 dma_read
+UNUSED void* func_802A80B0(u8* dest, u8* srcStart, u8* srcEnd) {
+    void* addr;
+    uintptr_t size = srcStart - dest;
+    addr = main_pool_alloc(size, (uintptr_t) srcEnd);
+
+    if (addr != 0) {
+
+        osInvalDCache(addr, size);
+        osPiStartDma(&gDmaIoMesg, OS_MESG_PRI_NORMAL, OS_READ, (uintptr_t) dest, addr, size, &gDmaMesgQueue);
+        osRecvMesg(&gDmaMesgQueue, &gMainReceivedMesg, OS_MESG_BLOCK);
+    }
+    return addr;
+}
+
+// replaces call to dynamic_dma_read with dma_read.
+UNUSED void* load_segment(s32 segment, u8* srcStart, u8* srcEnd, u8* side) {
+    void* addr = func_802A80B0(srcStart, srcEnd, side);
+
+    if (addr != NULL) {
+        set_segment_base_addr(segment, addr);
+    }
+    return addr;
+}
+
+// Similar to sm64 load_to_fixed_pool_addr?
+UNUSED void* func_802A8190(s32 arg0, u8* arg1) {
+    // uintptr_t srcSize = ALIGN16(srcEnd - srcStart);
+    // uintptr_t destSize = ALIGN16((u8 *) sPoolListHeadR - destAddr);
+    void* addr;
+    uintptr_t temp_v0 = D_802B8CD4[arg0].unk4;
+    uintptr_t temp_v1 = D_802B8CD4[arg0].unk8;
+    uintptr_t temp_v2 = D_802B8CD4[arg0].unk2;
+    addr = func_802A80B0((u8*) temp_v0, (u8*) temp_v1, arg1);
+
+    // dest = main_pool_alloc(destSize, MEMORY_POOL_RIGHT);
+    if (addr != 0) {
+        set_segment_base_addr(temp_v2, addr);
+    }
+    return (void*) addr;
+}
+
+UNUSED void func_802A81EC(void) {
+    s32 temp_s0;
+    s16* phi_s1;
+    s32 phi_s0;
+
+    phi_s1 = (s16*) &D_802B8CD4;
+    phi_s0 = 0;
+    do {
+        if ((*phi_s1 & 1) != 0) {
+            func_802A8190(phi_s0, 0);
+        }
+        temp_s0 = phi_s0 + 1;
+        phi_s1 += 8;
+        phi_s0 = temp_s0;
+    } while (phi_s0 != 3);
+}
+
+UNUSED struct AllocOnlyPool* alloc_only_pool_init(uintptr_t size, uintptr_t side) {
+    void* addr;
+    struct AllocOnlyPool* subPool = NULL;
+
+    size = ALIGN4(size);
+    addr = main_pool_alloc(size + sizeof(struct AllocOnlyPool), side);
+    if (addr != NULL) {
+        subPool = (struct AllocOnlyPool*) addr;
+        subPool->totalSpace = size;
+        subPool->usedSpace = (s32) addr + sizeof(struct AllocOnlyPool);
+        subPool->startPtr = 0;
+        subPool->freePtr = (u8*) addr + sizeof(struct AllocOnlyPool);
+    }
+    return subPool;
+}
+
+UNUSED uintptr_t func_802A82AC(s32 arg0) {
+    uintptr_t temp_v0;
+    uintptr_t phi_v1;
+
+    temp_v0 = D_801502A0 - arg0;
+    phi_v1 = 0;
+    if (temp_v0 >= (uintptr_t) gDisplayListHead) {
+        D_801502A0 = temp_v0;
+        phi_v1 = temp_v0;
+    }
+    return phi_v1;
+}
+
+/**
+ * @brief Returns pointer to mio0 compressed Vtx.
+ */
+u8* dma_compressed_vtx(u8* start, u8* end) {
+    u8* freeSpace;
+    uintptr_t size;
+
+    size = ALIGN16(end - start);
+    freeSpace = (u8*) gNextFreeMemoryAddress;
+    dma_copy(freeSpace, start, size);
+    gNextFreeMemoryAddress += size;
+    return freeSpace;
+}
+
+// unused mio0 decode func.
+UNUSED uintptr_t func_802A8348(s32 arg0, s32 arg1, s32 arg2) {
+    uintptr_t offset;
+    UNUSED void* pad;
+    uintptr_t oldAddr;
+    void* newAddr;
+
+    offset = ALIGN16(arg1 * arg2);
+    oldAddr = gNextFreeMemoryAddress;
+    newAddr = (void*) (oldAddr + offset);
+    pad = &newAddr;
+    osInvalDCache(newAddr, offset);
+    osPiStartDma(&gDmaIoMesg, 0, 0, (uintptr_t) ROM_SEG_PTR(_other_texturesSegmentRomStart, arg0), newAddr, offset,
+                 &gDmaMesgQueue);
+    osRecvMesg(&gDmaMesgQueue, &gMainReceivedMesg, 1);
+
+    func_80040030((u8*) newAddr, (u8*) oldAddr);
+    gNextFreeMemoryAddress += offset;
+    return oldAddr;
+}
+
+UNUSED u8* func_802A841C(u8* arg0, s32 arg1, s32 arg2) {
+    u8* temp_v0;
+    void* temp_a0;
+    temp_v0 = (u8*) gNextFreeMemoryAddress;
+    temp_a0 = temp_v0 + arg2;
+    arg1 = ALIGN16(arg1);
+    arg2 = ALIGN16(arg2);
+
+    osInvalDCache(temp_a0, arg1);
+    osPiStartDma(&gDmaIoMesg, 0, 0, (uintptr_t) ROM_SEG_PTR(_other_texturesSegmentRomStart, arg0), temp_a0, arg1,
+                 &gDmaMesgQueue);
+    osRecvMesg(&gDmaMesgQueue, &gMainReceivedMesg, 1);
+    func_80040030((u8*) temp_a0, temp_v0);
+    gNextFreeMemoryAddress += arg2;
+    return temp_v0;
+}
+
+u8* dma_textures(u8 texture[], size_t arg1, size_t arg2) {
+    u8* temp_v0;
+    void* temp_a0;
+
+    temp_v0 = (u8*) gNextFreeMemoryAddress;
+    temp_a0 = temp_v0 + arg2;
+    arg1 = ALIGN16(arg1);
+    arg2 = ALIGN16(arg2);
+    osInvalDCache((void*) temp_a0, arg1);
+    osPiStartDma(&gDmaIoMesg, 0, 0, (uintptr_t) ROM_SEG_PTR(_other_texturesSegmentRomStart, texture),
+                 (void*) temp_a0, arg1, &gDmaMesgQueue);
+    osRecvMesg(&gDmaMesgQueue, &gMainReceivedMesg, (int) 1);
+    mio0decode((u8*) temp_a0, temp_v0);
+    gNextFreeMemoryAddress += arg2;
+    return temp_v0;
+}
+
+uintptr_t MIO0_0F(u8* arg0, uintptr_t arg1, uintptr_t arg2) {
+    uintptr_t oldHeapEndPtr;
+    void* temp_v0;
+
+    arg1 = ALIGN16(arg1);
+    arg2 = ALIGN16(arg2);
+    oldHeapEndPtr = gHeapEndPtr;
+    temp_v0 = (void*) gNextFreeMemoryAddress;
+
+    osInvalDCache(temp_v0, arg1);
+    osPiStartDma(&gDmaIoMesg, 0, 0, (uintptr_t) ROM_SEG_PTR(_other_texturesSegmentRomStart, arg0), temp_v0, arg1,
+                 &gDmaMesgQueue);
+    osRecvMesg(&gDmaMesgQueue, &gMainReceivedMesg, 1);
+    mio0decode((u8*) temp_v0, (u8*) oldHeapEndPtr);
+    gHeapEndPtr += arg2;
+    return oldHeapEndPtr;
+}
+
+void func_802A86A8(CourseVtx* data, u32 arg1) {
+    CourseVtx* courseVtx = data;
+    Vtx* vtx;
+    s32 tmp = ALIGN16(arg1 * 0x10);
+#ifdef AVOID_UB
+    u32 i;
+#else
+    s32 i;
+#endif
+    s8 temp_a0;
+    s8 temp_a3;
+    s8 flags;
+
+    gHeapEndPtr -= tmp;
+    vtx = (Vtx*) gHeapEndPtr;
+
+    // s32 to u32 comparison required for matching.
+    for (i = 0; i < arg1; i++) {
+        if (gIsMirrorMode) {
+            vtx->v.ob[0] = -courseVtx->ob[0];
+        } else {
+            vtx->v.ob[0] = courseVtx->ob[0];
+        }
+
+        vtx->v.ob[1] = (courseVtx->ob[1] * vtxStretchY);
+        temp_a0 = courseVtx->ca[0];
+        temp_a3 = courseVtx->ca[1];
+
+        flags = temp_a0 & 3;
+        flags |= (temp_a3 << 2) & 0xC;
+
+        vtx->v.ob[2] = courseVtx->ob[2];
+        vtx->v.tc[0] = courseVtx->tc[0];
+        vtx->v.tc[1] = courseVtx->tc[1];
+        vtx->v.cn[0] = (temp_a0 & 0xFC);
+        vtx->v.cn[1] = (temp_a3 & 0xFC);
+        vtx->v.cn[2] = courseVtx->ca[2];
+        vtx->v.flag = flags;
+        vtx->v.cn[3] = 0xFF;
+        vtx++;
+        courseVtx++;
+    }
+}
+
+void decompress_vtx(CourseVtx* arg0, u32 vertexCount) {
+    s32 size = ALIGN16(vertexCount * 0x18);
+    u32 segment = SEGMENT_NUMBER2(arg0);
+    u32 offset = SEGMENT_OFFSET(arg0);
+    void* freeSpace;
+    u8* vtxCompressed = SEGMENT_TO_PTR(segment, offset);
+    UNUSED s32 pad;
+
+#ifndef TARGET_N64
+    // The course vertices are linked in uncompressed (course_vertices.inc.c).
+    func_802A86A8((CourseVtx*) vtxCompressed, vertexCount);
+    set_segment_base_addr(4, (void*) gHeapEndPtr);
+    return;
+#endif
+    freeSpace = (void*) gNextFreeMemoryAddress;
+    gNextFreeMemoryAddress += size;
+
+    mio0decode(vtxCompressed, (u8*) freeSpace);
+    func_802A86A8((CourseVtx*) freeSpace, vertexCount);
+    set_segment_base_addr(4, (void*) gHeapEndPtr);
+}
+
+UNUSED void func_802A8844(void) {
+}
+
+void unpack_lights(Gfx* arg0, UNUSED u8* arg1, s8 arg2) {
+    UNUSED s32 pad;
+    s32 a = (arg2 * 0x18) + 0x9000008;
+    s32 b = (arg2 * 0x18) + 0x9000000;
+    Gfx macro[] = { gsSPNumLights(NUMLIGHTS_1) };
+
+    arg0[sGfxSeekPosition].words.w0 = macro->words.w0;
+    arg0[sGfxSeekPosition].words.w1 = macro->words.w1;
+
+    sGfxSeekPosition++;
+    arg0[sGfxSeekPosition].words.w0 = 0x3860010;
+
+    arg0[sGfxSeekPosition].words.w1 = a;
+
+    sGfxSeekPosition++;
+    arg0[sGfxSeekPosition].words.w0 = 0x3880010;
+    arg0[sGfxSeekPosition].words.w1 = b;
+    sGfxSeekPosition++;
+}
+
+void unpack_displaylist(Gfx* arg0, u8* args, UNUSED s8 opcode) {
+    uintptr_t temp_v0 = args[sPackedSeekPosition++];
+    uintptr_t temp_t7 = ((args[sPackedSeekPosition++]) << 8 | temp_v0) * 8;
+    arg0[sGfxSeekPosition].words.w0 = 0x06000000;
+    // Segment seven addr
+    arg0[sGfxSeekPosition].words.w1 = 0x07000000 + temp_t7;
+    sGfxSeekPosition++;
+}
+
+// end displaylist
+void unpack_end_displaylist(Gfx* arg0, UNUSED u8* arg1, UNUSED s8 arg2) {
+    arg0[sGfxSeekPosition].words.w0 = (uintptr_t) (uint8_t) G_ENDDL << 24;
+    arg0[sGfxSeekPosition].words.w1 = 0;
+    sGfxSeekPosition++;
+}
+
+void unpack_set_geometry_mode(Gfx* arg0, UNUSED u8* arg1, UNUSED s8 arg2) {
+    Gfx macro[] = { gsSPSetGeometryMode(G_CULL_BACK) };
+    arg0[sGfxSeekPosition].words.w0 = macro->words.w0;
+    arg0[sGfxSeekPosition].words.w1 = macro->words.w1;
+    sGfxSeekPosition++;
+}
+
+void unpack_clear_geometry_mode(Gfx* arg0, UNUSED u8* arg1, UNUSED s8 arg2) {
+    Gfx macro[] = { gsSPClearGeometryMode(G_CULL_BACK) };
+    arg0[sGfxSeekPosition].words.w0 = macro->words.w0;
+    arg0[sGfxSeekPosition].words.w1 = macro->words.w1;
+    sGfxSeekPosition++;
+}
+
+void unpack_cull_displaylist(Gfx* arg0, UNUSED u8* arg1, UNUSED s8 arg2) {
+    Gfx macro[] = { gsSPCullDisplayList(0, 7) };
+    arg0[sGfxSeekPosition].words.w0 = macro->words.w0;
+    arg0[sGfxSeekPosition].words.w1 = macro->words.w1;
+    sGfxSeekPosition++;
+}
+
+void unpack_combine_mode1(Gfx* arg0, UNUSED u8* arg1, UNUSED uintptr_t arg2) {
+    Gfx macro[] = { gsDPSetCombineMode(G_CC_MODULATERGBA, G_CC_MODULATERGBA) };
+    arg0[sGfxSeekPosition].words.w0 = macro->words.w0;
+    arg0[sGfxSeekPosition].words.w1 = macro->words.w1;
+    sGfxSeekPosition++;
+}
+
+void unpack_combine_mode2(Gfx* arg0, UNUSED u8* arg1, UNUSED uintptr_t arg2) {
+    Gfx macro[] = { gsDPSetCombineMode(G_CC_MODULATERGBDECALA, G_CC_MODULATERGBDECALA) };
+    arg0[sGfxSeekPosition].words.w0 = macro->words.w0;
+    arg0[sGfxSeekPosition].words.w1 = macro->words.w1;
+    sGfxSeekPosition++;
+}
+
+void unpack_combine_mode_shade(Gfx* arg0, UNUSED u8* arg1, UNUSED uintptr_t arg2) {
+    Gfx macro[] = { gsDPSetCombineMode(G_CC_SHADE, G_CC_SHADE) };
+    arg0[sGfxSeekPosition].words.w0 = macro->words.w0;
+    arg0[sGfxSeekPosition].words.w1 = macro->words.w1;
+    sGfxSeekPosition++;
+}
+
+void unpack_combine_mode4(Gfx* arg0, UNUSED u8* arg1, UNUSED uintptr_t arg2) {
+    Gfx macro[] = { gsDPSetCombineMode(G_CC_MODULATERGBDECALA, G_CC_MODULATERGBDECALA) };
+    arg0[sGfxSeekPosition].words.w0 = macro->words.w0;
+    arg0[sGfxSeekPosition].words.w1 = macro->words.w1;
+    sGfxSeekPosition++;
+}
+
+void unpack_combine_mode5(Gfx* arg0, UNUSED u8* arg1, UNUSED uintptr_t arg2) {
+    Gfx macro[] = { gsDPSetCombineMode(G_CC_DECALRGBA, G_CC_DECALRGBA) };
+    arg0[sGfxSeekPosition].words.w0 = macro->words.w0;
+    arg0[sGfxSeekPosition].words.w1 = macro->words.w1;
+    sGfxSeekPosition++;
+}
+
+void unpack_render_mode_opaque(Gfx* arg0, UNUSED u8* arg1, UNUSED uintptr_t arg2) {
+    Gfx macro[] = { gsDPSetRenderMode(G_RM_AA_ZB_OPA_SURF, G_RM_AA_ZB_OPA_SURF2) };
+    arg0[sGfxSeekPosition].words.w0 = macro->words.w0;
+    arg0[sGfxSeekPosition].words.w1 = macro->words.w1;
+    sGfxSeekPosition++;
+}
+
+void unpack_render_mode_tex_edge(Gfx* arg0, UNUSED u8* arg1, UNUSED uintptr_t arg2) {
+    Gfx macro[] = { gsDPSetRenderMode(G_RM_AA_ZB_TEX_EDGE, G_RM_AA_ZB_TEX_EDGE2) };
+    arg0[sGfxSeekPosition].words.w0 = macro->words.w0;
+    arg0[sGfxSeekPosition].words.w1 = macro->words.w1;
+    sGfxSeekPosition++;
+}
+
+void unpack_render_mode_translucent(Gfx* arg0, UNUSED u8* arg1, UNUSED uintptr_t arg2) {
+    Gfx macro[] = { gsDPSetRenderMode(G_RM_AA_ZB_XLU_SURF, G_RM_AA_ZB_XLU_SURF2) };
+    arg0[sGfxSeekPosition].words.w0 = macro->words.w0;
+    arg0[sGfxSeekPosition].words.w1 = macro->words.w1;
+    sGfxSeekPosition++;
+}
+
+void unpack_render_mode_opaque_decal(Gfx* arg0, UNUSED u8* arg1, UNUSED uintptr_t arg2) {
+    Gfx macro[] = { gsDPSetRenderMode(G_RM_AA_ZB_OPA_DECAL, G_RM_AA_ZB_OPA_DECAL) };
+    arg0[sGfxSeekPosition].words.w0 = macro->words.w0;
+    arg0[sGfxSeekPosition].words.w1 = macro->words.w1;
+    sGfxSeekPosition++;
+}
+
+void unpack_render_mode_translucent_decal(Gfx* arg0, UNUSED u8* arg1, UNUSED uintptr_t arg2) {
+    Gfx macro[] = { gsDPSetRenderMode(G_RM_AA_ZB_XLU_DECAL, G_RM_AA_ZB_XLU_DECAL) };
+    arg0[sGfxSeekPosition].words.w0 = macro->words.w0;
+    arg0[sGfxSeekPosition].words.w1 = macro->words.w1;
+    sGfxSeekPosition++;
+}
+
+void unpack_tile_sync(Gfx* gfx, u8* args, s8 opcode) {
+    Gfx tileSync[] = { gsDPTileSync() };
+    uintptr_t temp_a0;
+    uintptr_t lo;
+    uintptr_t hi;
+
+    s32 width;
+    s32 height;
+    s32 fmt;
+    s32 siz;
+    s32 line;
+    s32 tmem;
+    s32 cms;
+    s32 masks;
+    s32 cmt;
+    s32 maskt;
+    s32 lrs;
+    s32 lrt;
+    UNUSED s32 pad[4];
+
+    tmem = 0;
+    switch (opcode) {
+        case PG_TILECFG_A:
+            width = 32;
+            height = 32;
+            fmt = 0;
+            break;
+        case PG_TILECFG_G:
+            width = 32;
+            height = 32;
+            fmt = 0;
+            tmem = 256;
+            break;
+        case PG_TILECFG_B:
+            width = 64;
+            height = 32;
+            fmt = 0;
+            break;
+        case PG_TILECFG_C:
+            width = 32;
+            height = 64;
+            fmt = 0;
+            break;
+        case PG_TILECFG_D:
+            width = 32;
+            height = 32;
+            fmt = 3;
+            break;
+        case PG_TILECFG_E:
+            width = 64;
+            height = 32;
+            fmt = 3;
+            break;
+        case PG_TILECFG_F:
+            width = 32;
+            height = 64;
+            fmt = 3;
+            break;
+        default:
+            return;
+    }
+
+    // Set arguments
+
+    siz = G_IM_SIZ_16b_BYTES;
+    line = ((((width * 2) + 7) >> 3));
+
+    temp_a0 = args[sPackedSeekPosition++];
+    cms = temp_a0 & 0xF;
+    masks = (temp_a0 & 0xF0) >> 4;
+
+    temp_a0 = args[sPackedSeekPosition++];
+    cmt = temp_a0 & 0xF;
+    maskt = (temp_a0 & 0xF0) >> 4;
+
+    // Generate gfx
+
+    gfx[sGfxSeekPosition].words.w0 = tileSync->words.w0;
+    gfx[sGfxSeekPosition].words.w1 = tileSync->words.w1;
+    sGfxSeekPosition++;
+
+    lo = ((uintptr_t) (uint8_t) G_SETTILE << 24) | (fmt << 21) | (siz << 19) | (line << 9) | tmem;
+    hi = ((cmt) << 18) | ((maskt) << 14) | ((cms) << 8) | ((masks) << 4);
+
+    gfx[sGfxSeekPosition].words.w0 = lo;
+    gfx[sGfxSeekPosition].words.w1 = hi;
+    sGfxSeekPosition++;
+
+    lrs = (width - 1) << 2;
+    lrt = (height - 1) << 2;
+
+    lo = ((uintptr_t) (uint8_t) G_SETTILESIZE << 24);
+    hi = (lrs << 12) | lrt;
+
+    gfx[sGfxSeekPosition].words.w0 = lo;
+    gfx[sGfxSeekPosition].words.w1 = hi;
+    sGfxSeekPosition++;
+}
+
+void unpack_tile_load_sync(Gfx* gfx, u8* args, s8 opcode) {
+    UNUSED uintptr_t var;
+    Gfx tileSync[] = { gsDPTileSync() };
+    Gfx loadSync[] = { gsDPLoadSync() };
+
+    uintptr_t arg;
+    uintptr_t lo;
+    uintptr_t hi;
+    uintptr_t addr;
+    uintptr_t width;
+    uintptr_t height;
+    uintptr_t fmt;
+    uintptr_t siz;
+    uintptr_t tmem;
+    uintptr_t tile;
+
+    switch (opcode) {
+        case PG_TIMG_LOADBLOCK_0:
+            width = 32;
+            height = 32;
+            fmt = 0;
+            break;
+        case PG_TIMG_LOADBLOCK_1:
+            width = 64;
+            height = 32;
+            fmt = 0;
+            break;
+        case PG_TIMG_LOADBLOCK_2:
+            width = 32;
+            height = 64;
+            fmt = 0;
+            break;
+        case PG_TIMG_LOADBLOCK_3:
+            width = 32;
+            height = 32;
+            fmt = 3;
+            break;
+        case PG_TIMG_LOADBLOCK_4:
+            width = 64;
+            height = 32;
+            fmt = 3;
+            break;
+        case PG_TIMG_LOADBLOCK_5:
+            width = 32;
+            height = 64;
+            fmt = 3;
+            break;
+        default:
+            return;
+    }
+
+    // Set arguments
+
+    // Waa?
+    var = args[sPackedSeekPosition];
+    // Generates a texture address.
+    addr = SEGMENT_ADDR(0x05, args[sPackedSeekPosition++] << 11);
+    sPackedSeekPosition++;
+    arg = args[sPackedSeekPosition++];
+    siz = G_IM_SIZ_16b;
+    tmem = (arg & 0xF);
+    tile = (arg & 0xF0) >> 4;
+
+    // Generate gfx
+
+    lo = ((uintptr_t) (uint8_t) G_SETTIMG << 24) | (fmt << 21) | (siz << 19);
+    gfx[sGfxSeekPosition].words.w0 = lo;
+    gfx[sGfxSeekPosition].words.w1 = addr;
+    sGfxSeekPosition++;
+
+    gfx[sGfxSeekPosition].words.w0 = tileSync->words.w0;
+    gfx[sGfxSeekPosition].words.w1 = tileSync->words.w1;
+    sGfxSeekPosition++;
+
+    lo = ((uintptr_t) (uint8_t) G_SETTILE << 24) | (fmt << 21) | (siz << 19) | tmem;
+    hi = tile << 24;
+
+    gfx[sGfxSeekPosition].words.w0 = lo;
+    gfx[sGfxSeekPosition].words.w1 = hi;
+    sGfxSeekPosition++;
+
+    gfx[sGfxSeekPosition].words.w0 = loadSync->words.w0;
+    gfx[sGfxSeekPosition].words.w1 = loadSync->words.w1;
+    sGfxSeekPosition++;
+
+    lo = (uintptr_t) (uint8_t) G_LOADBLOCK << 24;
+    hi = (tile << 24) | (MIN((width * height) - 1, 0x7FF) << 12) | CALC_DXT(width, G_IM_SIZ_16b_BYTES);
+
+    gfx[sGfxSeekPosition].words.w0 = lo;
+    gfx[sGfxSeekPosition].words.w1 = hi;
+    sGfxSeekPosition++;
+}
+
+void unpack_texture_on(Gfx* arg0, UNUSED u8* args, UNUSED s8 arg2) {
+    Gfx macro[] = { gsSPTexture(0xFFFF, 0xFFFF, 0, G_TX_RENDERTILE, G_ON) };
+
+    arg0[sGfxSeekPosition].words.w0 = macro->words.w0;
+    arg0[sGfxSeekPosition].words.w1 = macro->words.w1;
+    sGfxSeekPosition++;
+}
+
+void unpack_texture_off(Gfx* arg0, UNUSED u8* args, UNUSED s8 arg2) {
+    Gfx macro[] = { gsSPTexture(0x1, 0x1, 0, G_TX_RENDERTILE, G_OFF) };
+
+    arg0[sGfxSeekPosition].words.w0 = macro->words.w0;
+    arg0[sGfxSeekPosition].words.w1 = macro->words.w1;
+    sGfxSeekPosition++;
+}
+
+void unpack_vtx1(Gfx* gfx, u8* args, UNUSED s8 arg2) {
+    uintptr_t temp_t7;
+    uintptr_t temp_t7_2;
+
+    uintptr_t temp = args[sPackedSeekPosition++];
+    uintptr_t temp2 = ((args[sPackedSeekPosition++] << 8) | temp) * 0x10;
+
+    temp = args[sPackedSeekPosition++];
+    temp_t7 = temp & 0x3F;
+    temp = args[sPackedSeekPosition++];
+    temp_t7_2 = temp & 0x3F;
+
+    gfx[sGfxSeekPosition].words.w0 =
+        ((uintptr_t) (uint8_t) G_VTX << 24) | (temp_t7_2 * 2 << 16) | (((temp_t7 << 10) + ((0x10 * temp_t7) - 1)));
+    gfx[sGfxSeekPosition].words.w1 = 0x04000000 + temp2;
+    sGfxSeekPosition++;
+}
+
+void unpack_vtx2(Gfx* gfx, u8* args, s8 arg2) {
+    uintptr_t temp_t9;
+    uintptr_t temp_v1;
+    uintptr_t temp_v2;
+
+    temp_v1 = args[sPackedSeekPosition++];
+    temp_v2 = ((args[sPackedSeekPosition++] << 8) | temp_v1) * 0x10;
+
+    temp_t9 = arg2 - PG_VTX_BASE;
+
+    gfx[sGfxSeekPosition].words.w0 = ((uintptr_t) (uint8_t) G_VTX << 24) | ((temp_t9 << 10) + (((temp_t9) * 0x10) - 1));
+    gfx[sGfxSeekPosition].words.w1 = 0x4000000 + temp_v2;
+    sGfxSeekPosition++;
+}
+
+void unpack_triangle(Gfx* gfx, u8* args, UNUSED s8 arg2) {
+    uintptr_t temp_v0;
+    uintptr_t phi_a0;
+    uintptr_t phi_a2;
+    uintptr_t phi_a3;
+
+    temp_v0 = args[sPackedSeekPosition++];
+
+    if (gIsMirrorMode) {
+        phi_a3 = temp_v0 & 0x1F;
+        phi_a2 = (temp_v0 >> 5) & 7;
+        temp_v0 = args[sPackedSeekPosition++];
+        phi_a2 |= (temp_v0 & 3) * 8;
+        phi_a0 = (temp_v0 >> 2) & 0x1F;
+    } else {
+        phi_a0 = temp_v0 & 0x1F;
+        phi_a2 = (temp_v0 >> 5) & 7;
+        temp_v0 = args[sPackedSeekPosition++];
+        phi_a2 |= (temp_v0 & 3) * 8;
+        phi_a3 = (temp_v0 >> 2) & 0x1F;
+    }
+    gfx[sGfxSeekPosition].words.w0 = ((uintptr_t) (uint8_t) G_TRI1 << 24);
+    gfx[sGfxSeekPosition].words.w1 = ((phi_a0 * 2) << 16) | ((phi_a2 * 2) << 8) | (phi_a3 * 2);
+    sGfxSeekPosition++;
+}
+
+void unpack_quadrangle(Gfx* gfx, u8* args, UNUSED s8 arg2) {
+    uintptr_t temp_v0;
+    uintptr_t phi_t0;
+    uintptr_t phi_a3;
+    uintptr_t phi_a0;
+    uintptr_t phi_t2;
+    uintptr_t phi_t1;
+    uintptr_t phi_a2;
+
+    temp_v0 = args[sPackedSeekPosition++];
+
+    if (gIsMirrorMode) {
+        phi_t0 = temp_v0 & 0x1F;
+        phi_a3 = (temp_v0 >> 5) & 7;
+        temp_v0 = args[sPackedSeekPosition++];
+        phi_a3 |= (temp_v0 & 3) * 8;
+        phi_a0 = (temp_v0 >> 2) & 0x1F;
+    } else {
+        phi_a0 = temp_v0 & 0x1F;
+        phi_a3 = (temp_v0 >> 5) & 7;
+        temp_v0 = args[sPackedSeekPosition++];
+        phi_a3 |= (temp_v0 & 3) * 8;
+        phi_t0 = (temp_v0 >> 2) & 0x1F;
+    }
+
+    temp_v0 = args[sPackedSeekPosition++];
+
+    if (gIsMirrorMode) {
+        phi_a2 = temp_v0 & 0x1F;
+        phi_t1 = (temp_v0 >> 5) & 7;
+        temp_v0 = args[sPackedSeekPosition++];
+        phi_t1 |= (temp_v0 & 3) * 8;
+        phi_t2 = (temp_v0 >> 2) & 0x1F;
+    } else {
+        phi_t2 = temp_v0 & 0x1F;
+        phi_t1 = (temp_v0 >> 5) & 7;
+        temp_v0 = args[sPackedSeekPosition++];
+        phi_t1 |= (temp_v0 & 3) * 8;
+        phi_a2 = (temp_v0 >> 2) & 0x1F;
+    }
+    gfx[sGfxSeekPosition].words.w0 =
+        ((uintptr_t) (uint8_t) G_TRI2 << 24) | ((phi_a0 * 2) << 16) | ((phi_a3 * 2) << 8) | (phi_t0 * 2);
+    gfx[sGfxSeekPosition].words.w1 = ((phi_t2 * 2) << 16) | ((phi_t1 * 2) << 8) | (phi_a2 * 2);
+    sGfxSeekPosition++;
+}
+
+void unpack_spline_3D(Gfx* gfx, u8* arg1, UNUSED s8 arg2) {
+    uintptr_t temp_v0;
+    uintptr_t phi_a0;
+    uintptr_t phi_t0;
+    uintptr_t phi_a3;
+    uintptr_t phi_a2;
+
+    temp_v0 = arg1[sPackedSeekPosition++];
+
+    if (gIsMirrorMode != 0) {
+        phi_a0 = temp_v0 & 0x1F;
+        phi_a2 = ((temp_v0 >> 5) & 7);
+        temp_v0 = arg1[sPackedSeekPosition++];
+        phi_a2 |= ((temp_v0 & 3) * 8);
+        phi_a3 = (temp_v0 >> 2) & 0x1F;
+        phi_t0 = ((temp_v0 >> 7) & 1);
+        temp_v0 = arg1[sPackedSeekPosition++];
+        phi_t0 |= (temp_v0 & 0xF) * 2;
+    } else {
+        phi_t0 = temp_v0 & 0x1F;
+        phi_a3 = ((temp_v0 >> 5) & 7);
+        temp_v0 = arg1[sPackedSeekPosition++];
+        phi_a3 |= ((temp_v0 & 3) * 8);
+        phi_a2 = (temp_v0 >> 2) & 0x1F;
+        phi_a0 = ((temp_v0 >> 7) & 1);
+        temp_v0 = arg1[sPackedSeekPosition++];
+        phi_a0 |= (temp_v0 & 0xF) * 2;
+    }
+    gfx[sGfxSeekPosition].words.w0 = ((uintptr_t) (uint8_t) G_QUAD << 24);
+    gfx[sGfxSeekPosition].words.w1 = ((phi_a0 * 2) << 24) | ((phi_t0 * 2) << 16) | ((phi_a3 * 2) << 8) | (phi_a2 * 2);
+    sGfxSeekPosition++;
+}
+
+UNUSED void func_802A9AEC(void) {
+}
+
+/**
+ * Unpacks course packed displaylists by iterating through each byte of the packed file.
+ * Each packed displaylist entry has an opcode and any number of arguments.
+ * The opcodes range from 0 to 87 which are used to run the relevant unpack function.
+ * The file pointer increments when arguments are used. This way,
+ * displaylist_unpack will always read an opcode and not an argument by accident.
+ *
+ * @warning opcodes that do not contain a definition in the switch are ignored. If an undefined opcode
+ * contained arguments the unpacker might try to unpack those arguments.
+ * This issue is prevented so long as the packed file adheres to correct opcodes and unpack code
+ * increments the file pointer the correct number of times.
+ */
+void displaylist_unpack(uintptr_t* data, uintptr_t finalDisplaylistOffset, u32 arg2) {
+    uintptr_t segment = SEGMENT_NUMBER2(data);
+    uintptr_t offset = SEGMENT_OFFSET(data);
+    u8* packed_dl = SEGMENT_TO_PTR(segment, offset);
+
+    Gfx* gfx;
+    u32 addr;
+
+    u8 opcode;
+
+    finalDisplaylistOffset = ALIGN16(finalDisplaylistOffset) + 8;
+    gHeapEndPtr -= finalDisplaylistOffset;
+    addr = gHeapEndPtr;
+    gfx = (Gfx*) gHeapEndPtr;
+    sGfxSeekPosition = 0;
+    sPackedSeekPosition = 0;
+
+    while (true) {
+
+        // Seek to the next byte
+        opcode = packed_dl[sPackedSeekPosition++];
+
+        // Break when the eof has been reached denoted by opcode 0xFF
+        if (opcode == 0xFF) {
+            break;
+        }
+
+        switch (opcode) {
+            case PG_LIGHTS_0 + 0x0:
+                unpack_lights(gfx, packed_dl, opcode);
+                break;
+            case PG_LIGHTS_0 + 0x1:
+                unpack_lights(gfx, packed_dl, opcode);
+                break;
+            case PG_LIGHTS_0 + 0x2:
+                unpack_lights(gfx, packed_dl, opcode);
+                break;
+            case PG_LIGHTS_0 + 0x3:
+                unpack_lights(gfx, packed_dl, opcode);
+                break;
+            case PG_LIGHTS_0 + 0x4:
+                unpack_lights(gfx, packed_dl, opcode);
+                break;
+            case PG_LIGHTS_0 + 0x5:
+                unpack_lights(gfx, packed_dl, opcode);
+                break;
+            case PG_LIGHTS_0 + 0x6:
+                unpack_lights(gfx, packed_dl, opcode);
+                break;
+            case PG_LIGHTS_0 + 0x7:
+                unpack_lights(gfx, packed_dl, opcode);
+                break;
+            case PG_LIGHTS_0 + 0x8:
+                unpack_lights(gfx, packed_dl, opcode);
+                break;
+            case PG_LIGHTS_0 + 0x9:
+                unpack_lights(gfx, packed_dl, opcode);
+                break;
+            case PG_LIGHTS_0 + 0xA:
+                unpack_lights(gfx, packed_dl, opcode);
+                break;
+            case PG_LIGHTS_0 + 0xB:
+                unpack_lights(gfx, packed_dl, opcode);
+                break;
+            case PG_LIGHTS_0 + 0xC:
+                unpack_lights(gfx, packed_dl, opcode);
+                break;
+            case PG_LIGHTS_0 + 0xD:
+                unpack_lights(gfx, packed_dl, opcode);
+                break;
+            case PG_LIGHTS_0 + 0xE:
+                unpack_lights(gfx, packed_dl, opcode);
+                break;
+            case PG_LIGHTS_0 + 0xF:
+                unpack_lights(gfx, packed_dl, opcode);
+                break;
+            case PG_LIGHTS_0 + 0x10:
+                unpack_lights(gfx, packed_dl, opcode);
+                break;
+            case PG_LIGHTS_0 + 0x11:
+                unpack_lights(gfx, packed_dl, opcode);
+                break;
+            case PG_LIGHTS_0 + 0x12:
+                unpack_lights(gfx, packed_dl, opcode);
+                break;
+            case PG_LIGHTS_0 + 0x13:
+                unpack_lights(gfx, packed_dl, opcode);
+                break;
+            case PG_LIGHTS_0 + 0x14:
+                unpack_lights(gfx, packed_dl, opcode);
+                break;
+            case PG_SETCOMBINE_CC_MODULATERGBA:
+                unpack_combine_mode1(gfx, packed_dl, arg2);
+                break;
+            case PG_SETCOMBINE_CC_MODULATERGBDECALA:
+                unpack_combine_mode2(gfx, packed_dl, arg2);
+                break;
+            case PG_SETCOMBINE_CC_SHADE:
+                unpack_combine_mode_shade(gfx, packed_dl, arg2);
+                break;
+            case 0x2E:
+                unpack_combine_mode4(gfx, packed_dl, arg2);
+                break;
+            case PG_SETCOMBINE_CC_DECALRGBA:
+                unpack_combine_mode5(gfx, packed_dl, arg2);
+                break;
+            case PG_RMODE_OPA:
+                unpack_render_mode_opaque(gfx, packed_dl, arg2);
+                break;
+            case PG_RMODE_TEXEDGE:
+                unpack_render_mode_tex_edge(gfx, packed_dl, arg2);
+                break;
+            case PG_RMODE_XLU:
+                unpack_render_mode_translucent(gfx, packed_dl, arg2);
+                break;
+            case PG_RMODE_OPA_DECAL:
+                unpack_render_mode_opaque_decal(gfx, packed_dl, arg2);
+                break;
+            case PG_RMODE_XLU_DECAL:
+                unpack_render_mode_translucent_decal(gfx, packed_dl, arg2);
+                break;
+            case PG_TILECFG_A:
+                unpack_tile_sync(gfx, packed_dl, opcode);
+                break;
+            case PG_TILECFG_G:
+                unpack_tile_sync(gfx, packed_dl, opcode);
+                break;
+            case PG_TILECFG_B:
+                unpack_tile_sync(gfx, packed_dl, opcode);
+                break;
+            case PG_TILECFG_C:
+                unpack_tile_sync(gfx, packed_dl, opcode);
+                break;
+            case PG_TILECFG_D:
+                unpack_tile_sync(gfx, packed_dl, opcode);
+                break;
+            case PG_TILECFG_E:
+                unpack_tile_sync(gfx, packed_dl, opcode);
+                break;
+            case PG_TILECFG_F:
+                unpack_tile_sync(gfx, packed_dl, opcode);
+                break;
+            case PG_TIMG_LOADBLOCK_0:
+                unpack_tile_load_sync(gfx, packed_dl, opcode);
+                break;
+            case PG_TIMG_LOADBLOCK_1:
+                unpack_tile_load_sync(gfx, packed_dl, opcode);
+                break;
+            case PG_TIMG_LOADBLOCK_2:
+                unpack_tile_load_sync(gfx, packed_dl, opcode);
+                break;
+            case PG_TIMG_LOADBLOCK_3:
+                unpack_tile_load_sync(gfx, packed_dl, opcode);
+                break;
+            case PG_TIMG_LOADBLOCK_4:
+                unpack_tile_load_sync(gfx, packed_dl, opcode);
+                break;
+            case PG_TIMG_LOADBLOCK_5:
+                unpack_tile_load_sync(gfx, packed_dl, opcode);
+                break;
+            case PG_TEXTURE_ON:
+                unpack_texture_on(gfx, packed_dl, opcode);
+                break;
+            case PG_TEXTURE_OFF:
+                unpack_texture_off(gfx, packed_dl, opcode);
+                break;
+            case PG_VTX1:
+                unpack_vtx1(gfx, packed_dl, opcode);
+                break;
+            case PG_VTX_BASE + 0x01:
+                unpack_vtx2(gfx, packed_dl, opcode);
+                break;
+            case PG_VTX_BASE + 0x02:
+                unpack_vtx2(gfx, packed_dl, opcode);
+                break;
+            case PG_VTX_BASE + 0x03:
+                unpack_vtx2(gfx, packed_dl, opcode);
+                break;
+            case PG_VTX_BASE + 0x04:
+                unpack_vtx2(gfx, packed_dl, opcode);
+                break;
+            case PG_VTX_BASE + 0x05:
+                unpack_vtx2(gfx, packed_dl, opcode);
+                break;
+            case PG_VTX_BASE + 0x06:
+                unpack_vtx2(gfx, packed_dl, opcode);
+                break;
+            case PG_VTX_BASE + 0x07:
+                unpack_vtx2(gfx, packed_dl, opcode);
+                break;
+            case PG_VTX_BASE + 0x08:
+                unpack_vtx2(gfx, packed_dl, opcode);
+                break;
+            case PG_VTX_BASE + 0x09:
+                unpack_vtx2(gfx, packed_dl, opcode);
+                break;
+            case PG_VTX_BASE + 0x0A:
+                unpack_vtx2(gfx, packed_dl, opcode);
+                break;
+            case PG_VTX_BASE + 0x0B:
+                unpack_vtx2(gfx, packed_dl, opcode);
+                break;
+            case PG_VTX_BASE + 0x0C:
+                unpack_vtx2(gfx, packed_dl, opcode);
+                break;
+            case PG_VTX_BASE + 0x0D:
+                unpack_vtx2(gfx, packed_dl, opcode);
+                break;
+            case PG_VTX_BASE + 0x0E:
+                unpack_vtx2(gfx, packed_dl, opcode);
+                break;
+            case PG_VTX_BASE + 0x0F:
+                unpack_vtx2(gfx, packed_dl, opcode);
+                break;
+            case PG_VTX_BASE + 0x10:
+                unpack_vtx2(gfx, packed_dl, opcode);
+                break;
+            case PG_VTX_BASE + 0x11:
+                unpack_vtx2(gfx, packed_dl, opcode);
+                break;
+            case PG_VTX_BASE + 0x12:
+                unpack_vtx2(gfx, packed_dl, opcode);
+                break;
+            case PG_VTX_BASE + 0x13:
+                unpack_vtx2(gfx, packed_dl, opcode);
+                break;
+            case PG_VTX_BASE + 0x14:
+                unpack_vtx2(gfx, packed_dl, opcode);
+                break;
+            case PG_VTX_BASE + 0x15:
+                unpack_vtx2(gfx, packed_dl, opcode);
+                break;
+            case PG_VTX_BASE + 0x16:
+                unpack_vtx2(gfx, packed_dl, opcode);
+                break;
+            case PG_VTX_BASE + 0x17:
+                unpack_vtx2(gfx, packed_dl, opcode);
+                break;
+            case PG_VTX_BASE + 0x18:
+                unpack_vtx2(gfx, packed_dl, opcode);
+                break;
+            case PG_VTX_BASE + 0x19:
+                unpack_vtx2(gfx, packed_dl, opcode);
+                break;
+            case PG_VTX_BASE + 0x1A:
+                unpack_vtx2(gfx, packed_dl, opcode);
+                break;
+            case PG_VTX_BASE + 0x1B:
+                unpack_vtx2(gfx, packed_dl, opcode);
+                break;
+            case PG_VTX_BASE + 0x1C:
+                unpack_vtx2(gfx, packed_dl, opcode);
+                break;
+            case PG_VTX_BASE + 0x1D:
+                unpack_vtx2(gfx, packed_dl, opcode);
+                break;
+            case PG_VTX_BASE + 0x1E:
+                unpack_vtx2(gfx, packed_dl, opcode);
+                break;
+            case PG_VTX_BASE + 0x1F:
+                unpack_vtx2(gfx, packed_dl, opcode);
+                break;
+            case PG_VTX_BASE + 0x20:
+                unpack_vtx2(gfx, packed_dl, opcode);
+                break;
+            case PG_TRI1:
+                unpack_triangle(gfx, packed_dl, opcode);
+                break;
+            case PG_TRI2:
+                unpack_quadrangle(gfx, packed_dl, opcode);
+                break;
+            case PG_SPLINE3D:
+                unpack_spline_3D(gfx, packed_dl, opcode);
+                break;
+            case PG_CULLDL:
+                unpack_cull_displaylist(gfx, packed_dl, opcode);
+                break;
+            case PG_ENDDL:
+                unpack_end_displaylist(gfx, packed_dl, opcode);
+                break;
+            case PG_SETGEOMETRYMODE:
+                unpack_set_geometry_mode(gfx, packed_dl, opcode);
+                break;
+            case PG_CLEARGEOMETRYMODE:
+                unpack_clear_geometry_mode(gfx, packed_dl, opcode);
+                break;
+            case PG_DL:
+                unpack_displaylist(gfx, packed_dl, opcode);
+                break;
+            default:
+                // Skip unknown values
+                break;
+        }
+    }
+    set_segment_base_addr(0x7, (void*) addr);
+}
+
+struct UnkStr_802AA7C8 {
+    u8* unk0;
+    uintptr_t unk4;
+    uintptr_t unk8;
+    uintptr_t unkC;
+};
+
+void decompress_textures(u32* arg0) {
+    u32 segment = SEGMENT_NUMBER2(arg0);
+    u32 offset = SEGMENT_OFFSET(arg0);
+    struct UnkStr_802AA7C8* phi_s0 = (struct UnkStr_802AA7C8*) SEGMENT_TO_PTR(segment, offset);
+    struct UnkStr_802AA7C8* temp_s0;
+    uintptr_t temp_t2;
+    u8* temp_a0;
+    uintptr_t phi_v0;
+    uintptr_t sp20;
+
+    phi_v0 = 0;
+    temp_s0 = phi_s0;
+    while (true) {
+        temp_a0 = phi_s0->unk0;
+        if ((temp_a0) == 0) {
+            break;
+        }
+        phi_v0 += phi_s0->unk8;
+        phi_s0++;
+    }
+    phi_s0 = temp_s0;
+    gHeapEndPtr -= phi_v0;
+    sp20 = gHeapEndPtr;
+
+    while (true) {
+        temp_a0 = phi_s0->unk0;
+        if ((temp_a0) == 0) {
+            break;
+        }
+        MIO0_0F(temp_a0, phi_s0->unk4, phi_s0->unk8);
+        phi_s0++;
+    }
+    gHeapEndPtr = sp20;
+    temp_t2 = gHeapEndPtr;
+    set_segment_base_addr(0x5, (void*) temp_t2);
+}
+
+void* decompress_segments(u8* start, u8* end) {
+    UNUSED u32 pad;
+    u32 sp28;
+    u32 size = ALIGN16(end - start);
+    u8* heapEnd;
+    u32* freeSpace;
+
+    heapEnd = (u8*) gHeapEndPtr - size;
+    // sp20 = temp_a0;
+    dma_copy(heapEnd, start, size);
+    sp28 = *(u32*) (heapEnd + 4);
+    sp28 = ALIGN16(sp28);
+    freeSpace = (u32*) gNextFreeMemoryAddress;
+    mio0decode(heapEnd, (u8*) freeSpace);
+    gNextFreeMemoryAddress += sp28;
+    return (void*) freeSpace;
+}
+
+/**
+ * @brief Loads & DMAs course data. Vtx, textures, displaylists, etc.
+ * @param courseId
+ */
+u8* load_course(s32 courseId) {
+    UNUSED s32 pad[4];
+    u8* vtxCompressed;      // mio0 compressed
+    u8* courseDataRomStart; // mio0 compressed
+    u8* courseDataRomEnd;
+    u8* vertexRomStart; // mio0 compressed
+    u8* vertexRomEnd;
+    UNUSED s32 pad2[2];
+    u32* textures;
+    CourseVtx* vertexStart; // mio0 compressed
+    u8* packedStart;
+    u32 vertexCount;
+    u8* finalDisplaylistOffset;
+    u32 unknown1;
+    s32 prevLoadedAddress_saved;
+    u8* offsetRomStart;
+    u8* offsetRomEnd;
+
+    // Pointers to rom offsets
+    // gamestate = gGamestate;
+    courseDataRomStart = gCourseTable[courseId].dlRomStart;
+    courseDataRomEnd = gCourseTable[courseId].dlRomEnd;
+    offsetRomStart = gCourseTable[courseId].offsetRomStart;
+    offsetRomEnd = gCourseTable[courseId].offsetRomEnd;
+    vertexRomStart = gCourseTable[courseId].vertexRomStart;
+    vertexRomEnd = gCourseTable[courseId].vertexRomEnd;
+    textures = gCourseTable[courseId].textures;
+    vertexStart = gCourseTable[courseId].vertexStart;
+    packedStart = gCourseTable[courseId].packedStart;
+    vertexCount = gCourseTable[courseId].vertexCount;
+    finalDisplaylistOffset = gCourseTable[courseId].finalDisplaylistOffset;
+    unknown1 = gCourseTable[courseId].unknown1;
+
+    if ((gGamestate == ENDING) || (gGamestate == CREDITS_SEQUENCE)) {
+        gHeapEndPtr = SEG_ENDING;
+    } else {
+        gHeapEndPtr = SEG_RACING;
+    }
+#ifndef TARGET_N64
+    // Course assets have stable addresses: on PSP they are linked data; on
+    // Retro-Go they were populated from the ROM. Segment 9 uses real pointers.
+    PORT_LOG("load_course %d (gamestate %d)\n", courseId, gGamestate);
+#ifndef TARGET_PSP
+    mk64_segment_set_course(courseId);
+#endif
+    // Segment 8 holds compiled-in course data (foliage/tree/spawn tables AND the
+    // display lists that reference their vertices/textures) at its real linked
+    // 0x08xxxxxx address; the port never DMAs it, so it was left unmapped and
+    // SEGMENT_TO_PTR resolved to garbage (0x00xxxxxx) -> reads junk on the
+    // emulator but faults on real hardware (DK Jungle / Moo Moo intro crash).
+    // Map it as identity so every segment-8 reference resolves to the real data.
+    set_segment_base_addr(8, (void*) 0x08000000);
+    set_segment_base_addr(9, NULL);
+    if (gGamestate != ENDING) {
+        #ifdef TARGET_PSP
+        port_set_segment_table(6, &gPortCourseSegTables[courseId].seg6);
+        #endif
+        set_segment_base_addr(6, NULL);
+    }
+    prevLoadedAddress_saved = gNextFreeMemoryAddress;
+    decompress_vtx(vertexStart, vertexCount);
+    #ifdef TARGET_PSP
+    port_set_segment_table(7, &gPortCourseSegTables[courseId].seg7);
+    #endif
+    set_segment_base_addr(7, NULL);
+    PORT_LOG(" vertices ok (%d), textures %p\n", vertexCount, textures);
+    decompress_textures(textures);
+    PORT_LOG(" textures ok (segment 5 at %08X)\n", (unsigned) gSegmentTable[5]);
+#ifdef PORT_INPUT_SCRIPT
+    { /* Debug: dump the decoded course textures (issue #1) */
+        FILE* fp = fopen(port_save_path("seg5.bin"), "wb");
+        if (fp) { fwrite((void*) gSegmentTable[5], 1, 0x18000, fp); fclose(fp); }
+    }
+#endif
+    gNextFreeMemoryAddress = prevLoadedAddress_saved;
+    return (u8*) vertexStart;
+#endif
+    set_segment_base_addr(9, load_data((uintptr_t) offsetRomStart, (uintptr_t) offsetRomEnd));
+
+    if (gGamestate != ENDING) {
+        set_segment_base_addr(6, decompress_segments(courseDataRomStart, courseDataRomEnd));
+    }
+    prevLoadedAddress_saved = gNextFreeMemoryAddress;
+    vtxCompressed = dma_compressed_vtx(vertexRomStart, vertexRomEnd);
+
+    set_segment_base_addr(0xF, (void*) vtxCompressed);
+    decompress_vtx(vertexStart, vertexCount);
+    displaylist_unpack((uintptr_t*) packedStart, (uintptr_t) finalDisplaylistOffset, unknown1);
+    decompress_textures(textures);
+    gNextFreeMemoryAddress = prevLoadedAddress_saved;
+    return vtxCompressed;
+}
