@@ -13,7 +13,26 @@ enum pcsxr_thread_type
 #ifndef USE_C11_THREADS
 
 /* use libretro-common rthreads */
+#ifdef ESP_PLATFORM
+#include <pthread.h>
+
+typedef struct { pthread_t id; } sthread_t;
+typedef pthread_mutex_t slock_t;
+typedef pthread_cond_t scond_t;
+
+sthread_t *sthread_create(void (*thread_func)(void *), void *userdata);
+void sthread_join(sthread_t *thread);
+slock_t *slock_new(void);
+void slock_free(slock_t *lock);
+void slock_lock(slock_t *lock);
+void slock_unlock(slock_t *lock);
+scond_t *scond_new(void);
+void scond_free(scond_t *cond);
+void scond_wait(scond_t *cond, slock_t *lock);
+void scond_signal(scond_t *cond);
+#else
 #include "rthreads/rthreads.h"
+#endif
 
 #define STRHEAD_RET_TYPE void
 #define STRHEAD_RETURN()

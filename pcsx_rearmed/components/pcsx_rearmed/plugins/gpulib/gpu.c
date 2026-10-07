@@ -25,12 +25,61 @@
 
 #include <esp_heap_caps.h>
 #include <esp_attr.h>
+#include <rg_system.h>
+#if defined(CONFIG_IDF_TARGET_ESP32P4)
+#include <esp_cpu.h>
+#endif
 
 //#define log_io gpu_log
 #define log_io(...)
 
 EXT_RAM_BSS_ATTR struct psx_gpu gpu;
 static const struct rearmed_cbs *cbs;
+
+/* Keep profiling outside the inner primitive loops: reading the timer for
+ * every polygon measurably changes the workload we are trying to diagnose.
+ * DMA chains and bulk writes cover normal GP0 rendering, while scanout
+ * records the framebuffer conversion/submission cost separately. */
+static uint64_t gpu_profile_render_us;
+static uint64_t gpu_profile_scanout_us;
+static uint32_t gpu_profile_render_calls;
+static uint32_t gpu_profile_scanout_calls;
+#if defined(CONFIG_IDF_TARGET_ESP32P4)
+static uint64_t gpu_profile_chain_parse_cycles;
+static uint32_t gpu_profile_chain_nodes;
+static uint32_t gpu_profile_chain_words;
+static uint32_t gpu_profile_chain_parse_calls;
+#endif
+
+void builtin_GPUgetProfile(uint64_t *render_us, uint64_t *scanout_us,
+  uint32_t *render_calls, uint32_t *scanout_calls)
+{
+  *render_us = gpu_profile_render_us;
+  *scanout_us = gpu_profile_scanout_us;
+  *render_calls = gpu_profile_render_calls;
+  *scanout_calls = gpu_profile_scanout_calls;
+
+  gpu_profile_render_us = 0;
+  gpu_profile_scanout_us = 0;
+  gpu_profile_render_calls = 0;
+  gpu_profile_scanout_calls = 0;
+}
+
+#if defined(CONFIG_IDF_TARGET_ESP32P4)
+void builtin_GPUgetChainProfile(uint64_t *parse_cycles, uint32_t *nodes,
+  uint32_t *words, uint32_t *parse_calls)
+{
+  *parse_cycles = gpu_profile_chain_parse_cycles;
+  *nodes = gpu_profile_chain_nodes;
+  *words = gpu_profile_chain_words;
+  *parse_calls = gpu_profile_chain_parse_calls;
+
+  gpu_profile_chain_parse_cycles = 0;
+  gpu_profile_chain_nodes = 0;
+  gpu_profile_chain_words = 0;
+  gpu_profile_chain_parse_calls = 0;
+}
+#endif
 
 static noinline int do_cmd_buffer(struct psx_gpu *gpu, uint32_t *data, int count,
     int *cycles_sum, int *cycles_last);
@@ -929,6 +978,7 @@ static noinline void flush_cmd_buffer(struct psx_gpu *gpu)
 
 void builtin_GPUwriteDataMem(uint32_t *mem, int count)
 {
+  int64_t profile_start = rg_system_timer();
   int dummy = 0, left;
 
   log_io(&gpu, "gpu_dma_write %p %d cached %d\n", mem, count, gpu.cmd_len);
@@ -941,6 +991,8 @@ void builtin_GPUwriteDataMem(uint32_t *mem, int count)
     log_anomaly(&gpu, "GPUwriteDataMem: discarded %d/%d words\n", left, count);
 
   sync_ecmds_status_bits(&gpu);
+  gpu_profile_render_us += rg_system_timer() - profile_start;
+  gpu_profile_render_calls++;
 }
 
 void builtin_GPUwriteData(uint32_t data)
@@ -956,6 +1008,7 @@ void builtin_GPUwriteData(uint32_t data)
 long builtin_GPUdmaChain(uint32_t *rambase, uint32_t start_addr,
   uint32_t *progress_addr, int32_t *cycles_last_cmd)
 {
+  int64_t profile_start = rg_system_timer();
   uint32_t addr, *list, ld_addr;
   int len, left, count, ld_count = 32;
   int cpu_cycles_sum = 0;
@@ -970,10 +1023,18 @@ long builtin_GPUdmaChain(uint32_t *rambase, uint32_t start_addr,
   addr = ld_addr = start_addr & 0xffffff;
   for (count = 0; (addr & 0x800000) == 0; count++)
   {
+#if defined(CONFIG_IDF_TARGET_ESP32P4)
+    uint32_t parse_start;
+#endif
     list = rambase + (addr & 0x1fffff) / 4;
     len = LE32TOH(list[0]) >> 24;
     addr = LE32TOH(list[0]) & 0xffffff;
     preload(rambase + (addr & 0x1fffff) / 4);
+
+#if defined(CONFIG_IDF_TARGET_ESP32P4)
+    gpu_profile_chain_nodes++;
+    gpu_profile_chain_words += len;
+#endif
 
     cpu_cycles_sum += 10;
     if (len > 0)
@@ -988,12 +1049,28 @@ long builtin_GPUdmaChain(uint32_t *rambase, uint32_t start_addr,
       }
       memcpy(gpu.cmd_buffer + gpu.cmd_len, list + 1, len * 4);
       gpu.cmd_len += len;
+#if defined(CONFIG_IDF_TARGET_ESP32P4)
+      parse_start = esp_cpu_get_cycle_count();
+#endif
       flush_cmd_buffer(&gpu);
+#if defined(CONFIG_IDF_TARGET_ESP32P4)
+      gpu_profile_chain_parse_cycles +=
+        (uint32_t)(esp_cpu_get_cycle_count() - parse_start);
+      gpu_profile_chain_parse_calls++;
+#endif
       continue;
     }
 
     if (len) {
+#if defined(CONFIG_IDF_TARGET_ESP32P4)
+      parse_start = esp_cpu_get_cycle_count();
+#endif
       left = do_cmd_buffer(&gpu, list + 1, len, &cpu_cycles_sum, &cpu_cycles_last);
+#if defined(CONFIG_IDF_TARGET_ESP32P4)
+      gpu_profile_chain_parse_cycles +=
+        (uint32_t)(esp_cpu_get_cycle_count() - parse_start);
+      gpu_profile_chain_parse_calls++;
+#endif
       if (left) {
         memcpy(gpu.cmd_buffer, list + 1 + len - left, left * 4);
         gpu.cmd_len = left;
@@ -1029,6 +1106,8 @@ long builtin_GPUdmaChain(uint32_t *rambase, uint32_t start_addr,
   if (progress_addr)
     *progress_addr = addr;
   *cycles_last_cmd = cpu_cycles_last;
+  gpu_profile_render_us += rg_system_timer() - profile_start;
+  gpu_profile_render_calls++;
   return cpu_cycles_sum;
 }
 
@@ -1102,7 +1181,7 @@ long GPUfreeze(uint32_t type, GPUFreeze_t *freeze, uint16_t **vram_ptr)
       gpu.status = freeze->ulStatus;
       gpu.cmd_len = 0;
       for (i = 8; i > 1; i--)
-        GPUwriteStatus((i << 24) | freeze->ulControl[i]);
+        builtin_GPUwriteStatus((i << 24) | freeze->ulControl[i]);
       renderer_sync_ecmds(gpu.ex_regs);
       renderer_update_caches(0, 0, 1024, 512, 0);
       gpu_async_sync_ecmds(&gpu);
@@ -1162,8 +1241,12 @@ void builtin_GPUupdateLace(void)
   else
     renderer_flush_queues();
 
-  if (!delay_vout_update)
+  if (!delay_vout_update) {
+    int64_t profile_start = rg_system_timer();
     updated = vout_update(&gpu, gpu.screen.src_x, gpu.screen.src_y);
+    gpu_profile_scanout_us += rg_system_timer() - profile_start;
+    gpu_profile_scanout_calls++;
+  }
   if (gpu.state.enhancement_active && !gpu.state.enhancement_was_active) {
     gpu_async_sync(&gpu);
     renderer_update_caches(0, 0, 1024, 512, 1);

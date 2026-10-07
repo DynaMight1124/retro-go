@@ -25,7 +25,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <esp_heap_caps.h>
-#include <esp_heap_caps.h>
+#include <rg_system.h>
 #include "psxcommon.h"
 #include "psxmem_map.h"
 #include "r3000a.h"
@@ -187,7 +187,7 @@ int psxMemInit(void)
 		return 0;
 
 #if defined(CONFIG_IDF_TARGET_ESP32P4)
-	memRLUT = heap_caps_malloc(table_size * sizeof(memRLUT[0]) * 2, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+	memRLUT = rg_alloc(table_size * sizeof(memRLUT[0]) * 2, MEM_SLOW);
 #else
     memRLUT = NULL; // Save DRAM on non-P4 targets
 #endif
@@ -275,18 +275,30 @@ u32 psxMemRead32(psxRegisters *regs, u32 mem) {
 
 void psxMemWrite8(psxRegisters *regs, u32 mem, u32 value) {
 	u8 *p;
+#ifdef DRC_DBG
+	extern u32 last_io_addr;
+	last_io_addr = mem;
+#endif
 	if (psxm_(&p, regs, mem, 1)) { *p = (u8)value; return; }
 	psxHwWrite8(mem, value);
 }
 
 void psxMemWrite16(psxRegisters *regs, u32 mem, u32 value) {
 	u8 *p;
+#ifdef DRC_DBG
+	extern u32 last_io_addr;
+	last_io_addr = mem;
+#endif
 	if (psxm_(&p, regs, mem, 1)) { *(u16 *)p = SWAP16((u16)value); return; }
 	psxHwWrite16(mem, value);
 }
 
 void psxMemWrite32(psxRegisters *regs, u32 mem, u32 value) {
 	u8 *p;
+#ifdef DRC_DBG
+	extern u32 last_io_addr;
+	last_io_addr = mem;
+#endif
 	if (psxm_(&p, regs, mem, 1)) { *(u32 *)p = SWAP32(value); return; }
 	psxHwWrite32(mem, value);
 }

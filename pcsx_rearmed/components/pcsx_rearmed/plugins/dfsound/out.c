@@ -32,6 +32,8 @@ void SetupSound(void)
 #endif
 #ifdef HAVE_LIBRETRO
 		REGISTER_DRIVER(libretro);
+#elif defined(HAVE_RETRO_GO)
+		REGISTER_DRIVER(retro_go);
 #else
 		REGISTER_DRIVER(none);
 #endif
@@ -49,4 +51,3 @@ void SetupSound(void)
 	out_current = &out_drivers[i];
 	// printf("selected sound output driver: %s\n", out_current->name);
 }
-

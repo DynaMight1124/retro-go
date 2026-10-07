@@ -272,6 +272,11 @@ INLINE u32 DIVIDE(u16 n, u16 d) {
 }
 #else
 #include "gte_divider.h"
+#if defined(CONFIG_IDF_TARGET_ESP32P4)
+/* Keep the PSX reciprocal algorithm exact while avoiding three nested
+ * DIVIDE()/__clzsi2 calls in every RTPT operation. */
+#define DIVIDE gte_divide_p4
+#endif
 #endif // GTE_USE_NATIVE_DIVIDE
 
 #ifndef FLAGLESS
@@ -944,6 +949,42 @@ void gteINTPL(psxCP2Regs *regs) {
 	gteB2 = limC3(gteMAC3 >> 4);
 }
 
+#if defined(CONFIG_IDF_TARGET_ESP32P4)
+/* Lightrec knows SF and LM while compiling each COP2 instruction.  Keep the
+ * generic handler for the interpreter and other dynarecs, but give the P4
+ * Lightrec adapter constant-mode versions of this hot operation.  The body is
+ * intentionally identical to gteINTPL() except that the two opcode-derived
+ * values are compile-time constants.  gte_nf.c includes this file with the
+ * names remapped by gte.h, producing equivalent flagless variants as well. */
+#define DEFINE_INTPL_VARIANT(name, shift, lm) \
+void name(psxCP2Regs *regs) \
+{ \
+	gteFLAG = 0; \
+	gteMAC1 = ((gteIR1 << 12) + \
+		(gteIR0 * limB1(A1U((s64)gteRFC - gteIR1), 0))) >> shift; \
+	gteMAC2 = ((gteIR2 << 12) + \
+		(gteIR0 * limB2(A2U((s64)gteGFC - gteIR2), 0))) >> shift; \
+	gteMAC3 = ((gteIR3 << 12) + \
+		(gteIR0 * limB3(A3U((s64)gteBFC - gteIR3), 0))) >> shift; \
+	gteIR1 = limB1(gteMAC1, lm); \
+	gteIR2 = limB2(gteMAC2, lm); \
+	gteIR3 = limB3(gteMAC3, lm); \
+	gteRGB0 = gteRGB1; \
+	gteRGB1 = gteRGB2; \
+	gteCODE2 = gteCODE; \
+	gteR2 = limC1(gteMAC1 >> 4); \
+	gteG2 = limC2(gteMAC2 >> 4); \
+	gteB2 = limC3(gteMAC3 >> 4); \
+}
+
+DEFINE_INTPL_VARIANT(gteINTPL_sf0_lm0, 0, 0)
+DEFINE_INTPL_VARIANT(gteINTPL_sf0_lm1, 0, 1)
+DEFINE_INTPL_VARIANT(gteINTPL_sf1_lm0, 12, 0)
+DEFINE_INTPL_VARIANT(gteINTPL_sf1_lm1, 12, 1)
+
+#undef DEFINE_INTPL_VARIANT
+#endif
+
 void gteCDP(psxCP2Regs *regs) {
 #ifdef GTE_LOG
 	GTE_LOG("GTE CDP\n");
@@ -1097,4 +1138,3 @@ void gteMACtoRGB(psxCP2Regs *regs) {
 	gteG2 = limC2(gteMAC2 >> 4);
 	gteB2 = limC3(gteMAC3 >> 4);
 }
-

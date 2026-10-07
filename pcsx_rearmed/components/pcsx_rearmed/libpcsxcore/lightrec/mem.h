@@ -12,6 +12,13 @@
 #    define WUP_RWX_MEM_BASE		0x00802000
 #    define WUP_RWX_MEM_END		0x01000000
 #    define CODE_BUFFER_SIZE_DFT	(WUP_RWX_MEM_END - WUP_RWX_MEM_BASE)
+#elif defined(ESP_PLATFORM) && defined(CONFIG_IDF_TARGET_ESP32P4)
+/* The P4 stores generated code in executable PSRAM. Use Lightrec's normal
+ * cache size: the earlier 128 KiB mapping fills during PSX startup before
+ * any blocks are old enough for the cache reaper to discard. */
+#    define CODE_BUFFER_SIZE_DFT	(8 * 1024 * 1024)
+#elif defined(ESP_PLATFORM)
+#    define CODE_BUFFER_SIZE_DFT	(32 * 1024)
 #else
 #    define CODE_BUFFER_SIZE_DFT	(8 * 1024 * 1024)
 #endif

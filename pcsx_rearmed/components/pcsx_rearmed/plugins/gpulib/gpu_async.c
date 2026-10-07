@@ -18,6 +18,10 @@
 #include "../../include/compiler_features.h"
 #include "../../frontend/pcsxr-threads.h"
 
+#ifdef ESP_PLATFORM
+#include "esp_timer.h"
+#endif
+
 //#define agpu_log gpu_log
 #define agpu_log(...)
 
@@ -38,15 +42,21 @@
 #define FAKECMD_DMA_WRITE     0xddu
 #define FAKECMD_BREAK         0xdcu
 
-#if defined(__aarch64__) || defined(HAVE_ARMV7)
+#if defined(__riscv)
+#define BARRIER() __atomic_thread_fence(__ATOMIC_RELEASE)
+#define RDPOS(pos_) __atomic_load_n(&(pos_), __ATOMIC_ACQUIRE)
+#define WRPOS(pos_, d_) __atomic_store_n(&(pos_), (d_), __ATOMIC_RELEASE)
+#elif defined(__aarch64__) || defined(HAVE_ARMV7)
 #define BARRIER() __asm__ __volatile__ ("dmb ishst" ::: "memory")
 #elif defined(HAVE_ARMV6)
 #define BARRIER() __asm__ __volatile__ ("mcr p15, 0, %0, c7, c10, 5" :: "r"(0) : "memory")
 #else
 #define BARRIER() __asm__ __volatile__ ("" ::: "memory")
 #endif
+#ifndef RDPOS
 #define RDPOS(pos_) *(volatile uint32_t *)&(pos_)
 #define WRPOS(pos_, d_) *(volatile uint32_t *)&(pos_) = (d_)
+#endif
 
 enum waitmode {
   waitmode_none = 0,
@@ -80,7 +90,43 @@ struct psx_gpu_async
   struct {
     int src_x, src_y;
   } delayed_flip;
+  uint64_t profile_wait_us[AGPU_PROFILE_WAIT_COUNT];
+  uint32_t profile_wait_calls[AGPU_PROFILE_WAIT_COUNT];
 };
+
+static inline int64_t profile_time_us(void)
+{
+#ifdef ESP_PLATFORM
+  return esp_timer_get_time();
+#else
+  return 0;
+#endif
+}
+
+static inline void profile_wait(struct psx_gpu_async *agpu, unsigned int type,
+    int64_t start)
+{
+  int64_t elapsed = profile_time_us() - start;
+  if (elapsed > 0)
+    agpu->profile_wait_us[type] += elapsed;
+  agpu->profile_wait_calls[type]++;
+}
+
+void gpu_async_get_profile(uint64_t wait_us[AGPU_PROFILE_WAIT_COUNT],
+    uint32_t wait_calls[AGPU_PROFILE_WAIT_COUNT])
+{
+  struct psx_gpu_async *agpu = gpu.async;
+  unsigned int i;
+
+  for (i = 0; i < AGPU_PROFILE_WAIT_COUNT; i++) {
+    wait_us[i] = agpu ? agpu->profile_wait_us[i] : 0;
+    wait_calls[i] = agpu ? agpu->profile_wait_calls[i] : 0;
+    if (agpu) {
+      agpu->profile_wait_us[i] = 0;
+      agpu->profile_wait_calls[i] = 0;
+    }
+  }
+}
 
 // cmd_* must be at least 3 words long
 union cmd_screen_change
@@ -126,8 +172,8 @@ static int do_dma_write(struct psx_gpu *gpu,
 
 static void run_thread_nolock(struct psx_gpu_async *agpu)
 {
-  if (agpu->idle) {
-    agpu->idle = 0;
+  if (RDPOS(agpu->idle)) {
+    WRPOS(agpu->idle, 0);
     scond_signal(agpu->cond_use);
     //agpu_log(&gpu, "%u/%u kick\n", RDPOS(agpu->pos_used), agpu->pos_added);
   }
@@ -135,6 +181,13 @@ static void run_thread_nolock(struct psx_gpu_async *agpu)
 
 static void run_thread(struct psx_gpu_async *agpu)
 {
+  /* Command lists arrive as hundreds of small DMA packets. Once the worker
+   * is awake there is nothing to protect or signal, so avoid taking the
+   * pthread mutex for every packet. The worker rechecks pos_added after
+   * publishing idle below, which closes the otherwise possible lost-wakeup
+   * race between this test and its wait. */
+  if (!RDPOS(agpu->idle))
+    return;
   slock_lock(agpu->lock);
   run_thread_nolock(agpu);
   slock_unlock(agpu->lock);
@@ -196,10 +249,14 @@ static void do_add_with_wait(struct psx_gpu_async *agpu,
     slock_lock(agpu->lock);
     run_thread_nolock(agpu);
     while (list_words > AGPU_BUF_LEN - (agpu->pos_added - RDPOS(agpu->pos_used))) {
+      int64_t wait_start;
+
       assert(!agpu->idle);
       assert(agpu->wait_mode == waitmode_none);
       agpu->wait_mode = waitmode_progress;
+      wait_start = profile_time_us();
       scond_wait(agpu->cond_add, agpu->lock);
+      profile_wait(agpu, AGPU_PROFILE_WAIT_SPACE, wait_start);
     }
     slock_unlock(agpu->lock);
   }
@@ -494,7 +551,11 @@ static STRHEAD_RET_TYPE gpu_async_thread(void *unused)
         default:
           assert(0);
       }
-      agpu->idle = 1;
+      WRPOS(agpu->idle, 1);
+      if (RDPOS(agpu->pos_added) != agpu->pos_used) {
+        WRPOS(agpu->idle, 0);
+        continue;
+      }
       //agpu_log(&gpu, "%u/%u sleep\n", agpu->pos_used, RDPOS(agpu->pos_added));
       scond_wait(agpu->cond_use, agpu->lock);
       continue;
@@ -647,7 +708,7 @@ static int do_dma_write(struct psx_gpu *gpu,
   return done;
 }
 
-static void gpu_async_sync_nocheck(struct psx_gpu *gpu)
+static void gpu_async_sync_nocheck(struct psx_gpu *gpu, unsigned int wait_type)
 {
   struct psx_gpu_async *agpu = gpu->async;
 
@@ -660,9 +721,13 @@ static void gpu_async_sync_nocheck(struct psx_gpu *gpu)
     run_thread_nolock(agpu);
   }
   if (!agpu->idle) {
+    int64_t wait_start;
+
     assert(agpu->wait_mode == waitmode_none);
     agpu->wait_mode = waitmode_full;
+    wait_start = profile_time_us();
     scond_wait(agpu->cond_add, agpu->lock);
+    profile_wait(agpu, wait_type, wait_start);
   }
   slock_unlock(agpu->lock);
   assert(agpu->pos_added == agpu->pos_used);
@@ -676,7 +741,7 @@ void gpu_async_sync(struct psx_gpu *gpu)
   if (!agpu)
     return;
   if (!RDPOS(agpu->idle) || agpu->pos_added != RDPOS(agpu->pos_used))
-    gpu_async_sync_nocheck(gpu);
+    gpu_async_sync_nocheck(gpu, AGPU_PROFILE_WAIT_FULL);
 
   if (unlikely(agpu->delayed_flip.src_x != -1)) {
     int src_x = agpu->delayed_flip.src_x;
@@ -749,15 +814,19 @@ static void do_scanout_wait(struct psx_gpu *gpu, int check_ret, uint32_t target)
         RDPOS(agpu->pos_used), RDPOS(agpu->pos_used), agpu->pos_added);
     slock_lock(agpu->lock);
     if (!agpu->idle && (int32_t)(agpu->pos_used - target) < 0) {
+      int64_t wait_start;
+
       assert(agpu->wait_mode == waitmode_none);
       agpu->pos_target = target;
       agpu->wait_mode = waitmode_target;
+      wait_start = profile_time_us();
       scond_wait(agpu->cond_add, agpu->lock);
+      profile_wait(agpu, AGPU_PROFILE_WAIT_SCANOUT, wait_start);
     }
     slock_unlock(agpu->lock);
   }
   else
-    gpu_async_sync_nocheck(gpu);
+    gpu_async_sync_nocheck(gpu, AGPU_PROFILE_WAIT_SCANOUT);
 }
 
 int gpu_async_sync_scanout(struct psx_gpu *gpu)
@@ -773,8 +842,9 @@ int gpu_async_sync_scanout(struct psx_gpu *gpu)
     return 0;
   if (gpu->frameskip.set) {
     // delay. Could do it without fskip also, but that would cause frame/input lag
-    if (agpu->delayed_flip.src_x != -1)
+    if (agpu->delayed_flip.src_x != -1) {
       agpu_log(gpu, "agpu: missed delayed_flip?\n");
+    }
     agpu->delayed_flip.src_x = gpu->screen.src_x;
     agpu->delayed_flip.src_y = gpu->screen.src_y;
     return 1;

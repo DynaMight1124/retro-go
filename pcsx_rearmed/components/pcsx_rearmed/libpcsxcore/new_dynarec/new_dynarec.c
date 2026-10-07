@@ -23,8 +23,16 @@
 #include <stdint.h> //include for uint64_t
 #include <assert.h>
 #include <errno.h>
+#if defined(ESP_PLATFORM) && defined(CONFIG_IDF_TARGET_ESP32P4)
+#include <esp_attr.h>
+#define NDRC_COLD_BSS EXT_RAM_BSS_ATTR
+#else
+#define NDRC_COLD_BSS
+#endif
+#ifndef ESP_PLATFORM
 #include <sys/mman.h>
 #include <unistd.h>
+#endif
 #ifdef __MACH__
 #include <libkern/OSCacheControl.h>
 #endif
@@ -41,6 +49,7 @@ static Jit g_jit;
 #include "../psxinterpreter.h"
 #include "../psxcounters.h"
 #include "../gte.h"
+#include "../sio.h"
 #include "emu_if.h" // emulator interface
 #include "linkage_offsets.h"
 #include "compiler_features.h"
@@ -66,7 +75,7 @@ static Jit g_jit;
 #ifdef ASSEM_PRINT
 #define assem_debug printf
 #else
-#define assem_debug(...)
+#define assem_debug(...) ((void)0)
 #endif
 #ifdef ASSEM_PRINT_ADDRS
 #define log_addr(a) (a)
@@ -103,6 +112,9 @@ extern uintptr_t mini_ht[32][2];
 #endif
 #ifdef __aarch64__
 #include "assem_arm64.h"
+#endif
+#if defined(__riscv) && __riscv_xlen == 32
+#include "assem_rv32.h"
 #endif
 
 #define RAM_SIZE 0x200000
@@ -143,6 +155,9 @@ struct ndrc_mem
 };
 
 static struct ndrc_mem *ndrc;
+#if defined(ESP_PLATFORM) && defined(CONFIG_IDF_TARGET_ESP32P4)
+static void *ndrc_exec_backing;
+#endif
 #ifndef BASE_ADDR_DYNAMIC
 // reserve .bss space with upto 64k page size in mind
 static char ndrc_bss[((sizeof(*ndrc) + 65535) & ~65535) + 65536];
@@ -184,19 +199,7 @@ enum stub_type {
 // [i].regmap_entry - regs that must be set up if someone jumps here
 // [i].regmap       - regs [i] insn will read/(over)write
 // branch_regs[i].* - same as above but for branches, takes delay slot into account
-struct regstat
-{
-  signed char regmap_entry[HOST_REGS];
-  signed char regmap[HOST_REGS];
-  u_int wasdirty;
-  u_int dirty;
-  u_int wasconst;                // before; for example 'lw r2, (r2)' wasconst is true
-  u_int isconst;                 //  ... but isconst is false when r2 is known (hr)
-  u_int loadedconst;             // host regs that have constants loaded
-  u_int noevict;                 // can't evict this hr (alloced by current op)
-  //u_int waswritten;              // MIPS regs that were used as store base before
-  uint64_t u;
-};
+#include "regstat.h"
 
 struct ht_entry
 {
@@ -255,68 +258,35 @@ struct jump_info
   } e[0];
 };
 
-static struct decoded_insn
-{
-  u_char itype;
-  u_char opcode;   // bits 31-26
-  u_char opcode2;  // (depends on opcode)
-  u_char rs1;
-  u_char rs2;
-  u_char rt1;
-  u_char rt2;
-  u_char use_lt1:1;
-  u_char bt:1;
-  u_char ooo:1;
-  u_char is_ds:1;
-  u_char is_jump:1;
-  u_char is_ujump:1;
-  u_char is_load:1;
-  u_char is_store:1;
-  u_char is_delay_load:1; // is_load + MFC/CFC
-  u_char is_exception:1;  // unconditional, also interp. fallback
-  u_char may_except:1;    // might generate an exception
-  u_char ls_type:2;       // load/store type (ls_width_type LS_*)
-} dops[MAXBLOCK];
-
-enum ls_width_type {
-  LS_8 = 0, LS_16, LS_32, LS_LR
-};
-
-static struct compile_info
-{
-  int imm;
-  u_int ba;
-  int ccadj;
-  signed char min_free_regs;
-  signed char addr;
-  signed char reserved[2];
-} cinfo[MAXBLOCK];
+#include "decode_types.h"
+static NDRC_COLD_BSS struct decoded_insn dops[MAXBLOCK];
+static NDRC_COLD_BSS struct compile_info cinfo[MAXBLOCK];
 
   static u_char *out;
-  static char invalid_code[0x100000];
-  static struct ht_entry hash_table[65536];
-  static struct block_info *blocks[PAGE_COUNT];
+  static NDRC_COLD_BSS char invalid_code[0x100000];
+  static NDRC_COLD_BSS struct ht_entry hash_table[65536];
+  static NDRC_COLD_BSS struct block_info *blocks[PAGE_COUNT];
   static struct block_info *block_oldest, *block_last_compiled;
-  static struct jump_info *jumps[PAGE_COUNT]; // [<target_page>]
-  static uint64_t gte_rs[MAXBLOCK]; // gte: 32 data and 32 ctl regs
-  static uint64_t gte_rt[MAXBLOCK];
-  static uint64_t gte_unneeded[MAXBLOCK];
+  static NDRC_COLD_BSS struct jump_info *jumps[PAGE_COUNT]; // [<target_page>]
+  static NDRC_COLD_BSS uint64_t gte_rs[MAXBLOCK]; // gte: 32 data and 32 ctl regs
+  static NDRC_COLD_BSS uint64_t gte_rt[MAXBLOCK];
+  static NDRC_COLD_BSS uint64_t gte_unneeded[MAXBLOCK];
   unsigned int ndrc_smrv_regs[32]; // speculated MIPS register values
   static u_int smrv_strong; // mask or regs that are likely to have correct values
   static u_int smrv_weak; // same, but somewhat less likely
   static u_int smrv_strong_next; // same, but after current insn executes
   static u_int smrv_weak_next;
   // see 'struct regstat' for a description
-  static signed char regmap_pre[MAXBLOCK][HOST_REGS];
+  static NDRC_COLD_BSS signed char regmap_pre[MAXBLOCK][HOST_REGS];
   // contains 'real' consts at [i] insn, but may differ from what's actually
   // loaded in host reg as 'final' value is always loaded, see get_final_value()
   static uint32_t current_constmap[HOST_REGS];
-  static uint32_t constmap[MAXBLOCK][HOST_REGS];
-  static struct regstat regs[MAXBLOCK];
-  static struct regstat branch_regs[MAXBLOCK];
-  static struct code_stub stubs[MAXBLOCK];
+  static NDRC_COLD_BSS uint32_t constmap[MAXBLOCK][HOST_REGS];
+  static NDRC_COLD_BSS struct regstat regs[MAXBLOCK];
+  static NDRC_COLD_BSS struct regstat branch_regs[MAXBLOCK];
+  static NDRC_COLD_BSS struct code_stub stubs[MAXBLOCK];
   static int stubcount;
-  static u_int literals[1024][2];
+  static NDRC_COLD_BSS u_int literals[1024][2];
   static int literalcount;
   static u_int stop_after_jal;
   static u_int ni_count;
@@ -327,6 +297,8 @@ static struct compile_info
   static int stat_bc_direct;
   static int stat_bc_restore;
   static int stat_ht_lookups;
+  static int stat_return_lookups;
+  static int stat_mini_fills;
   static int stat_jump_in_lookups;
   static int stat_restore_tries;
   static int stat_restore_compares;
@@ -360,50 +332,7 @@ struct compile_state
 
   /* registers that may be allocated */
   /* 1-31 gpr */
-#define LOREG 32 // lo
-#define HIREG 33 // hi
-//#define FSREG 34 // FPU status (FCSR)
-//#define CSREG 35 // Coprocessor status
-#define CCREG 36 // Cycle count
-#define INVCP 37 // Pointer to invalid_code
-//#define MMREG 38 // Pointer to memory_map
-#define ROREG 39 // ram offset (if psxM != 0x80000000)
-#define TEMPREG 40
-#define FTEMP 40 // Load/store temporary register (was fpu)
-#define PTEMP 41 // Prefetch temporary register
-//#define TLREG 42 // TLB mapping offset
-#define RHASH 43 // Return address hash
-#define RHTBL 44 // Return address hash table address
-#define RTEMP 45 // JR/JALR address register
-#define MAXREG 45
-#define AGEN1 46 // Address generation temporary register (pass5b_preallocate2)
-//#define AGEN2 47 // Address generation temporary register
-
-  /* instruction types */
-#define NOP 0     // No operation
-#define LOAD 1    // Load
-#define STORE 2   // Store
-#define LOADLR 3  // Unaligned load
-#define STORELR 4 // Unaligned store
-#define MOV 5     // Move (hi/lo only)
-#define ALU 6     // Arithmetic/logic
-#define MULTDIV 7 // Multiply/divide
-#define SHIFT 8   // Shift by register
-#define SHIFTIMM 9// Shift by immediate
-#define IMM16 10  // 16-bit immediate
-#define RJUMP 11  // Unconditional jump to register
-#define UJUMP 12  // Unconditional jump
-#define CJUMP 13  // Conditional branch (BEQ/BNE/BGTZ/BLEZ)
-#define SJUMP 14  // Conditional branch (regimm format)
-#define COP0 15   // Coprocessor 0
-#define RFE 16
-#define SYSCALL 22// SYSCALL,BREAK
-#define OTHER 23  // Other/unknown - do nothing
-#define HLECALL 26// PCSX fake opcodes for HLE
-#define COP2 27   // Coprocessor 2 move
-#define C2LS 28   // Coprocessor 2 load/store
-#define C2OP 29   // Coprocessor 2 operation
-#define INTCALL 30// Call interpreter to handle rare corner cases
+#include "compiler_enums.h"
 
   /* branch codes */
 #define TAKEN 1
@@ -504,7 +433,14 @@ static void mprotect_w_x(void *start, void *end, int is_x)
 
 void new_dyna_clear_cache(void *start, void *end)
 {
-#if defined(__arm__) || defined(__aarch64__)
+#if defined(ESP_PLATFORM) && defined(CONFIG_IDF_TARGET_ESP32P4) && \
+    defined(__riscv) && __riscv_xlen == 32
+  int ret = ndrc_rv32_p4_publish(start, (char *)end - (char *)start);
+  if (ret != 0) {
+    SysPrintf("RV32 executable cache publish failed: %d\n", ret);
+    abort();
+  }
+#elif defined(__arm__) || defined(__aarch64__)
   size_t len = (char *)end - (char *)start;
   #if   defined(__BLACKBERRY_QNX__)
   msync(start, len, MS_SYNC | MS_CACHE_ONLY | MS_INVALIDATE_ICACHE);
@@ -933,10 +869,106 @@ void *ndrc_get_addr_ht_param(struct ht_entry *ht, unsigned int vaddr,
 
 // "usual" addr lookup for indirect branches, etc
 // to be used by currently running code only
-void *ndrc_get_addr_ht(u_int vaddr, struct ht_entry *ht)
+void *noinline ndrc_get_addr_ht(u_int vaddr, struct ht_entry *ht)
 {
+#ifdef STAT_PRINT
+  /* RV32 currently sends every indirect branch through the C hash lookup.
+   * Link-register targets approximate the return traffic that a safe mini
+   * return cache could remove. WRITE_LINK_REGISTER_EARLY keeps this copy of
+   * r31 current before generated code enters the helper. */
+  if (vaddr == psxRegs.GPR.n.ra)
+    stat_inc(stat_return_lookups);
+#endif
+#if defined(ESP_PLATFORM) && defined(CONFIG_IDF_TARGET_ESP32P4)
+  /* A bogus indirect dispatch can otherwise lose its generated-code origin
+   * before get_addr() discovers that the guest address is unmapped. Capture
+   * the specific RAM-offset alias failure once, with enough code and source
+   * context to identify the bad register transfer. */
+  static int bad_ram_offset_logged;
+  if (!bad_ram_offset_logged && vaddr == (u_int)ram_offset) {
+    const void *caller = __builtin_return_address(0);
+    uintptr_t caller_off = (const u_char *)caller - ndrc->translation_cache;
+    const struct block_info *owner = NULL;
+    const struct block_info *block;
+
+    bad_ram_offset_logged = 1;
+    for (block = block_oldest; block; block = block->next_in_tc) {
+      if (caller_off >= block->tc_offs &&
+          caller_off < block->tc_offs + block->tc_len) {
+        owner = block;
+        break;
+      }
+    }
+    SysPrintf("RV32 bad dispatch: target=%08x caller=%p pc=%08x ra=%08x\n",
+      vaddr, caller, psxRegs.pc, psxRegs.GPR.n.ra);
+    if (owner) {
+      const u_int *source = owner->source;
+      u_int source_words = owner->len / sizeof(*source);
+      u_int dump_words = source_words < 64 ? source_words : 64;
+      /* This block is small enough that its prologue store is more valuable
+       * than another narrow window around the dispatcher call. */
+      uintptr_t first_off = owner->tc_offs;
+      uintptr_t last_off = caller_off + 16;
+
+      if (first_off < owner->tc_offs) first_off = owner->tc_offs;
+      if (last_off > owner->tc_offs + owner->tc_len)
+        last_off = owner->tc_offs + owner->tc_len;
+      first_off &= ~(uintptr_t)3;
+      last_off &= ~(uintptr_t)3;
+      SysPrintf("RV32 bad block: guest=%08x len=%u host=+%06x/%u caller=+%06x\n",
+        owner->start, owner->len, owner->tc_offs, owner->tc_len,
+        (u_int)caller_off);
+      {
+        u_int sp = psxRegs.GPR.n.sp;
+        u_int ram_addr = sp & 0x1fffffff;
+        if (ram_offset && ram_addr >= 32 && ram_addr < RAM_SIZE) {
+          const u_int *stack = (const u_int *)((uintptr_t)ram_offset + sp - 32);
+          SysPrintf("RV32 bad stack: sp=%08x [-32..-4]=%08x %08x %08x %08x"
+            " %08x %08x %08x %08x\n", sp, stack[0], stack[1], stack[2],
+            stack[3], stack[4], stack[5], stack[6], stack[7]);
+        }
+      }
+      for (u_int i = 0; i < dump_words; i += 4)
+        SysPrintf("RV32 bad guest +%04x: %08x %08x %08x %08x\n", i * 4,
+          source[i], i + 1 < dump_words ? source[i + 1] : 0,
+          i + 2 < dump_words ? source[i + 2] : 0,
+          i + 3 < dump_words ? source[i + 3] : 0);
+      for (uintptr_t off = first_off; off < last_off; off += 16) {
+        const u_int *code = (const u_int *)NDRC_WRITE_OFFSET(
+          ndrc->translation_cache + off);
+        u_int available = (last_off - off) / sizeof(*code);
+        SysPrintf("RV32 bad host +%06x: %08x %08x %08x %08x\n", (u_int)off,
+          code[0], available > 1 ? code[1] : 0,
+          available > 2 ? code[2] : 0, available > 3 ? code[3] : 0);
+      }
+    }
+    else {
+      SysPrintf("RV32 bad dispatch caller is outside the translation cache\n");
+    }
+  }
+#endif
   return ndrc_get_addr_ht_param(ht, vaddr, ndrc_cm_compile_live);
 }
+
+#if defined(__riscv) && __riscv_xlen == 32
+/* RV32 blocks do not preserve one another's allocated host-register maps, so
+ * the traditional Ari64 mini hash cannot safely point into a caller's
+ * internal continuation. Cache the normal hash-table entry veneer after the
+ * first miss instead. That veneer reconstructs the destination block's map
+ * from the architectural state already flushed by rjump_assemble(). */
+static void *noinline ndrc_get_addr_ht_mini(u_int vaddr, struct ht_entry *ht)
+{
+  void *target = ndrc_get_addr_ht(vaddr, ht);
+  unsigned int slot = (vaddr & 0xff) >> 3;
+
+  mini_ht[slot][1] = (uintptr_t)target;
+  /* Publish the tag last so an eventual threaded compiler cannot observe a
+   * matching address paired with the previous entry pointer. */
+  mini_ht[slot][0] = vaddr;
+  stat_inc(stat_mini_fills);
+  return target;
+}
+#endif
 
 static void clear_all_regs(signed char regmap[])
 {
@@ -951,43 +983,11 @@ extern signed char get_reg(const signed char regmap[], signed char r);
 
 #else
 
-static signed char get_reg(const signed char regmap[], signed char r)
-{
-  int hr;
-  for (hr = 0; hr < HOST_REGS; hr++) {
-    if (hr == EXCLUDE_REG)
-      continue;
-    if (regmap[hr] == r)
-      return hr;
-  }
-  return -1;
-}
+#include "regmap_lookup.h"
 
 #endif
 
-// get reg suitable for writing
-static signed char get_reg_w(const signed char regmap[], signed char r)
-{
-  return r == 0 ? -1 : get_reg(regmap, r);
-}
-
-// get reg as mask bit (1 << hr)
-static u_int get_regm(const signed char regmap[], signed char r)
-{
-  return (1u << (get_reg(regmap, r) & 31)) & ~(1u << 31);
-}
-
-static signed char get_reg_temp(const signed char regmap[])
-{
-  int hr;
-  for (hr = 0; hr < HOST_REGS; hr++) {
-    if (hr == EXCLUDE_REG)
-      continue;
-    if (regmap[hr] == (signed char)-1)
-      return hr;
-  }
-  return -1;
-}
+#include "regmap_access.h"
 
 // Find a register that is available for two consecutive cycles
 static signed char get_reg2(signed char regmap1[], const signed char regmap2[], int r)
@@ -1040,230 +1040,7 @@ static int count_free_regs(const signed char regmap[])
   return count;
 }
 
-static void dirty_reg(struct regstat *cur, signed char reg)
-{
-  int hr;
-  if (!reg) return;
-  hr = get_reg(cur->regmap, reg);
-  if (hr >= 0)
-    cur->dirty |= 1<<hr;
-}
-
-static void set_const(struct regstat *cur, signed char reg, uint32_t value)
-{
-  int hr;
-  if (!reg) return;
-  hr = get_reg(cur->regmap, reg);
-  if (hr >= 0) {
-    cur->isconst |= 1<<hr;
-    current_constmap[hr] = value;
-  }
-}
-
-static void clear_const(struct regstat *cur, signed char reg)
-{
-  int hr;
-  if (!reg) return;
-  hr = get_reg(cur->regmap, reg);
-  if (hr >= 0)
-    cur->isconst &= ~(1<<hr);
-}
-
-static int is_const(const struct regstat *cur, signed char reg)
-{
-  int hr;
-  if (reg < 0) return 0;
-  if (!reg) return 1;
-  hr = get_reg(cur->regmap, reg);
-  if (hr >= 0)
-    return (cur->isconst>>hr)&1;
-  return 0;
-}
-
-static uint32_t get_const(const struct regstat *cur, signed char reg)
-{
-  int hr;
-  if (!reg) return 0;
-  hr = get_reg(cur->regmap, reg);
-  if (hr >= 0)
-    return current_constmap[hr];
-
-  SysPrintf("Unknown constant in r%d\n", reg);
-  abort();
-}
-
-// Least soon needed registers
-// Look at the next ten instructions and see which registers
-// will be used.  Try not to reallocate these.
-static void lsn(struct compile_state *st, u_char hsn[], int i)
-{
-  int j;
-  int b=-1;
-  for(j=0;j<9;j++)
-  {
-    if(i+j >= st->slen) {
-      j = st->slen-i-1;
-      break;
-    }
-    if (dops[i+j].is_ujump)
-    {
-      // Don't go past an unconditonal jump
-      j++;
-      break;
-    }
-  }
-  for(;j>=0;j--)
-  {
-    if(dops[i+j].rs1) hsn[dops[i+j].rs1]=j;
-    if(dops[i+j].rs2) hsn[dops[i+j].rs2]=j;
-    if(dops[i+j].rt1) hsn[dops[i+j].rt1]=j;
-    if(dops[i+j].rt2) hsn[dops[i+j].rt2]=j;
-    if(dops[i+j].itype==STORE || dops[i+j].itype==STORELR) {
-      // Stores can allocate zero
-      hsn[dops[i+j].rs1]=j;
-      hsn[dops[i+j].rs2]=j;
-    }
-    if (ram_offset && (dops[i+j].is_load || dops[i+j].is_store))
-      hsn[ROREG] = j;
-    // On some architectures stores need invc_ptr
-    #if defined(HOST_IMM8)
-    if (dops[i+j].is_store)
-      hsn[INVCP] = j;
-    #endif
-    if(i+j>=0&&(dops[i+j].itype==UJUMP||dops[i+j].itype==CJUMP||dops[i+j].itype==SJUMP))
-    {
-      hsn[CCREG]=j;
-      b=j;
-    }
-  }
-  if(b>=0)
-  {
-    if(cinfo[i+b].ba >= st->start && cinfo[i+b].ba < (st->start + st->slen*4))
-    {
-      // Follow first branch
-      int t=(cinfo[i+b].ba-st->start)>>2;
-      j=7-b;
-      if (t+j >= st->slen) j = st->slen-t-1;
-      for(;j>=0;j--)
-      {
-        if(dops[t+j].rs1) if(hsn[dops[t+j].rs1]>j+b+2) hsn[dops[t+j].rs1]=j+b+2;
-        if(dops[t+j].rs2) if(hsn[dops[t+j].rs2]>j+b+2) hsn[dops[t+j].rs2]=j+b+2;
-        //if(dops[t+j].rt1) if(hsn[dops[t+j].rt1]>j+b+2) hsn[dops[t+j].rt1]=j+b+2;
-        //if(dops[t+j].rt2) if(hsn[dops[t+j].rt2]>j+b+2) hsn[dops[t+j].rt2]=j+b+2;
-      }
-    }
-    // TODO: preferred register based on backward branch
-  }
-  // Delay slot should preferably not overwrite branch conditions or cycle count
-  if (i > 0 && dops[i-1].is_jump) {
-    if(dops[i-1].rs1) if(hsn[dops[i-1].rs1]>1) hsn[dops[i-1].rs1]=1;
-    if(dops[i-1].rs2) if(hsn[dops[i-1].rs2]>1) hsn[dops[i-1].rs2]=1;
-    hsn[CCREG]=1;
-    // ...or hash tables
-    hsn[RHASH]=1;
-    hsn[RHTBL]=1;
-  }
-  // Coprocessor load/store needs FTEMP, even if not declared
-  if(dops[i].itype==C2LS) {
-    hsn[FTEMP]=0;
-  }
-  // Load/store L/R also uses FTEMP as a temporary register
-  if (dops[i].itype == LOADLR || dops[i].itype == STORELR) {
-    hsn[FTEMP]=0;
-  }
-  // Don't remove the miniht registers
-  if(dops[i].itype==UJUMP||dops[i].itype==RJUMP)
-  {
-    hsn[RHASH]=0;
-    hsn[RHTBL]=0;
-  }
-}
-
-// We only want to allocate registers if we're going to use them again soon
-static int needed_again(struct compile_state *st, int r, int i)
-{
-  int j;
-  int b=-1;
-  int rn=10;
-
-  if (i > 0 && dops[i-1].is_ujump)
-  {
-    if(cinfo[i-1].ba < st->start || cinfo[i-1].ba > st->start + st->slen*4-4)
-      return 0; // Don't need any registers if exiting the block
-  }
-  for(j=0;j<9;j++)
-  {
-    if(i+j >= st->slen) {
-      j = st->slen-i-1;
-      break;
-    }
-    if (dops[i+j].is_ujump)
-    {
-      // Don't go past an unconditonal jump
-      j++;
-      break;
-    }
-    if (dops[i+j].is_exception)
-    {
-      break;
-    }
-  }
-  for(;j>=1;j--)
-  {
-    if(dops[i+j].rs1==r) rn=j;
-    if(dops[i+j].rs2==r) rn=j;
-    if((st->unneeded_reg[i+j]>>r)&1) rn=10;
-    if(i+j>=0&&(dops[i+j].itype==UJUMP||dops[i+j].itype==CJUMP||dops[i+j].itype==SJUMP))
-    {
-      b=j;
-    }
-  }
-  if(rn<10) return 1;
-  (void)b;
-  return 0;
-}
-
-// Try to match register allocations at the end of a loop with those
-// at the beginning
-static int loop_reg(struct compile_state *st, int i, int r, int hr)
-{
-  int j,k;
-  for(j=0;j<9;j++)
-  {
-    if(i+j >= st->slen) {
-      j = st->slen-i-1;
-      break;
-    }
-    if (dops[i+j].is_ujump)
-    {
-      // Don't go past an unconditonal jump
-      j++;
-      break;
-    }
-  }
-  k=0;
-  if(i>0){
-    if(dops[i-1].itype==UJUMP||dops[i-1].itype==CJUMP||dops[i-1].itype==SJUMP)
-      k--;
-  }
-  for(;k<j;k++)
-  {
-    assert(r < 64);
-    if((st->unneeded_reg[i+k]>>r)&1) return hr;
-    if(i+k>=0&&(dops[i+k].itype==UJUMP||dops[i+k].itype==CJUMP||dops[i+k].itype==SJUMP))
-    {
-      if(cinfo[i+k].ba >= st->start && cinfo[i+k].ba < (st->start+i*4))
-      {
-        int t=(cinfo[i+k].ba - st->start)>>2;
-        int reg=get_reg(regs[t].regmap_entry,r);
-        if(reg>=0) return reg;
-        //reg=get_reg(regs[t+1].regmap_entry,r);
-        //if(reg>=0) return reg;
-      }
-    }
-  }
-  return hr;
-}
+#include "alloc_helpers.h"
 
 
 // Allocate every register, preserving source/target regs
@@ -1412,6 +1189,9 @@ static const char *fpofs_name(u_int ofs)
 #endif
 #ifdef __aarch64__
 #include "assem_arm64.c"
+#endif
+#if defined(__riscv) && __riscv_xlen == 32
+#include "assem_rv32.c"
 #endif
 
 static void *get_trampoline(const void *f)
@@ -1756,7 +1536,12 @@ oom:
 
 void ndrc_patch_link(u_int vaddr, void *insn, void *stub, void *target)
 {
-  void *insn_end = (char *)insn + 4;
+  void *insn_end = (char *)insn +
+#ifdef NDRC_PATCH_LINK_SIZE
+    NDRC_PATCH_LINK_SIZE;
+#else
+    4;
+#endif
 
   //start_tcache_write(insn, insn_end);
   mprotect_w_x(insn, insn_end, 0);
@@ -1765,7 +1550,8 @@ void ndrc_patch_link(u_int vaddr, void *insn, void *stub, void *target)
   set_jump_target_far1(insn, target);
   ndrc_add_jump_out(vaddr, stub);
 
-#if defined(__aarch64__) || defined(NO_WRITE_EXEC)
+#if defined(__aarch64__) || defined(NO_WRITE_EXEC) || \
+    (defined(__riscv) && __riscv_xlen == 32)
   // arm64: no syscall concerns, dyna_linker lacks stale detection
   // w^x: have to do costly permission switching anyway
   new_dyna_clear_cache(NDRC_WRITE_OFFSET(insn), NDRC_WRITE_OFFSET(insn_end));
@@ -1776,212 +1562,7 @@ void ndrc_patch_link(u_int vaddr, void *insn, void *stub, void *target)
 
 /* Register allocation */
 
-static void alloc_set(struct regstat *cur, int reg, int hr)
-{
-  cur->regmap[hr] = reg;
-  cur->dirty &= ~(1u << hr);
-  cur->isconst &= ~(1u << hr);
-  cur->noevict |= 1u << hr;
-}
-
-static void evict_alloc_reg(struct compile_state *st, struct regstat *cur,
-  int i, int reg, int preferred_hr)
-{
-  u_char hsn[MAXREG+1];
-  int j, r, hr;
-  memset(hsn, 10, sizeof(hsn));
-  lsn(st, hsn, i);
-  //printf("hsn(%x): %d %d %d %d %d %d %d\n",start+i*4,hsn[cur->regmap[0]&63],hsn[cur->regmap[1]&63],hsn[cur->regmap[2]&63],hsn[cur->regmap[3]&63],hsn[cur->regmap[5]&63],hsn[cur->regmap[6]&63],hsn[cur->regmap[7]&63]);
-  if(i>0) {
-    // Don't evict the cycle count at entry points, otherwise the entry
-    // stub will have to write it.
-    if(dops[i].bt&&hsn[CCREG]>2) hsn[CCREG]=2;
-    if (i>1 && hsn[CCREG] > 2 && dops[i-2].is_jump) hsn[CCREG]=2;
-    for(j=10;j>=3;j--)
-    {
-      // Alloc preferred register if available
-      if (!((cur->noevict >> preferred_hr) & 1)
-          && hsn[cur->regmap[preferred_hr]] == j)
-      {
-        alloc_set(cur, reg, preferred_hr);
-        return;
-      }
-      for(r=1;r<=MAXREG;r++)
-      {
-        if(hsn[r]==j&&r!=dops[i-1].rs1&&r!=dops[i-1].rs2&&r!=dops[i-1].rt1&&r!=dops[i-1].rt2) {
-          for(hr=0;hr<HOST_REGS;hr++) {
-            if (hr == EXCLUDE_REG || ((cur->noevict >> hr) & 1))
-              continue;
-            if(hr!=HOST_CCREG||j<hsn[CCREG]) {
-              if(cur->regmap[hr]==r) {
-                alloc_set(cur, reg, hr);
-                return;
-              }
-            }
-          }
-        }
-      }
-    }
-  }
-  for(j=10;j>=0;j--)
-  {
-    for(r=1;r<=MAXREG;r++)
-    {
-      if(hsn[r]==j) {
-        for(hr=0;hr<HOST_REGS;hr++) {
-          if (hr == EXCLUDE_REG || ((cur->noevict >> hr) & 1))
-            continue;
-          if(cur->regmap[hr]==r) {
-            alloc_set(cur, reg, hr);
-            return;
-          }
-        }
-      }
-    }
-  }
-  SysPrintf("This shouldn't happen (evict_alloc_reg)\n");
-  abort();
-}
-
-// Note: registers are allocated clean (unmodified state)
-// if you intend to modify the register, you must call dirty_reg().
-static void alloc_reg(struct compile_state *st, struct regstat *cur,
-  int i, signed char reg)
-{
-  int r,hr;
-  int preferred_reg = PREFERRED_REG_FIRST
-    + reg % (PREFERRED_REG_LAST - PREFERRED_REG_FIRST + 1);
-  if (reg == CCREG) preferred_reg = HOST_CCREG;
-  if (reg == PTEMP || reg == FTEMP) preferred_reg = 12;
-  assert(PREFERRED_REG_FIRST != EXCLUDE_REG && EXCLUDE_REG != HOST_REGS);
-  assert(reg >= 0);
-
-  // Don't allocate unused registers
-  if((cur->u>>reg)&1) return;
-
-  // see if it's already allocated
-  if ((hr = get_reg(cur->regmap, reg)) >= 0) {
-    cur->noevict |= 1u << hr;
-    return;
-  }
-
-  // Keep the same mapping if the register was already allocated in a loop
-  preferred_reg = loop_reg(st,i,reg,preferred_reg);
-
-  // Try to allocate the preferred register
-  if (cur->regmap[preferred_reg] == -1) {
-    alloc_set(cur, reg, preferred_reg);
-    return;
-  }
-  r=cur->regmap[preferred_reg];
-  assert(r < 64);
-  if((cur->u>>r)&1) {
-    alloc_set(cur, reg, preferred_reg);
-    return;
-  }
-
-  // Clear any unneeded registers
-  // We try to keep the mapping consistent, if possible, because it
-  // makes branches easier (especially loops).  So we try to allocate
-  // first (see above) before removing old mappings.  If this is not
-  // possible then go ahead and clear out the registers that are no
-  // longer needed.
-  for(hr=0;hr<HOST_REGS;hr++)
-  {
-    r=cur->regmap[hr];
-    if(r>=0) {
-      assert(r < 64);
-      if((cur->u>>r)&1) {cur->regmap[hr]=-1;break;}
-    }
-  }
-
-  // Try to allocate any available register, but prefer
-  // registers that have not been used recently.
-  if (i > 0) {
-    for (hr = PREFERRED_REG_FIRST; ; ) {
-      if (cur->regmap[hr] < 0) {
-        int oldreg = regs[i-1].regmap[hr];
-        if (oldreg < 0 || (oldreg != dops[i-1].rs1 && oldreg != dops[i-1].rs2
-             && oldreg != dops[i-1].rt1 && oldreg != dops[i-1].rt2))
-        {
-          alloc_set(cur, reg, hr);
-          return;
-        }
-      }
-      hr++;
-      if (hr == EXCLUDE_REG)
-        hr++;
-      if (hr == HOST_REGS)
-        hr = 0;
-      if (hr == PREFERRED_REG_FIRST)
-        break;
-    }
-  }
-
-  // Try to allocate any available register
-  for (hr = PREFERRED_REG_FIRST; ; ) {
-    if (cur->regmap[hr] < 0) {
-      alloc_set(cur, reg, hr);
-      return;
-    }
-    hr++;
-    if (hr == EXCLUDE_REG)
-      hr++;
-    if (hr == HOST_REGS)
-      hr = 0;
-    if (hr == PREFERRED_REG_FIRST)
-      break;
-  }
-
-  // Ok, now we have to evict someone
-  // Pick a register we hopefully won't need soon
-  evict_alloc_reg(st, cur, i, reg, preferred_reg);
-}
-
-// Allocate a temporary register.  This is done without regard to
-// dirty status or whether the register we request is on the unneeded list
-// Note: This will only allocate one register, even if called multiple times
-static void alloc_reg_temp(struct compile_state *st, struct regstat *cur,
-  int i, signed char reg)
-{
-  int r,hr;
-
-  // see if it's already allocated
-  for (hr = 0; hr < HOST_REGS; hr++)
-  {
-    if (hr != EXCLUDE_REG && cur->regmap[hr] == reg) {
-      cur->noevict |= 1u << hr;
-      return;
-    }
-  }
-
-  // Try to allocate any available register
-  for(hr=HOST_REGS-1;hr>=0;hr--) {
-    if(hr!=EXCLUDE_REG&&cur->regmap[hr]==-1) {
-      alloc_set(cur, reg, hr);
-      return;
-    }
-  }
-
-  // Find an unneeded register
-  for(hr=HOST_REGS-1;hr>=0;hr--)
-  {
-    r=cur->regmap[hr];
-    if(r>=0) {
-      assert(r < 64);
-      if((cur->u>>r)&1) {
-        if(i==0||((st->unneeded_reg[i-1]>>r)&1)) {
-          alloc_set(cur, reg, hr);
-          return;
-        }
-      }
-    }
-  }
-
-  // Ok, now we have to evict someone
-  // Pick a register we hopefully won't need soon
-  evict_alloc_reg(st, cur, i, reg, 0);
-}
+#include "alloc_regs.h"
 
 static void mov_alloc(struct compile_state *st, struct regstat *current, int i)
 {
@@ -1999,147 +1580,7 @@ static void mov_alloc(struct compile_state *st, struct regstat *current, int i)
   dirty_reg(current,dops[i].rt1);
 }
 
-static void shiftimm_alloc(struct compile_state *st, struct regstat *current,int i)
-{
-  if(dops[i].opcode2<=0x3) // SLL/SRL/SRA
-  {
-    if(dops[i].rt1) {
-      if(dops[i].rs1&&needed_again(st,dops[i].rs1,i)) alloc_reg(st, current,i,dops[i].rs1);
-      else dops[i].use_lt1=!!dops[i].rs1;
-      alloc_reg(st, current, i, dops[i].rt1);
-      dirty_reg(    current, dops[i].rt1);
-      if(is_const(current,dops[i].rs1)) {
-        int v=get_const(current,dops[i].rs1);
-        if(dops[i].opcode2==0x00) set_const(current,dops[i].rt1,v<<cinfo[i].imm);
-        if(dops[i].opcode2==0x02) set_const(current,dops[i].rt1,(u_int)v>>cinfo[i].imm);
-        if(dops[i].opcode2==0x03) set_const(current,dops[i].rt1,v>>cinfo[i].imm);
-      }
-      else clear_const(current,dops[i].rt1);
-    }
-  }
-  else
-  {
-    clear_const(current,dops[i].rs1);
-    clear_const(current,dops[i].rt1);
-  }
-
-  if(dops[i].opcode2>=0x38&&dops[i].opcode2<=0x3b) // DSLL/DSRL/DSRA
-  {
-    assert(0);
-  }
-  if(dops[i].opcode2==0x3c) // DSLL32
-  {
-    assert(0);
-  }
-  if(dops[i].opcode2==0x3e) // DSRL32
-  {
-    assert(0);
-  }
-  if(dops[i].opcode2==0x3f) // DSRA32
-  {
-    assert(0);
-  }
-}
-
-static void shift_alloc(struct compile_state *st, struct regstat *current, int i)
-{
-  if(dops[i].rt1) {
-      if(dops[i].rs1) alloc_reg(st, current, i, dops[i].rs1);
-      if(dops[i].rs2) alloc_reg(st, current, i, dops[i].rs2);
-      alloc_reg(st, current, i, dops[i].rt1);
-      if(dops[i].rt1==dops[i].rs2) {
-        alloc_reg_temp(st, current, i, -1);
-        cinfo[i].min_free_regs=1;
-      }
-    clear_const(current,dops[i].rs1);
-    clear_const(current,dops[i].rs2);
-    clear_const(current,dops[i].rt1);
-    dirty_reg(current,dops[i].rt1);
-  }
-}
-
-static void alu_alloc(struct compile_state *st, struct regstat *current, int i)
-{
-  if(dops[i].opcode2>=0x20&&dops[i].opcode2<=0x23) { // ADD/ADDU/SUB/SUBU
-    if(dops[i].rt1) {
-      if(dops[i].rs1&&dops[i].rs2) {
-        alloc_reg(st, current, i, dops[i].rs1);
-        alloc_reg(st, current, i, dops[i].rs2);
-      }
-      else {
-        if(dops[i].rs1&&needed_again(st,dops[i].rs1,i)) alloc_reg(st,current,i,dops[i].rs1);
-        if(dops[i].rs2&&needed_again(st,dops[i].rs2,i)) alloc_reg(st,current,i,dops[i].rs2);
-      }
-      alloc_reg(st, current, i, dops[i].rt1);
-    }
-    if (dops[i].may_except) {
-      alloc_cc_optional(current, i); // for exceptions
-      alloc_reg_temp(st, current, i, -1);
-      cinfo[i].min_free_regs = 1;
-    }
-  }
-  else if(dops[i].opcode2==0x2a||dops[i].opcode2==0x2b) { // SLT/SLTU
-    if(dops[i].rt1) {
-      alloc_reg(st, current, i, dops[i].rs1);
-      alloc_reg(st, current, i, dops[i].rs2);
-      alloc_reg(st, current, i, dops[i].rt1);
-    }
-  }
-  else if(dops[i].opcode2>=0x24&&dops[i].opcode2<=0x27) { // AND/OR/XOR/NOR
-    if(dops[i].rt1) {
-      if(dops[i].rs1&&dops[i].rs2) {
-        alloc_reg(st, current, i, dops[i].rs1);
-        alloc_reg(st, current, i, dops[i].rs2);
-      }
-      else
-      {
-        if(dops[i].rs1&&needed_again(st,dops[i].rs1,i)) alloc_reg(st,current,i,dops[i].rs1);
-        if(dops[i].rs2&&needed_again(st,dops[i].rs2,i)) alloc_reg(st,current,i,dops[i].rs2);
-      }
-      alloc_reg(st, current, i, dops[i].rt1);
-    }
-  }
-  clear_const(current,dops[i].rs1);
-  clear_const(current,dops[i].rs2);
-  clear_const(current,dops[i].rt1);
-  dirty_reg(current,dops[i].rt1);
-}
-
-static void imm16_alloc(struct compile_state *st, struct regstat *current, int i)
-{
-  if(dops[i].rs1&&needed_again(st,dops[i].rs1,i)) alloc_reg(st,current,i,dops[i].rs1);
-  else dops[i].use_lt1=!!dops[i].rs1;
-  if(dops[i].rt1) alloc_reg(st,current,i,dops[i].rt1);
-  if(dops[i].opcode==0x0a||dops[i].opcode==0x0b) { // SLTI/SLTIU
-    clear_const(current,dops[i].rs1);
-    clear_const(current,dops[i].rt1);
-  }
-  else if(dops[i].opcode>=0x0c&&dops[i].opcode<=0x0e) { // ANDI/ORI/XORI
-    if(is_const(current,dops[i].rs1)) {
-      int v=get_const(current,dops[i].rs1);
-      if(dops[i].opcode==0x0c) set_const(current,dops[i].rt1,v&cinfo[i].imm);
-      if(dops[i].opcode==0x0d) set_const(current,dops[i].rt1,v|cinfo[i].imm);
-      if(dops[i].opcode==0x0e) set_const(current,dops[i].rt1,v^cinfo[i].imm);
-    }
-    else clear_const(current,dops[i].rt1);
-  }
-  else if(dops[i].opcode==0x08||dops[i].opcode==0x09) { // ADDI/ADDIU
-    if(is_const(current,dops[i].rs1)) {
-      int v=get_const(current,dops[i].rs1);
-      set_const(current,dops[i].rt1,v+cinfo[i].imm);
-    }
-    else clear_const(current,dops[i].rt1);
-    if (dops[i].may_except) {
-      alloc_cc_optional(current, i); // for exceptions
-      alloc_reg_temp(st, current, i, -1);
-      cinfo[i].min_free_regs = 1;
-    }
-  }
-  else {
-    set_const(current,dops[i].rt1,cinfo[i].imm<<16); // LUI
-  }
-  dirty_reg(current,dops[i].rt1);
-}
+#include "alloc_alu.h"
 
 static void load_alloc(struct compile_state *st, struct regstat *current, int i)
 {
@@ -2448,447 +1889,7 @@ static void pass_args(int a0, int a1)
   }
 }
 
-static void alu_assemble(int i, const struct regstat *i_regs, int ccadj_)
-{
-  if(dops[i].opcode2>=0x20&&dops[i].opcode2<=0x23) { // ADD/ADDU/SUB/SUBU
-    int do_oflow = dops[i].may_except; // ADD/SUB with exceptions enabled
-    if (dops[i].rt1 || do_oflow) {
-      int do_exception_check = 0;
-      signed char s1, s2, t, tmp;
-      t = get_reg_w(i_regs->regmap, dops[i].rt1);
-      tmp = get_reg_temp(i_regs->regmap);
-      if (do_oflow)
-        assert(tmp >= 0);
-      if (t < 0 && do_oflow)
-        t = tmp;
-      if (t >= 0) {
-        s1 = get_reg(i_regs->regmap, dops[i].rs1);
-        s2 = get_reg(i_regs->regmap, dops[i].rs2);
-        if (dops[i].rs1 && dops[i].rs2) {
-          assert(s1>=0);
-          assert(s2>=0);
-          if (dops[i].opcode2 & 2) {
-            if (do_oflow) {
-              emit_subs(s1, s2, tmp);
-              do_exception_check = 1;
-            }
-            else
-              emit_sub(s1,s2,t);
-          }
-          else {
-            if (do_oflow) {
-              emit_adds(s1, s2, tmp);
-              do_exception_check = 1;
-            }
-            else
-              emit_add(s1,s2,t);
-          }
-        }
-        else if(dops[i].rs1) {
-          if(s1>=0) emit_mov(s1,t);
-          else emit_loadreg(dops[i].rs1,t);
-        }
-        else if(dops[i].rs2) {
-          if (s2 < 0) {
-            emit_loadreg(dops[i].rs2, t);
-            s2 = t;
-          }
-          if (dops[i].opcode2 & 2) {
-            if (do_oflow) {
-              emit_negs(s2, tmp);
-              do_exception_check = 1;
-            }
-            else
-              emit_neg(s2, t);
-          }
-          else if (s2 != t)
-            emit_mov(s2, t);
-        }
-        else
-          emit_zeroreg(t);
-      }
-      if (do_exception_check) {
-        void *jaddr = out;
-        emit_jo(0);
-        if (t >= 0 && tmp != t)
-          emit_mov(tmp, t);
-        add_stub_r(OVERFLOW_STUB, jaddr, out, i, 0, i_regs, ccadj_, 0);
-      }
-    }
-  }
-  else if(dops[i].opcode2==0x2a||dops[i].opcode2==0x2b) { // SLT/SLTU
-    if(dops[i].rt1) {
-      signed char s1l,s2l,t;
-      {
-        t=get_reg_w(i_regs->regmap, dops[i].rt1);
-        //assert(t>=0);
-        if(t>=0) {
-          s1l=get_reg(i_regs->regmap,dops[i].rs1);
-          s2l=get_reg(i_regs->regmap,dops[i].rs2);
-          if(dops[i].rs2==0) // rx<r0
-          {
-            if(dops[i].opcode2==0x2a&&dops[i].rs1!=0) { // SLT
-              assert(s1l>=0);
-              emit_shrimm(s1l,31,t);
-            }
-            else // SLTU (unsigned can not be less than zero, 0<0)
-              emit_zeroreg(t);
-          }
-          else if(dops[i].rs1==0) // r0<rx
-          {
-            assert(s2l>=0);
-            if(dops[i].opcode2==0x2a) // SLT
-              emit_set_gz32(s2l,t);
-            else // SLTU (set if not zero)
-              emit_set_nz32(s2l,t);
-          }
-          else{
-            assert(s1l>=0);assert(s2l>=0);
-            if(dops[i].opcode2==0x2a) // SLT
-              emit_set_if_less32(s1l,s2l,t);
-            else // SLTU
-              emit_set_if_carry32(s1l,s2l,t);
-          }
-        }
-      }
-    }
-  }
-  else if(dops[i].opcode2>=0x24&&dops[i].opcode2<=0x27) { // AND/OR/XOR/NOR
-    if(dops[i].rt1) {
-      signed char s1l,s2l,tl;
-      tl=get_reg_w(i_regs->regmap, dops[i].rt1);
-      {
-        if(tl>=0) {
-          s1l=get_reg(i_regs->regmap,dops[i].rs1);
-          s2l=get_reg(i_regs->regmap,dops[i].rs2);
-          if(dops[i].rs1&&dops[i].rs2) {
-            assert(s1l>=0);
-            assert(s2l>=0);
-            if(dops[i].opcode2==0x24) { // AND
-              emit_and(s1l,s2l,tl);
-            } else
-            if(dops[i].opcode2==0x25) { // OR
-              emit_or(s1l,s2l,tl);
-            } else
-            if(dops[i].opcode2==0x26) { // XOR
-              emit_xor(s1l,s2l,tl);
-            } else
-            if(dops[i].opcode2==0x27) { // NOR
-              emit_or(s1l,s2l,tl);
-              emit_not(tl,tl);
-            }
-          }
-          else
-          {
-            if(dops[i].opcode2==0x24) { // AND
-              emit_zeroreg(tl);
-            } else
-            if(dops[i].opcode2==0x25||dops[i].opcode2==0x26) { // OR/XOR
-              if(dops[i].rs1){
-                if(s1l>=0) emit_mov(s1l,tl);
-                else emit_loadreg(dops[i].rs1,tl); // CHECK: regmap_entry?
-              }
-              else
-              if(dops[i].rs2){
-                if(s2l>=0) emit_mov(s2l,tl);
-                else emit_loadreg(dops[i].rs2,tl); // CHECK: regmap_entry?
-              }
-              else emit_zeroreg(tl);
-            } else
-            if(dops[i].opcode2==0x27) { // NOR
-              if(dops[i].rs1){
-                if(s1l>=0) emit_not(s1l,tl);
-                else {
-                  emit_loadreg(dops[i].rs1,tl);
-                  emit_not(tl,tl);
-                }
-              }
-              else
-              if(dops[i].rs2){
-                if(s2l>=0) emit_not(s2l,tl);
-                else {
-                  emit_loadreg(dops[i].rs2,tl);
-                  emit_not(tl,tl);
-                }
-              }
-              else emit_movimm(-1,tl);
-            }
-          }
-        }
-      }
-    }
-  }
-}
-
-static void imm16_assemble(int i, const struct regstat *i_regs, int ccadj_)
-{
-  if (dops[i].opcode==0x0f) { // LUI
-    if(dops[i].rt1) {
-      signed char t;
-      t=get_reg_w(i_regs->regmap, dops[i].rt1);
-      //assert(t>=0);
-      if(t>=0) {
-        if(!((i_regs->isconst>>t)&1))
-          emit_movimm(cinfo[i].imm<<16,t);
-      }
-    }
-  }
-  if(dops[i].opcode==0x08||dops[i].opcode==0x09) { // ADDI/ADDIU
-    int is_addi = dops[i].may_except;
-    if (dops[i].rt1 || is_addi) {
-      signed char s, t, tmp;
-      t=get_reg_w(i_regs->regmap, dops[i].rt1);
-      s=get_reg(i_regs->regmap,dops[i].rs1);
-      if(dops[i].rs1) {
-        tmp = get_reg_temp(i_regs->regmap);
-        if (is_addi) {
-          assert(tmp >= 0);
-          if (t < 0) t = tmp;
-        }
-        if(t>=0) {
-          if(!((i_regs->isconst>>t)&1)) {
-            int sum, do_exception_check = 0;
-            if (s < 0) {
-              if(i_regs->regmap_entry[t]!=dops[i].rs1) emit_loadreg(dops[i].rs1,t);
-              if (is_addi) {
-                emit_addimm_and_set_flags3(t, cinfo[i].imm, tmp);
-                do_exception_check = 1;
-              }
-              else
-                emit_addimm(t, cinfo[i].imm, t);
-            } else {
-              if (!((i_regs->wasconst >> s) & 1)) {
-                if (is_addi) {
-                  emit_addimm_and_set_flags3(s, cinfo[i].imm, tmp);
-                  do_exception_check = 1;
-                }
-                else
-                  emit_addimm(s, cinfo[i].imm, t);
-              }
-              else {
-                int oflow = add_overflow(constmap[i][s], cinfo[i].imm, sum);
-                if (is_addi && oflow)
-                  do_exception_check = 2;
-                else
-                  emit_movimm(sum, t);
-              }
-            }
-            if (do_exception_check) {
-              void *jaddr = out;
-              if (do_exception_check == 2)
-                emit_jmp(0);
-              else {
-                emit_jo(0);
-                if (tmp != t)
-                  emit_mov(tmp, t);
-              }
-              add_stub_r(OVERFLOW_STUB, jaddr, out, i, 0, i_regs, ccadj_, 0);
-            }
-          }
-        }
-      } else {
-        if(t>=0) {
-          if(!((i_regs->isconst>>t)&1))
-            emit_movimm(cinfo[i].imm,t);
-        }
-      }
-    }
-  }
-  else if(dops[i].opcode==0x0a||dops[i].opcode==0x0b) { // SLTI/SLTIU
-    if(dops[i].rt1) {
-      //assert(dops[i].rs1!=0); // r0 might be valid, but it's probably a bug
-      signed char sl,t;
-      t=get_reg_w(i_regs->regmap, dops[i].rt1);
-      sl=get_reg(i_regs->regmap,dops[i].rs1);
-      //assert(t>=0);
-      if(t>=0) {
-        if(dops[i].rs1>0) {
-            if(dops[i].opcode==0x0a) { // SLTI
-              if(sl<0) {
-                if(i_regs->regmap_entry[t]!=dops[i].rs1) emit_loadreg(dops[i].rs1,t);
-                emit_slti32(t,cinfo[i].imm,t);
-              }else{
-                emit_slti32(sl,cinfo[i].imm,t);
-              }
-            }
-            else { // SLTIU
-              if(sl<0) {
-                if(i_regs->regmap_entry[t]!=dops[i].rs1) emit_loadreg(dops[i].rs1,t);
-                emit_sltiu32(t,cinfo[i].imm,t);
-              }else{
-                emit_sltiu32(sl,cinfo[i].imm,t);
-              }
-            }
-        }else{
-          // SLTI(U) with r0 is just stupid,
-          // nonetheless examples can be found
-          if(dops[i].opcode==0x0a) // SLTI
-            if(0<cinfo[i].imm) emit_movimm(1,t);
-            else emit_zeroreg(t);
-          else // SLTIU
-          {
-            if(cinfo[i].imm) emit_movimm(1,t);
-            else emit_zeroreg(t);
-          }
-        }
-      }
-    }
-  }
-  else if(dops[i].opcode>=0x0c&&dops[i].opcode<=0x0e) { // ANDI/ORI/XORI
-    if(dops[i].rt1) {
-      signed char sl,tl;
-      tl=get_reg_w(i_regs->regmap, dops[i].rt1);
-      sl=get_reg(i_regs->regmap,dops[i].rs1);
-      if(tl>=0 && !((i_regs->isconst>>tl)&1)) {
-        if(dops[i].opcode==0x0c) //ANDI
-        {
-          if(dops[i].rs1) {
-            if(sl<0) {
-              if(i_regs->regmap_entry[tl]!=dops[i].rs1) emit_loadreg(dops[i].rs1,tl);
-              emit_andimm(tl,cinfo[i].imm,tl);
-            }else{
-              if(!((i_regs->wasconst>>sl)&1))
-                emit_andimm(sl,cinfo[i].imm,tl);
-              else
-                emit_movimm(constmap[i][sl]&cinfo[i].imm,tl);
-            }
-          }
-          else
-            emit_zeroreg(tl);
-        }
-        else
-        {
-          if(dops[i].rs1) {
-            if(sl<0) {
-              if(i_regs->regmap_entry[tl]!=dops[i].rs1) emit_loadreg(dops[i].rs1,tl);
-            }
-            if(dops[i].opcode==0x0d) { // ORI
-              if(sl<0) {
-                emit_orimm(tl,cinfo[i].imm,tl);
-              }else{
-                if(!((i_regs->wasconst>>sl)&1))
-                  emit_orimm(sl,cinfo[i].imm,tl);
-                else
-                  emit_movimm(constmap[i][sl]|cinfo[i].imm,tl);
-              }
-            }
-            if(dops[i].opcode==0x0e) { // XORI
-              if(sl<0) {
-                emit_xorimm(tl,cinfo[i].imm,tl);
-              }else{
-                if(!((i_regs->wasconst>>sl)&1))
-                  emit_xorimm(sl,cinfo[i].imm,tl);
-                else
-                  emit_movimm(constmap[i][sl]^cinfo[i].imm,tl);
-              }
-            }
-          }
-          else {
-            emit_movimm(cinfo[i].imm,tl);
-          }
-        }
-      }
-    }
-  }
-}
-
-static void shiftimm_assemble(int i, const struct regstat *i_regs)
-{
-  if(dops[i].opcode2<=0x3) // SLL/SRL/SRA
-  {
-    if(dops[i].rt1) {
-      signed char s,t;
-      t=get_reg_w(i_regs->regmap, dops[i].rt1);
-      s=get_reg(i_regs->regmap,dops[i].rs1);
-      //assert(t>=0);
-      if(t>=0&&!((i_regs->isconst>>t)&1)){
-        if(dops[i].rs1==0)
-        {
-          emit_zeroreg(t);
-        }
-        else
-        {
-          if(s<0&&i_regs->regmap_entry[t]!=dops[i].rs1) emit_loadreg(dops[i].rs1,t);
-          if(cinfo[i].imm) {
-            if(dops[i].opcode2==0) // SLL
-            {
-              emit_shlimm(s<0?t:s,cinfo[i].imm,t);
-            }
-            if(dops[i].opcode2==2) // SRL
-            {
-              emit_shrimm(s<0?t:s,cinfo[i].imm,t);
-            }
-            if(dops[i].opcode2==3) // SRA
-            {
-              emit_sarimm(s<0?t:s,cinfo[i].imm,t);
-            }
-          }else{
-            // Shift by zero
-            if(s>=0 && s!=t) emit_mov(s,t);
-          }
-        }
-      }
-      //emit_storereg(dops[i].rt1,t); //DEBUG
-    }
-  }
-  if(dops[i].opcode2>=0x38&&dops[i].opcode2<=0x3b) // DSLL/DSRL/DSRA
-  {
-    assert(0);
-  }
-  if(dops[i].opcode2==0x3c) // DSLL32
-  {
-    assert(0);
-  }
-  if(dops[i].opcode2==0x3e) // DSRL32
-  {
-    assert(0);
-  }
-  if(dops[i].opcode2==0x3f) // DSRA32
-  {
-    assert(0);
-  }
-}
-
-#ifndef shift_assemble
-static void shift_assemble(int i, const struct regstat *i_regs)
-{
-  signed char s,t,shift;
-  if (dops[i].rt1 == 0)
-    return;
-  assert(dops[i].opcode2<=0x07); // SLLV/SRLV/SRAV
-  t = get_reg(i_regs->regmap, dops[i].rt1);
-  s = get_reg(i_regs->regmap, dops[i].rs1);
-  shift = get_reg(i_regs->regmap, dops[i].rs2);
-  if (t < 0)
-    return;
-
-  if(dops[i].rs1==0)
-    emit_zeroreg(t);
-  else if(dops[i].rs2==0) {
-    assert(s>=0);
-    if(s!=t) emit_mov(s,t);
-  }
-  else {
-    host_tempreg_acquire();
-    emit_andimm(shift,31,HOST_TEMPREG);
-    switch(dops[i].opcode2) {
-    case 4: // SLLV
-      emit_shl(s,HOST_TEMPREG,t);
-      break;
-    case 6: // SRLV
-      emit_shr(s,HOST_TEMPREG,t);
-      break;
-    case 7: // SRAV
-      emit_sar(s,HOST_TEMPREG,t);
-      break;
-    default:
-      assert(0);
-    }
-    host_tempreg_release();
-  }
-}
-
-#endif
+#include "assemble_alu.h"
 
 enum {
   MTYPE_8000 = 0,
@@ -3156,7 +2157,7 @@ static void load_assemble(struct compile_state *st, int i,
   else if (ram_offset && memtarget) {
     offset_reg = get_ro_reg(i_regs, 0);
   }
-  int dummy=(dops[i].rt1==0)||(tl!=get_reg_w(i_regs->regmap, dops[i].rt1)); // ignore loads to r0 and unneeded reg
+ int dummy=(dops[i].rt1==0)||(tl!=get_reg_w(i_regs->regmap, dops[i].rt1)); // ignore loads to r0 and unneeded reg
   switch (dops[i].opcode) {
   case 0x20: // LB
     if(!c||memtarget) {
@@ -3174,7 +2175,7 @@ static void load_assemble(struct compile_state *st, int i,
         add_stub_r(LOADB_STUB,jaddr,out,i,addr,i_regs,ccadj_,reglist);
     }
     else
-      inline_readstub(LOADB_STUB,i,constmap[i][s]+offset,i_regs->regmap,dops[i].rt1,ccadj_,reglist);
+      inline_readstub(LOADB_STUB,i,constmap[i][s]+offset,st->start+i*4,i_regs->regmap,dops[i].rt1,ccadj_,reglist);
     break;
   case 0x21: // LH
     if(!c||memtarget) {
@@ -3191,7 +2192,7 @@ static void load_assemble(struct compile_state *st, int i,
         add_stub_r(LOADH_STUB,jaddr,out,i,addr,i_regs,ccadj_,reglist);
     }
     else
-      inline_readstub(LOADH_STUB,i,constmap[i][s]+offset,i_regs->regmap,dops[i].rt1,ccadj_,reglist);
+      inline_readstub(LOADH_STUB,i,constmap[i][s]+offset,st->start+i*4,i_regs->regmap,dops[i].rt1,ccadj_,reglist);
     break;
   case 0x23: // LW
     if(!c||memtarget) {
@@ -3205,7 +2206,7 @@ static void load_assemble(struct compile_state *st, int i,
         add_stub_r(LOADW_STUB,jaddr,out,i,addr,i_regs,ccadj_,reglist);
     }
     else
-      inline_readstub(LOADW_STUB,i,constmap[i][s]+offset,i_regs->regmap,dops[i].rt1,ccadj_,reglist);
+      inline_readstub(LOADW_STUB,i,constmap[i][s]+offset,st->start+i*4,i_regs->regmap,dops[i].rt1,ccadj_,reglist);
     break;
   case 0x24: // LBU
     if(!c||memtarget) {
@@ -3223,7 +2224,7 @@ static void load_assemble(struct compile_state *st, int i,
         add_stub_r(LOADBU_STUB,jaddr,out,i,addr,i_regs,ccadj_,reglist);
     }
     else
-      inline_readstub(LOADBU_STUB,i,constmap[i][s]+offset,i_regs->regmap,dops[i].rt1,ccadj_,reglist);
+      inline_readstub(LOADBU_STUB,i,constmap[i][s]+offset,st->start+i*4,i_regs->regmap,dops[i].rt1,ccadj_,reglist);
     break;
   case 0x25: // LHU
     if(!c||memtarget) {
@@ -3240,7 +2241,7 @@ static void load_assemble(struct compile_state *st, int i,
         add_stub_r(LOADHU_STUB,jaddr,out,i,addr,i_regs,ccadj_,reglist);
     }
     else
-      inline_readstub(LOADHU_STUB,i,constmap[i][s]+offset,i_regs->regmap,dops[i].rt1,ccadj_,reglist);
+      inline_readstub(LOADHU_STUB,i,constmap[i][s]+offset,st->start+i*4,i_regs->regmap,dops[i].rt1,ccadj_,reglist);
     break;
   default:
     assert(0);
@@ -3306,7 +2307,7 @@ static void loadlr_assemble(struct compile_state *st, int i,
       if(jaddr) add_stub_r(LOADW_STUB,jaddr,out,i,temp2,i_regs,ccadj_,reglist);
     }
     else
-      inline_readstub(LOADW_STUB,i,(constmap[i][s]+offset)&0xFFFFFFFC,i_regs->regmap,FTEMP,ccadj_,reglist);
+      inline_readstub(LOADW_STUB,i,(constmap[i][s]+offset)&0xFFFFFFFC,st->start+i*4,i_regs->regmap,FTEMP,ccadj_,reglist);
     if(dops[i].rt1) {
       assert(tl>=0);
       emit_andimm(temp,24,temp);
@@ -3703,7 +2704,7 @@ static void cop0_assemble(struct compile_state *st, int i,
   }
 }
 
-static void rfe_assemble(int i, const struct regstat *i_regs)
+static void rfe_assemble(struct compile_state *st, int i, const struct regstat *i_regs)
 {
   emit_readword(&psxRegs.CP0.n.SR, 0);
   emit_andimm(0, 0x3c, 1);
@@ -3977,7 +2978,8 @@ static void cop2_put_dreg(u_int copr,signed char sl,signed char temp)
       break;
     case 30:
       emit_xorsar_imm(sl,sl,31,temp);
-#if defined(HAVE_ARMV5) || defined(__aarch64__)
+#if defined(HAVE_ARMV5) || defined(__aarch64__) || \
+    (defined(__riscv) && __riscv_xlen == 32)
       emit_clz(temp,temp);
 #else
       emit_movs(temp,HOST_TEMPREG);
@@ -4431,7 +3433,7 @@ static int assemble(struct compile_state *st, int i,
       cop0_assemble(st, i, i_regs, ccadj_);
       break;
     case RFE:
-      rfe_assemble(i, i_regs);
+      rfe_assemble(st, i, i_regs);
       break;
     case COP2:
       cop2_assemble(st, i, i_regs);
@@ -5047,7 +4049,7 @@ static int match_bt(struct compile_state *st, signed char i_regmap[],
 }
 
 #ifdef DRC_DBG
-static void drc_dbg_emit_do_cmp(int i, int ccadj_)
+static void drc_dbg_emit_do_cmp(struct compile_state *st, int i, int ccadj_)
 {
   extern void do_insn_cmp();
   //extern int cycle;
@@ -5071,10 +4073,6 @@ static void drc_dbg_emit_do_cmp(int i, int ccadj_)
       emit_storereg(reg, 0);
     }
   }
-  if (dops[i].opcode == 0x0f) { // LUI
-    emit_movimm(cinfo[i].imm << 16, 0);
-    emit_storereg(dops[i].rt1, 0);
-  }
   emit_movimm(st->start+i*4,0);
   emit_writeword(0,&psxRegs.pc);
   int cc = get_reg(regs[i].regmap_entry, CCREG);
@@ -5082,6 +4080,11 @@ static void drc_dbg_emit_do_cmp(int i, int ccadj_)
     emit_loadreg(CCREG, cc = 0);
   emit_addimm(cc, ccadj_, 0);
   emit_writeword(0, &psxRegs.cycle);
+  /* Preserve the unadjusted live CCREG as a third diagnostic argument.
+   * This distinguishes a corrupt host register from a stale memory copy. */
+  emit_mov(cc, 2);
+  emit_movimm(st->start, 0);
+  emit_movimm(ccadj_, 1);
   emit_far_call(do_insn_cmp);
   //emit_readword(&cycle,0);
   //emit_addimm(0,2,0);
@@ -5090,6 +4093,13 @@ static void drc_dbg_emit_do_cmp(int i, int ccadj_)
   restore_regs(reglist);
   assem_debug("\\\\do_insn_cmp\n");
 }
+#else
+#define drc_dbg_emit_do_cmp(x,y,z)
+#endif
+
+/* Isolate write-back sensitivity without enabling trace I/O, comparison
+ * calls, or the other DRC_DBG compilation changes. Temporary diagnostic. */
+#if defined(DRC_DBG) || defined(PCSX_RV32_WB_DIAGNOSTIC)
 static void drc_dbg_emit_wb_dirtys(int i, const struct regstat *i_regs)
 {
   // write-out non-consts, consts are likely different because of get_final_value()
@@ -5100,7 +4110,6 @@ static void drc_dbg_emit_wb_dirtys(int i, const struct regstat *i_regs)
   }
 }
 #else
-#define drc_dbg_emit_do_cmp(x,y)
 #define drc_dbg_emit_wb_dirtys(x,y)
 #endif
 
@@ -5113,7 +4122,7 @@ static void ds_assemble_entry(struct compile_state *st, int i)
     st->instr_addr[t] = out;
   assem_debug("Assemble delay slot at %x\n",cinfo[i].ba);
   assem_debug("<->\n");
-  drc_dbg_emit_do_cmp(t, ccadj_);
+  drc_dbg_emit_do_cmp(st, t, ccadj_);
   if(regs[t].regmap_entry[HOST_CCREG]==CCREG&&regs[t].regmap[HOST_CCREG]!=CCREG)
     wb_register(CCREG,regs[t].regmap_entry,regs[t].wasdirty);
   load_regs(regs[t].regmap_entry,regs[t].regmap,dops[t].rs1,dops[t].rs2);
@@ -5427,14 +4436,52 @@ static void ujump_assemble_write_ra(struct compile_state *st, int i)
         if(i_regmap[temp]!=PTEMP) emit_movimm((uintptr_t)hash_table_get(return_address),temp);
       }
       #endif
+      /* loadedconst describes regs[i].regmap, while rt was selected from
+       * branch_regs[i].regmap.  A remapped slot can therefore be marked as
+       * loaded even though it still contains another value (ROREG was seen
+       * here on RV32).  The architectural early write must never consume
+       * that stale value. */
+#ifdef WRITE_LINK_REGISTER_EARLY
+      emit_movimm(return_address, rt); // PC into link register
+#else
       if (!((regs[i].loadedconst >> rt) & 1))
         emit_movimm(return_address, rt); // PC into link register
+#endif
       #ifdef IMM_PREFETCH
       emit_prefetch(hash_table_get(return_address));
       #endif
     }
+#ifdef WRITE_LINK_REGISTER_EARLY
+    emit_storereg(31, rt);
+#endif
   }
+#ifdef WRITE_LINK_REGISTER_EARLY
+  else {
+    /* External callees may observe the link even when this block's allocator
+     * considers r31 dead and gives it no host slot.  Materialize it directly
+     * in architectural state instead of leaving an older pseudo-register
+     * value for the callee to save. */
+    emit_movimm(return_address, HOST_TEMPREG);
+    emit_storereg(31, HOST_TEMPREG);
+  }
+#endif
 }
+
+#ifdef WRITE_LINK_REGISTER_EARLY
+/* Link creation precedes delay-slot assembly and register-map reconciliation.
+ * Keep the early write for delay-slot visibility, then reassert the
+ * architectural value after reconciliation unless the delay slot itself
+ * writes the link destination. */
+static void reassert_link_register(struct compile_state *st, int i)
+{
+  int link = dops[i].rt1;
+
+  if (link == 0 || dops[i + 1].rt1 == link || dops[i + 1].rt2 == link)
+    return;
+  emit_movimm(st->start + i * 4 + 8, HOST_TEMPREG);
+  emit_storereg(link, HOST_TEMPREG);
+}
+#endif
 
 static void ujump_assemble(struct compile_state *st, int i, const struct regstat *i_regs)
 {
@@ -5461,6 +4508,10 @@ static void ujump_assemble(struct compile_state *st, int i, const struct regstat
   cc=get_reg(branch_regs[i].regmap,CCREG);
   assert(cc==HOST_CCREG);
   store_regs_bt(st, branch_regs[i].regmap, branch_regs[i].dirty, cinfo[i].ba);
+#ifdef WRITE_LINK_REGISTER_EARLY
+  if (dops[i].rt1 != 0)
+    reassert_link_register(st, i);
+#endif
   #ifdef REG_PREFETCH
   if(dops[i].rt1==31&&temp>=0) emit_prefetchreg(temp);
   #endif
@@ -5485,16 +4536,33 @@ static void rjump_assemble_write_ra(struct compile_state *st, int i)
   int rt,return_address;
   rt=get_reg_w(branch_regs[i].regmap, dops[i].rt1);
   //assem_debug("branch(%d): eax=%d ecx=%d edx=%d ebx=%d ebp=%d esi=%d edi=%d\n",i,branch_regs[i].regmap[0],branch_regs[i].regmap[1],branch_regs[i].regmap[2],branch_regs[i].regmap[3],branch_regs[i].regmap[5],branch_regs[i].regmap[6],branch_regs[i].regmap[7]);
-  assert(rt>=0);
   return_address=st->start+i*4+8;
+  if (rt < 0) {
+#ifdef WRITE_LINK_REGISTER_EARLY
+    emit_movimm(return_address, HOST_TEMPREG);
+    emit_storereg(dops[i].rt1, HOST_TEMPREG);
+    return;
+#else
+    assert(rt >= 0);
+#endif
+  }
   #ifdef REG_PREFETCH
   if(temp>=0)
   {
     if(i_regmap[temp]!=PTEMP) emit_movimm((uintptr_t)hash_table_get(return_address),temp);
   }
   #endif
+#ifdef WRITE_LINK_REGISTER_EARLY
+  /* See ujump_assemble_write_ra(): loadedconst belongs to the pre-branch
+   * mapping and cannot prove that this branch-map slot already holds rt. */
+  emit_movimm(return_address, rt); // PC into link register
+#else
   if (!((regs[i].loadedconst >> rt) & 1))
     emit_movimm(return_address, rt); // PC into link register
+#endif
+#ifdef WRITE_LINK_REGISTER_EARLY
+  emit_storereg(dops[i].rt1, rt);
+#endif
   #ifdef IMM_PREFETCH
   emit_prefetch(hash_table_get(return_address));
   #endif
@@ -5552,6 +4620,10 @@ static void rjump_assemble(struct compile_state *st, int i, const struct regstat
   }
   #endif
   store_regs_bt(st, branch_regs[i].regmap,branch_regs[i].dirty,-1);
+#ifdef WRITE_LINK_REGISTER_EARLY
+  if (dops[i].rt1 != 0)
+    reassert_link_register(st, i);
+#endif
   #ifdef DESTRUCTIVE_WRITEBACK
   if((branch_regs[i].dirty>>rs)&1) {
     if(dops[i].rs1!=dops[i+1].rt1&&dops[i].rs1!=dops[i+1].rt2) {
@@ -5685,6 +4757,19 @@ static void cjump_assemble(struct compile_state *st, int i, const struct regstat
   {
     s2l=-1;
   }
+
+#if defined(DRC_DBG) && defined(ESP_PLATFORM) && defined(CONFIG_IDF_TARGET_ESP32P4)
+  {
+    static int first_cjump_dumped;
+    if (!first_cjump_dumped) {
+      first_cjump_dumped = 1;
+      SysPrintf("RV32 first cjump: pc=%08x op=%02x target=%08x ooo=%d "
+        "match=%d invert=%d s1=g%d/h%d s2=g%d/h%d\n",
+        st->start + i * 4, dops[i].opcode, cinfo[i].ba, dops[i].ooo,
+        match, invert, dops[i].rs1, s1l, dops[i].rs2, s2l);
+    }
+  }
+#endif
 
   if(dops[i].ooo) {
     // Out of order execution (delay slot first)
@@ -5994,10 +5079,20 @@ static void sjump_assemble(struct compile_state *st, int i, const struct regstat
         // Save the PC even if the branch is not taken
         return_address=st->start+i*4+8;
         emit_movimm(return_address,rt); // PC into link register
+#ifdef WRITE_LINK_REGISTER_EARLY
+        emit_storereg(31, rt);
+#endif
         #ifdef IMM_PREFETCH
         if(!nevertaken) emit_prefetch(hash_table_get(return_address));
         #endif
       }
+#ifdef WRITE_LINK_REGISTER_EARLY
+      else {
+        return_address=st->start+i*4+8;
+        emit_movimm(return_address, HOST_TEMPREG);
+        emit_storereg(31, HOST_TEMPREG);
+      }
+#endif
     }
     cc=get_reg(branch_regs[i].regmap,CCREG);
     assert(cc==HOST_CCREG);
@@ -6115,10 +5210,20 @@ static void sjump_assemble(struct compile_state *st, int i, const struct regstat
         // Save the PC even if the branch is not taken
         return_address = st->start + i*4+8;
         emit_movimm(return_address, rt); // PC into link register
+#ifdef WRITE_LINK_REGISTER_EARLY
+        emit_storereg(31, rt);
+#endif
         #ifdef IMM_PREFETCH
         emit_prefetch(hash_table_get(return_address));
         #endif
       }
+#ifdef WRITE_LINK_REGISTER_EARLY
+      else {
+        return_address = st->start + i*4+8;
+        emit_movimm(return_address, HOST_TEMPREG);
+        emit_storereg(31, HOST_TEMPREG);
+      }
+#endif
     }
     if (!unconditional && !nevertaken) {
       nottaken = out;
@@ -6216,7 +5321,7 @@ static void check_regmap(signed char *regmap)
 
 #ifdef DISASM
 #include <inttypes.h>
-static char insn[MAXBLOCK][10];
+static NDRC_COLD_BSS char insn[MAXBLOCK][10];
 
 #define set_mnemonic(i_, n_) \
   strcpy(insn[i_], n_)
@@ -6326,7 +5431,7 @@ void disassemble_inst(int i, u_int start, u_int *source)
     }
 }
 #else
-#define set_mnemonic(i_, n_)
+#define set_mnemonic(i_, n_) ((void)0)
 static void disassemble_inst(int i, u_int start, u_int *source) {}
 #endif // DISASM
 
@@ -6423,11 +5528,24 @@ static int pgsize(void)
 void new_dynarec_init(void)
 {
   int align = pgsize() - 1;
+#ifdef PCSX_NDRC_RV32_FULL_CORE
+  SysPrintf("RV32 Ari64 full core active (Lightrec compiler not linked)\n");
+#endif
   SysPrintf("Init new dynarec, ndrc size %x, pgsize %d\n",
     (int)sizeof(*ndrc), align + 1);
 
 #ifdef BASE_ADDR_DYNAMIC
-  #ifdef VITA
+  #if defined(ESP_PLATFORM) && defined(CONFIG_IDF_TARGET_ESP32P4) && \
+      defined(__riscv) && __riscv_xlen == 32
+  ndrc = ndrc_rv32_p4_alloc_exec(sizeof(*ndrc), &ndrc_exec_backing);
+  if (!ndrc) {
+    SysPrintf("RV32 executable cache allocation failed (%x bytes)\n",
+      (int)sizeof(*ndrc));
+    abort();
+  }
+  SysPrintf("RV32 executable cache mapped at %p, backing %p (%x bytes)\n",
+    ndrc, ndrc_exec_backing, (int)sizeof(*ndrc));
+  #elif defined(VITA)
   sceBlock = getVMBlock(); //sceKernelAllocMemBlockForVM("code", sizeof(*ndrc));
   if (sceBlock <= 0)
     SysPrintf("getVMBlock failed: %x\n", sceBlock);
@@ -6480,7 +5598,7 @@ void new_dynarec_init(void)
   #endif
 #else
   ndrc = (struct ndrc_mem *)((size_t)(ndrc_bss + align) & ~align);
-  #ifndef NO_WRITE_EXEC
+  #if !defined(NO_WRITE_EXEC) && !defined(ESP_PLATFORM)
   // not all systems allow execute in data segment by default
   // size must be 4K aligned for 3DS?
   if (mprotect(ndrc, sizeof(*ndrc),
@@ -6512,7 +5630,12 @@ void new_dynarec_cleanup(void)
 {
   int n;
 #ifdef BASE_ADDR_DYNAMIC
-  #ifdef VITA
+  #if defined(ESP_PLATFORM) && defined(CONFIG_IDF_TARGET_ESP32P4) && \
+      defined(__riscv) && __riscv_xlen == 32
+  ndrc_rv32_p4_free_exec(ndrc, ndrc_exec_backing);
+  ndrc = NULL;
+  ndrc_exec_backing = NULL;
+  #elif defined(VITA)
   // sceBlock is managed by retroarch's bootstrap code
   //sceKernelFreeMemBlock(sceBlock);
   //sceBlock = -1;
@@ -6704,13 +5827,19 @@ void new_dynarec_print_stats(void)
       lmem += sizeof(*ji) + ji->alloc * sizeof(ji->e[0]) + sizeof(size_t) * 2;
   }
 
-  printf("cc %3d,%3d lu%6d,%3d,%3d c%3d inv%3d,%3d tc_offs %06zx b %u l %u/%zd\n",
+  printf("NDRC: compile=%d restore=%d ht=%d returns=%d mini_fill=%d slow=%d "
+         "restore_try=%d cmp=%d inv=%d/%d tc=%06x blocks=%d links=%d/%d\n",
     stat_bc_direct, stat_bc_restore,
-    stat_ht_lookups, stat_jump_in_lookups, stat_restore_tries,
+    stat_ht_lookups, stat_return_lookups, stat_mini_fills,
+    stat_jump_in_lookups,
+    stat_restore_tries,
     stat_restore_compares, stat_inv_addr_calls, stat_inv_hits,
-    out - ndrc->translation_cache, stat_blocks, stat_links, lmem);
+    (unsigned int)(out - ndrc->translation_cache), stat_blocks, stat_links,
+    (int)lmem);
   stat_bc_direct = stat_bc_restore =
-  stat_ht_lookups = stat_jump_in_lookups = stat_restore_tries =
+  stat_ht_lookups = stat_return_lookups = stat_mini_fills =
+  stat_jump_in_lookups =
+  stat_restore_tries =
   stat_restore_compares = stat_inv_addr_calls = stat_inv_hits = 0;
 #endif
 }
@@ -6779,6 +5908,13 @@ static int apply_hacks(struct compile_state *st)
 {
   int i;
   vsync_hack = 0;
+#ifdef DRC_DBG
+  /* Differential replay compares against the instruction-by-instruction
+   * interpreter. Compiler-only compatibility/loop-folding hacks deliberately
+   * change that instruction stream, so suppress them while tracing. Normal
+   * builds retain every compatibility hack. */
+  return 0;
+#endif
   if (HACK_ENABLED(NDHACK_NO_COMPAT_HACKS))
     return 0;
   /* special hack(s) */
@@ -6850,306 +5986,7 @@ static int is_ld_use_hazard(const struct decoded_insn *op_ld,
   return op->itype != CJUMP && op->itype != SJUMP;
 }
 
-static void disassemble_one(struct compile_state *st, int i, u_int src)
-{
-    unsigned int type, op, op2, op3;
-    enum ls_width_type ls_type = LS_32;
-    memset(&dops[i], 0, sizeof(dops[i]));
-    memset(&cinfo[i], 0, sizeof(cinfo[i]));
-    cinfo[i].ba = -1;
-    cinfo[i].addr = -1;
-    dops[i].opcode = op = src >> 26;
-    op2 = 0;
-    type = INTCALL;
-    set_mnemonic(i, "???");
-    switch(op)
-    {
-      case 0x00: set_mnemonic(i, "special");
-        op2 = src & 0x3f;
-        switch(op2)
-        {
-          case 0x00: set_mnemonic(i, "SLL"); type=SHIFTIMM; break;
-          case 0x02: set_mnemonic(i, "SRL"); type=SHIFTIMM; break;
-          case 0x03: set_mnemonic(i, "SRA"); type=SHIFTIMM; break;
-          case 0x04: set_mnemonic(i, "SLLV"); type=SHIFT; break;
-          case 0x06: set_mnemonic(i, "SRLV"); type=SHIFT; break;
-          case 0x07: set_mnemonic(i, "SRAV"); type=SHIFT; break;
-          case 0x08: set_mnemonic(i, "JR"); type=RJUMP; break;
-          case 0x09: set_mnemonic(i, "JALR"); type=RJUMP; break;
-          case 0x0C: set_mnemonic(i, "SYSCALL"); type=SYSCALL; break;
-          case 0x0D: set_mnemonic(i, "BREAK"); type=SYSCALL; break;
-          case 0x10: set_mnemonic(i, "MFHI"); type=MOV; break;
-          case 0x11: set_mnemonic(i, "MTHI"); type=MOV; break;
-          case 0x12: set_mnemonic(i, "MFLO"); type=MOV; break;
-          case 0x13: set_mnemonic(i, "MTLO"); type=MOV; break;
-          case 0x18: set_mnemonic(i, "MULT"); type=MULTDIV; break;
-          case 0x19: set_mnemonic(i, "MULTU"); type=MULTDIV; break;
-          case 0x1A: set_mnemonic(i, "DIV"); type=MULTDIV; break;
-          case 0x1B: set_mnemonic(i, "DIVU"); type=MULTDIV; break;
-          case 0x20: set_mnemonic(i, "ADD"); type=ALU; break;
-          case 0x21: set_mnemonic(i, "ADDU"); type=ALU; break;
-          case 0x22: set_mnemonic(i, "SUB"); type=ALU; break;
-          case 0x23: set_mnemonic(i, "SUBU"); type=ALU; break;
-          case 0x24: set_mnemonic(i, "AND"); type=ALU; break;
-          case 0x25: set_mnemonic(i, "OR"); type=ALU; break;
-          case 0x26: set_mnemonic(i, "XOR"); type=ALU; break;
-          case 0x27: set_mnemonic(i, "NOR"); type=ALU; break;
-          case 0x2A: set_mnemonic(i, "SLT"); type=ALU; break;
-          case 0x2B: set_mnemonic(i, "SLTU"); type=ALU; break;
-        }
-        break;
-      case 0x01: set_mnemonic(i, "regimm");
-        type = SJUMP;
-        op2 = (src >> 16) & 0x1f;
-        switch(op2)
-        {
-          case 0x10: set_mnemonic(i, "BLTZAL"); break;
-          case 0x11: set_mnemonic(i, "BGEZAL"); break;
-          default:
-            if (op2 & 1)
-              set_mnemonic(i, "BGEZ");
-            else
-              set_mnemonic(i, "BLTZ");
-        }
-        break;
-      case 0x02: set_mnemonic(i, "J"); type=UJUMP; break;
-      case 0x03: set_mnemonic(i, "JAL"); type=UJUMP; break;
-      case 0x04: set_mnemonic(i, "BEQ"); type=CJUMP; break;
-      case 0x05: set_mnemonic(i, "BNE"); type=CJUMP; break;
-      case 0x06: set_mnemonic(i, "BLEZ"); type=CJUMP; break;
-      case 0x07: set_mnemonic(i, "BGTZ"); type=CJUMP; break;
-      case 0x08: set_mnemonic(i, "ADDI"); type=IMM16; break;
-      case 0x09: set_mnemonic(i, "ADDIU"); type=IMM16; break;
-      case 0x0A: set_mnemonic(i, "SLTI"); type=IMM16; break;
-      case 0x0B: set_mnemonic(i, "SLTIU"); type=IMM16; break;
-      case 0x0C: set_mnemonic(i, "ANDI"); type=IMM16; break;
-      case 0x0D: set_mnemonic(i, "ORI"); type=IMM16; break;
-      case 0x0E: set_mnemonic(i, "XORI"); type=IMM16; break;
-      case 0x0F: set_mnemonic(i, "LUI"); type=IMM16; break;
-      case 0x10: set_mnemonic(i, "COP0");
-        op2 = (src >> 21) & 0x1f;
-	if (op2 & 0x10) {
-          op3 = src & 0x1f;
-          switch (op3)
-          {
-            case 0x01: case 0x02: case 0x06: case 0x08: type = INTCALL; break;
-            case 0x10: set_mnemonic(i, "RFE"); type=RFE; break;
-            default:   type = OTHER; break;
-          }
-          break;
-        }
-        switch(op2)
-        {
-          u32 rd;
-          case 0x00:
-            set_mnemonic(i, "MFC0");
-            rd = (src >> 11) & 0x1F;
-            if (!(0x00000417u & (1u << rd)))
-              type = COP0;
-            break;
-          case 0x04: set_mnemonic(i, "MTC0"); type=COP0; break;
-          case 0x02:
-          case 0x06: type = INTCALL; break;
-          default:   type = OTHER; break;
-        }
-        break;
-      case 0x11: set_mnemonic(i, "COP1");
-        op2 = (src >> 21) & 0x1f;
-        break;
-      case 0x12: set_mnemonic(i, "COP2");
-        op2 = (src >> 21) & 0x1f;
-        if (op2 & 0x10) {
-          type = OTHER;
-          if (gte_handlers[src & 0x3f] != NULL) {
-#ifdef DISASM
-            if (gte_regnames[src & 0x3f] != NULL)
-              strcpy(insn[i], gte_regnames[src & 0x3f]);
-            else
-              snprintf(insn[i], sizeof(insn[i]), "COP2 %x", src & 0x3f);
-#endif
-            type = C2OP;
-          }
-        }
-        else switch(op2)
-        {
-          case 0x00: set_mnemonic(i, "MFC2"); type=COP2; break;
-          case 0x02: set_mnemonic(i, "CFC2"); type=COP2; break;
-          case 0x04: set_mnemonic(i, "MTC2"); type=COP2; break;
-          case 0x06: set_mnemonic(i, "CTC2"); type=COP2; break;
-        }
-        break;
-      case 0x13: set_mnemonic(i, "COP3");
-        op2 = (src >> 21) & 0x1f;
-        break;
-      case 0x20: set_mnemonic(i, "LB"); type=LOAD; ls_type = LS_8; break;
-      case 0x21: set_mnemonic(i, "LH"); type=LOAD; ls_type = LS_16; break;
-      case 0x22: set_mnemonic(i, "LWL"); type=LOADLR; ls_type = LS_LR; break;
-      case 0x23: set_mnemonic(i, "LW"); type=LOAD; ls_type = LS_32; break;
-      case 0x24: set_mnemonic(i, "LBU"); type=LOAD; ls_type = LS_8; break;
-      case 0x25: set_mnemonic(i, "LHU"); type=LOAD; ls_type = LS_16; break;
-      case 0x26: set_mnemonic(i, "LWR"); type=LOADLR; ls_type = LS_LR; break;
-      case 0x28: set_mnemonic(i, "SB"); type=STORE; ls_type = LS_8; break;
-      case 0x29: set_mnemonic(i, "SH"); type=STORE; ls_type = LS_16; break;
-      case 0x2A: set_mnemonic(i, "SWL"); type=STORELR; ls_type = LS_LR; break;
-      case 0x2B: set_mnemonic(i, "SW"); type=STORE; ls_type = LS_32; break;
-      case 0x2E: set_mnemonic(i, "SWR"); type=STORELR; ls_type = LS_LR; break;
-      case 0x32: set_mnemonic(i, "LWC2"); type=C2LS; ls_type = LS_32; break;
-      case 0x3A: set_mnemonic(i, "SWC2"); type=C2LS; ls_type = LS_32; break;
-      case 0x3B:
-        if (Config.HLE && (src & 0x03ffffff) < ARRAY_SIZE(psxHLEt)) {
-          set_mnemonic(i, "HLECALL");
-          type = HLECALL;
-        }
-        break;
-      default:
-        break;
-    }
-    if (type == INTCALL)
-      SysPrintf_lim("NI %08x @%08x (%08x)\n", src, st->start + i*4, st->start);
-    dops[i].itype = type;
-    dops[i].opcode2 = op2;
-    dops[i].ls_type = ls_type;
-    /* Get registers/immediates */
-    dops[i].use_lt1=0;
-    gte_rs[i]=gte_rt[i]=0;
-    dops[i].rs1 = 0;
-    dops[i].rs2 = 0;
-    dops[i].rt1 = 0;
-    dops[i].rt2 = 0;
-    switch(type) {
-      case LOAD:
-        dops[i].rs1 = (src >> 21) & 0x1f;
-        dops[i].rt1 = (src >> 16) & 0x1f;
-        cinfo[i].imm = (short)src;
-        break;
-      case STORE:
-      case STORELR:
-        dops[i].rs1 = (src >> 21) & 0x1f;
-        dops[i].rs2 = (src >> 16) & 0x1f;
-        cinfo[i].imm = (short)src;
-        break;
-      case LOADLR:
-        // LWL/LWR only load part of the register,
-        // therefore the target register must be treated as a source too
-        dops[i].rs1 = (src >> 21) & 0x1f;
-        dops[i].rs2 = (src >> 16) & 0x1f;
-        dops[i].rt1 = (src >> 16) & 0x1f;
-        cinfo[i].imm = (short)src;
-        break;
-      case IMM16:
-        if (op==0x0f) dops[i].rs1=0; // LUI instruction has no source register
-        else dops[i].rs1 = (src >> 21) & 0x1f;
-        dops[i].rs2 = 0;
-        dops[i].rt1 = (src >> 16) & 0x1f;
-        if(op>=0x0c&&op<=0x0e) { // ANDI/ORI/XORI
-          cinfo[i].imm = (unsigned short)src;
-        }else{
-          cinfo[i].imm = (short)src;
-        }
-        break;
-      case UJUMP:
-        // The JAL instruction writes to r31.
-        if (op&1) {
-          dops[i].rt1=31;
-        }
-        dops[i].rs2=CCREG;
-        break;
-      case RJUMP:
-        dops[i].rs1 = (src >> 21) & 0x1f;
-        // The JALR instruction writes to rd.
-        if (op2&1) {
-          dops[i].rt1 = (src >> 11) & 0x1f;
-        }
-        dops[i].rs2=CCREG;
-        break;
-      case CJUMP:
-        dops[i].rs1 = (src >> 21) & 0x1f;
-        dops[i].rs2 = (src >> 16) & 0x1f;
-        if(op&2) { // BGTZ/BLEZ
-          dops[i].rs2=0;
-        }
-        break;
-      case SJUMP:
-        dops[i].rs1 = (src >> 21) & 0x1f;
-        dops[i].rs2 = CCREG;
-        if (op2 == 0x10 || op2 == 0x11) { // BxxAL
-          dops[i].rt1 = 31;
-          // NOTE: If the branch is not taken, r31 is still overwritten
-        }
-        break;
-      case ALU:
-        dops[i].rs1=(src>>21)&0x1f; // source
-        dops[i].rs2=(src>>16)&0x1f; // subtract amount
-        dops[i].rt1=(src>>11)&0x1f; // destination
-        break;
-      case MULTDIV:
-        dops[i].rs1=(src>>21)&0x1f; // source
-        dops[i].rs2=(src>>16)&0x1f; // divisor
-        dops[i].rt1=HIREG;
-        dops[i].rt2=LOREG;
-        break;
-      case MOV:
-        if(op2==0x10) dops[i].rs1=HIREG; // MFHI
-        if(op2==0x11) dops[i].rt1=HIREG; // MTHI
-        if(op2==0x12) dops[i].rs1=LOREG; // MFLO
-        if(op2==0x13) dops[i].rt1=LOREG; // MTLO
-        if((op2&0x1d)==0x10) dops[i].rt1=(src>>11)&0x1f; // MFxx
-        if((op2&0x1d)==0x11) dops[i].rs1=(src>>21)&0x1f; // MTxx
-        break;
-      case SHIFT:
-        dops[i].rs1=(src>>16)&0x1f; // target of shift
-        dops[i].rs2=(src>>21)&0x1f; // shift amount
-        dops[i].rt1=(src>>11)&0x1f; // destination
-        break;
-      case SHIFTIMM:
-        dops[i].rs1=(src>>16)&0x1f;
-        dops[i].rs2=0;
-        dops[i].rt1=(src>>11)&0x1f;
-        cinfo[i].imm=(src>>6)&0x1f;
-        break;
-      case COP0:
-        if(op2==0) dops[i].rt1=(src>>16)&0x1F; // MFC0
-        if(op2==4) dops[i].rs1=(src>>16)&0x1F; // MTC0
-        if(op2==4&&((src>>11)&0x1e)==12) dops[i].rs2=CCREG;
-        break;
-      case COP2:
-        if(op2<3) dops[i].rt1=(src>>16)&0x1F; // MFC2/CFC2
-        if(op2>3) dops[i].rs1=(src>>16)&0x1F; // MTC2/CTC2
-        int gr=(src>>11)&0x1F;
-        switch(op2)
-        {
-          case 0x00: gte_rs[i]=1ll<<gr; break; // MFC2
-          case 0x04: gte_rt[i]=1ll<<gr; break; // MTC2
-          case 0x02: gte_rs[i]=1ll<<(gr+32); break; // CFC2
-          case 0x06: gte_rt[i]=1ll<<(gr+32); break; // CTC2
-        }
-        break;
-      case C2LS:
-        dops[i].rs1=(src>>21)&0x1F;
-        cinfo[i].imm=(short)src;
-        if(op==0x32) gte_rt[i]=1ll<<((src>>16)&0x1F); // LWC2
-        else gte_rs[i]=1ll<<((src>>16)&0x1F); // SWC2
-        break;
-      case C2OP:
-        gte_rs[i]=gte_reg_reads[src&0x3f];
-        gte_rt[i]=gte_reg_writes[src&0x3f];
-        gte_rt[i]|=1ll<<63; // every op changes flags
-        if((src&0x3f)==GTE_MVMVA) {
-          int v = (src >> 15) & 3;
-          gte_rs[i]&=~0xe3fll;
-          if(v==3) gte_rs[i]|=0xe00ll;
-          else gte_rs[i]|=3ll<<(v*2);
-        }
-        break;
-      case SYSCALL:
-      case HLECALL:
-      case INTCALL:
-        dops[i].rs1=CCREG;
-        break;
-      default:
-        break;
-    }
-}
+#include "decode_one.h"
 
 static noinline void pass1a_disassemble(struct compile_state *st, u_int pagelimit)
 {
@@ -9172,8 +8009,16 @@ static noinline void pass6_clean_registers_r(struct compile_state *st,
 static void pass6_clean_registers(struct compile_state *st,
   int istart, int iend)
 {
+#if defined(ESP_PLATFORM) && defined(CONFIG_IDF_TARGET_ESP32P4)
+  /* Two more per-block compiler work arrays (16 KiB total). They are passed
+   * through the recursive walker, so one shared serialized workspace is
+   * sufficient and leaves headroom for its actual call frames. */
+  static NDRC_COLD_BSS u_int wont_dirty[MAXBLOCK];
+  static NDRC_COLD_BSS u_int will_dirty[MAXBLOCK];
+#else
   u_int wont_dirty[MAXBLOCK];
   u_int will_dirty[MAXBLOCK];
+#endif
   pass6_clean_registers_r(st, wont_dirty, will_dirty, istart, iend, 1);
 }
 
@@ -9355,7 +8200,15 @@ static void block_info_finish(struct compile_state *st, struct block_info *block
 
 static int noinline new_recompile_block(u_int addr)
 {
+#if defined(ESP_PLATFORM) && defined(CONFIG_IDF_TARGET_ESP32P4)
+  /* This is roughly 80 KiB with MAXBLOCK=2048. Keeping it on emu_task's
+   * stack trips FreeRTOS stack protection before the first block can be
+   * compiled. The compiler is already serialized and its other pass arrays
+   * are cold PSRAM data on P4, so keep this workspace alongside them. */
+  static NDRC_COLD_BSS struct compile_state st;
+#else
   struct compile_state st;
+#endif
   u_int pagelimit = 0;
   u_int state_rflags = 0;
   int i;
@@ -9553,7 +8406,7 @@ static int noinline new_recompile_block(u_int addr)
       // branch target entry point
       st.instr_addr[i] = out;
       assem_debug("<->\n");
-      drc_dbg_emit_do_cmp(i, cinfo[i].ccadj);
+      drc_dbg_emit_do_cmp(&st, i, cinfo[i].ccadj);
       if (clear_hack_addr) {
         emit_movimm(0, 0);
         emit_writeword(0, &hack_addr);
@@ -9771,6 +8624,53 @@ static int noinline new_recompile_block(u_int addr)
   assert(out - (u_char *)beginning < MAX_OUTPUT_BLOCK_SIZE);
 
   end_block(beginning);
+#if defined(DRC_DBG) && defined(ESP_PLATFORM) && defined(CONFIG_IDF_TARGET_ESP32P4)
+  /* The first real block is the earliest point at which the full RV32 backend
+   * can fail outside the emitter selftests. Dump it once so an exception PC
+   * can be decoded exactly even though the translation cache is runtime-only. */
+  {
+    static int first_rv32_block_dumped;
+    if (!first_rv32_block_dumped) {
+      const u_int *code = NDRC_WRITE_OFFSET(beginning);
+      u_int code_words = (out - (u_char *)beginning) / sizeof(*code);
+      u_int dump_words = code_words < 40 ? code_words : 40;
+      u_int guest_words = st.slen < 16 ? st.slen : 16;
+
+      first_rv32_block_dumped = 1;
+      SysPrintf("RV32 first block: guest=%08x slen=%d host=%p words=%u\n",
+        st.start, st.slen, beginning, code_words);
+      for (i = 0; i < (int)guest_words; i++)
+        SysPrintf("RV32 guest %08x=%08x host=+%04x\n", st.start + i * 4,
+          st.source[i], st.instr_addr[i]
+            ? (u_int)((u_char *)st.instr_addr[i] - (u_char *)beginning)
+            : ~0u);
+      for (i = 0; i < (int)dump_words; i += 4)
+        SysPrintf("RV32 host +%04x: %08x %08x %08x %08x\n", i * 4,
+          code[i], i + 1 < (int)dump_words ? code[i + 1] : 0,
+          i + 2 < (int)dump_words ? code[i + 2] : 0,
+          i + 3 < (int)dump_words ? code[i + 3] : 0);
+      /* Include the first conditional branch through the following normal
+       * instruction. The regular prefix dump is intentionally short, while
+       * this range exposes the predicate, patched target, and both paths. */
+      for (i = 0; i + 2 < st.slen; i++) {
+        if (dops[i].itype == CJUMP && st.instr_addr[i] && st.instr_addr[i + 2]) {
+          u_int first = ((u_char *)st.instr_addr[i] - (u_char *)beginning) / 4;
+          u_int last = ((u_char *)st.instr_addr[i + 2] - (u_char *)beginning) / 4;
+          if (last > code_words) last = code_words;
+          SysPrintf("RV32 first cjump host range: +%04x..+%04x\n",
+            first * 4, last * 4);
+          for (; first < last; first += 4)
+            SysPrintf("RV32 branch +%04x: %08x %08x %08x %08x\n", first * 4,
+              code[first], first + 1 < last ? code[first + 1] : 0,
+              first + 2 < last ? code[first + 2] : 0,
+              first + 3 < last ? code[first + 3] : 0);
+          break;
+        }
+      }
+    }
+  }
+
+#endif
   block_info_finish(&st, block, beginning, out);
   block = NULL;
 

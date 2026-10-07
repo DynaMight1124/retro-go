@@ -28,10 +28,141 @@
 #include "../gpulib/gpu.h"
 #include "old/if.h"
 
+#if defined(ESP_PLATFORM) && defined(CONFIG_IDF_TARGET_ESP32P4)
+#include <esp_cpu.h>
+#endif
+
 //#include "port.h"
 #include "gpu_unai.h"
 
 EXT_RAM_BSS_ATTR __attribute__((aligned(32))) gpu_unai_t gpu_unai;
+
+#if defined(ESP_PLATFORM) && defined(CONFIG_IDF_TARGET_ESP32P4)
+#define RENDERER_PROFILE_SAMPLE_SHIFT 3
+#define RENDERER_PROFILE_SAMPLE_COUNT (1u << RENDERER_PROFILE_SAMPLE_SHIFT)
+
+static u64 renderer_profile_cycles[12];
+static u32 renderer_profile_calls[12];
+static u32 renderer_profile_sample_phase;
+
+struct renderer_ft4_profile_slot {
+  u64 cycles;
+  u32 calls;
+  u16 cf;
+  bool used;
+};
+
+static renderer_ft4_profile_slot renderer_ft4_profile[16];
+static u32 renderer_ft4_profile_overflow;
+
+static inline void renderer_profile_ft4(u16 cf, u32 cycles)
+{
+  renderer_ft4_profile_slot *free_slot = NULL;
+
+  for (u32 i = 0; i < sizeof(renderer_ft4_profile) /
+                         sizeof(renderer_ft4_profile[0]); i++) {
+    renderer_ft4_profile_slot *slot = &renderer_ft4_profile[i];
+    if (slot->used && slot->cf == cf) {
+      slot->cycles += cycles;
+      slot->calls++;
+      return;
+    }
+    if (!slot->used && !free_slot)
+      free_slot = slot;
+  }
+
+  if (free_slot) {
+    free_slot->cycles = cycles;
+    free_slot->calls = 1;
+    free_slot->cf = cf;
+    free_slot->used = true;
+  } else {
+    renderer_ft4_profile_overflow++;
+  }
+}
+
+static inline u32 renderer_profile_group(u32 cmd)
+{
+  if (cmd == 0x02)
+    return 0;                       // fill
+  if (cmd >= 0x20 && cmd < 0x40)
+    return 1 + ((cmd - 0x20) >> 2); // F3..GT4
+  if (cmd >= 0x40 && cmd < 0x60)
+    return 9;                       // lines
+  if (cmd >= 0x60 && cmd < 0x80)
+    return 10;                      // tiles/sprites
+  return 11;                        // state and non-render commands
+}
+
+void renderer_get_profile(u64 group_cycles[12], u32 group_calls[12])
+{
+  for (u32 i = 0; i < sizeof(renderer_profile_cycles) /
+                         sizeof(renderer_profile_cycles[0]); i++) {
+    group_cycles[i] =
+      renderer_profile_cycles[i] << RENDERER_PROFILE_SAMPLE_SHIFT;
+    group_calls[i] =
+      renderer_profile_calls[i] << RENDERER_PROFILE_SAMPLE_SHIFT;
+  }
+  memset(renderer_profile_cycles, 0, sizeof(renderer_profile_cycles));
+  memset(renderer_profile_calls, 0, sizeof(renderer_profile_calls));
+}
+
+void renderer_get_ft4_profile(u16 cf[3], u64 cycles[3], u32 calls[3],
+  u32 *overflow)
+{
+  for (u32 rank = 0; rank < 3; rank++) {
+    cf[rank] = 0xfffe;
+    cycles[rank] = 0;
+    calls[rank] = 0;
+  }
+
+  for (u32 i = 0; i < sizeof(renderer_ft4_profile) /
+                         sizeof(renderer_ft4_profile[0]); i++) {
+    renderer_ft4_profile_slot *slot = &renderer_ft4_profile[i];
+    if (!slot->used)
+      continue;
+    for (u32 rank = 0; rank < 3; rank++) {
+      if (slot->cycles > cycles[rank]) {
+        for (u32 move = 2; move > rank; move--) {
+          cf[move] = cf[move - 1];
+          cycles[move] = cycles[move - 1];
+          calls[move] = calls[move - 1];
+        }
+        cf[rank] = slot->cf;
+        cycles[rank] = slot->cycles;
+        calls[rank] = slot->calls;
+        break;
+      }
+    }
+  }
+
+  for (u32 rank = 0; rank < 3; rank++) {
+    cycles[rank] <<= RENDERER_PROFILE_SAMPLE_SHIFT;
+    calls[rank] <<= RENDERER_PROFILE_SAMPLE_SHIFT;
+  }
+  *overflow = renderer_ft4_profile_overflow << RENDERER_PROFILE_SAMPLE_SHIFT;
+  memset(renderer_ft4_profile, 0, sizeof(renderer_ft4_profile));
+  renderer_ft4_profile_overflow = 0;
+}
+#else
+void renderer_get_profile(u64 group_cycles[12], u32 group_calls[12])
+{
+  memset(group_cycles, 0, 12 * sizeof(*group_cycles));
+  memset(group_calls, 0, 12 * sizeof(*group_calls));
+}
+
+
+void renderer_get_ft4_profile(u16 cf[3], u64 cycles[3], u32 calls[3],
+  u32 *overflow)
+{
+  for (u32 rank = 0; rank < 3; rank++) {
+    cf[rank] = 0xfffe;
+    cycles[rank] = 0;
+    calls[rank] = 0;
+  }
+  *overflow = 0;
+}
+#endif
 
 // GPU fixed point math
 #include "gpu_fixedpoint.h"
@@ -261,6 +392,17 @@ int renderer_do_cmd_list(u32 *list_, int list_len, uint32_t *ex_regs,
 
     PtrUnion packet = { .ptr = (void*)&gpu_unai.PacketBuffer };
 
+#if defined(ESP_PLATFORM) && defined(CONFIG_IDF_TARGET_ESP32P4)
+    /* Profiling every primitive is visible in GPU-bound games. Sample one in
+     * eight commands and scale the 60-frame totals in the getters. Rendering
+     * and command selection remain identical on sampled and unsampled calls. */
+    u32 profile_phase = ++renderer_profile_sample_phase;
+    bool profile_this_command =
+      (profile_phase & (RENDERER_PROFILE_SAMPLE_COUNT - 1)) == 0;
+    u32 profile_start_cycles =
+      profile_this_command ? esp_cpu_get_cycle_count() : 0;
+#endif
+
     switch (cmd)
     {
       case 0x02:
@@ -321,6 +463,10 @@ int renderer_do_cmd_list(u32 *list_, int list_len, uint32_t *ex_regs,
       case 0x2D:
       case 0x2E:
       case 0x2F: {          // Textured 4-pt poly
+#if defined(ESP_PLATFORM) && defined(CONFIG_IDF_TARGET_ESP32P4)
+        u32 ft4_start_cycles =
+          profile_this_command ? esp_cpu_get_cycle_count() : 0;
+#endif
         u32 dithering = Dithering;
         u32 simplified_count;
         gpuSetTexture(le32_to_u32(gpu_unai.PacketBuffer.U4[4]) >> 16);
@@ -334,6 +480,11 @@ int renderer_do_cmd_list(u32 *list_, int list_len, uint32_t *ex_regs,
               break;
             memcpy(&gpu_unai.PacketBuffer.U4[0], &gpu_unai.PacketBuffer.U4[i * 4], 16);
           }
+#if defined(ESP_PLATFORM) && defined(CONFIG_IDF_TARGET_ESP32P4)
+          if (profile_this_command)
+            renderer_profile_ft4(0xffff,
+              (u32)(esp_cpu_get_cycle_count() - ft4_start_cycles));
+#endif
           break;
         }
         gpuSetCLUT(le32_to_u32(gpu_unai.PacketBuffer.U4[2]) >> 16);
@@ -351,7 +502,16 @@ int renderer_do_cmd_list(u32 *list_, int list_len, uint32_t *ex_regs,
         }
 
         PP driver = gpuPolySpanDrivers[driver_idx];
+#if defined(ESP_PLATFORM) && defined(CONFIG_IDF_TARGET_ESP32P4)
+        if (driver_idx == 0x020)
+          driver = gpuPolySpanFn4bppRawP4;
+#endif
         gpuDrawPolyFT(packet, driver, true); // is_quad = true
+#if defined(ESP_PLATFORM) && defined(CONFIG_IDF_TARGET_ESP32P4)
+        if (profile_this_command)
+          renderer_profile_ft4((u16)driver_idx,
+            (u32)(esp_cpu_get_cycle_count() - ft4_start_cycles));
+#endif
         gput_sum(cpu_cycles_sum, cpu_cycles, gput_quad_base_t());
       } break;
 
@@ -665,6 +825,15 @@ int renderer_do_cmd_list(u32 *list_, int list_len, uint32_t *ex_regs,
         gpuGP0Cmd_0xEx(gpu_unai, cmd_word);
       } break;
     }
+
+#if defined(ESP_PLATFORM) && defined(CONFIG_IDF_TARGET_ESP32P4)
+    if (profile_this_command) {
+      u32 profile_group = renderer_profile_group(cmd);
+      renderer_profile_cycles[profile_group] +=
+        (u32)(esp_cpu_get_cycle_count() - profile_start_cycles);
+      renderer_profile_calls[profile_group]++;
+    }
+#endif
   }
 
 breakloop:

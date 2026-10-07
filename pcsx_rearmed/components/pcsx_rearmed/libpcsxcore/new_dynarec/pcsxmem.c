@@ -7,6 +7,7 @@
 
 #include <stdio.h>
 #include "../psxhw.h"
+#include "../sio.h"
 #include "../cdrom.h"
 #include "../mdec.h"
 #include "../gpu.h"
@@ -14,22 +15,29 @@
 #include "emu_if.h"
 #include "pcsxmem.h"
 
+#if defined(ESP_PLATFORM) && defined(CONFIG_IDF_TARGET_ESP32P4)
+#include <esp_attr.h>
+#define NDRC_MEM_BSS EXT_RAM_BSS_ATTR
+#else
+#define NDRC_MEM_BSS
+#endif
+
 #ifdef __thumb__
 #error the dynarec is incompatible with Thumb functions,
 #error please add -marm to compile flags
 #endif
 
 //#define memprintf printf
-#define memprintf(...)
+#define memprintf(...) ((void)0)
 
 static uintptr_t *mem_readtab;
 static uintptr_t *mem_writetab;
-static uintptr_t mem_iortab[(1+2+4) * 0x1000 / 4];
-static uintptr_t mem_iowtab[(1+2+4) * 0x1000 / 4];
-static uintptr_t mem_ffrtab[(1+2+4) * 0x1000 / 4];
-static uintptr_t mem_ffwtab[(1+2+4) * 0x1000 / 4];
+static NDRC_MEM_BSS uintptr_t mem_iortab[(1+2+4) * 0x1000 / 4];
+static NDRC_MEM_BSS uintptr_t mem_iowtab[(1+2+4) * 0x1000 / 4];
+static NDRC_MEM_BSS uintptr_t mem_ffrtab[(1+2+4) * 0x1000 / 4];
+static NDRC_MEM_BSS uintptr_t mem_ffwtab[(1+2+4) * 0x1000 / 4];
 //static uintptr_t mem_unmrtab[(1+2+4) * 0x1000 / 4];
-static uintptr_t mem_unmwtab[(1+2+4) * 0x1000 / 4];
+static NDRC_MEM_BSS uintptr_t mem_unmwtab[(1+2+4) * 0x1000 / 4];
 
 static void map_item_(uintptr_t *out, uintptr_t hv, uintptr_t flag)
 {
@@ -52,8 +60,8 @@ static void map_item_(uintptr_t *out, uintptr_t hv, uintptr_t flag)
 #define IOMEM16(a) (0x1000/4 + (((a) & 0xfff) / 2))
 #define IOMEM8(a)  (0x1000/4 + 0x1000/2 + ((a) & 0xfff))
 
-u32 zero_mem[0x1000/4];
-static u32 ffff_mem[0x1000/4];
+NDRC_MEM_BSS u32 zero_mem[0x1000/4];
+static NDRC_MEM_BSS u32 ffff_mem[0x1000/4];
 
 static u32 read_mem_dummy(u32 addr)
 {
@@ -387,6 +395,10 @@ void new_dyna_pcsx_mem_init(void)
 	map_item(&mem_iortab[IOMEM16(0x1128)], io_rcnt_read_target2, 1);
 
 	map_item(&mem_iortab[IOMEM8(0x1040)], sioRead8, 1);
+#if defined(ESP_PLATFORM) && defined(CONFIG_IDF_TARGET_ESP32P4)
+	map_item(&mem_iortab[IOMEM8(0x1044)], sioReadStat8Low, 1);
+	map_item(&mem_iortab[IOMEM8(0x1045)], sioReadStat8High, 1);
+#endif
 	map_item(&mem_iortab[IOMEM8(0x1800)], cdrRead0, 1);
 	map_item(&mem_iortab[IOMEM8(0x1801)], cdrRead1, 1);
 	map_item(&mem_iortab[IOMEM8(0x1802)], cdrRead2, 1);

@@ -89,6 +89,11 @@ typedef struct {
 extern R3000Acpu *psxCpu;
 extern R3000Acpu psxInt;
 extern R3000Acpu psxRec;
+#ifdef PCSX_DUAL_DYNAREC
+extern R3000Acpu psxRecRv32;
+void psxSelectRv32Dynarec(int enabled);
+int psxIsRv32DynarecSelected(void);
+#endif
 
 typedef union {
 #if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__

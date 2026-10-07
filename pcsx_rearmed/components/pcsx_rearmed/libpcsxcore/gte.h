@@ -26,6 +26,10 @@
 #define gteNCLIP gteNCLIP_nf
 #define gteDPCS gteDPCS_nf
 #define gteINTPL gteINTPL_nf
+#define gteINTPL_sf0_lm0 gteINTPL_sf0_lm0_nf
+#define gteINTPL_sf0_lm1 gteINTPL_sf0_lm1_nf
+#define gteINTPL_sf1_lm0 gteINTPL_sf1_lm0_nf
+#define gteINTPL_sf1_lm1 gteINTPL_sf1_lm1_nf
 #define gteMVMVA gteMVMVA_nf
 #define gteNCDS gteNCDS_nf
 #define gteNCDT gteNCDT_nf
@@ -80,6 +84,12 @@ void gteOP(struct psxCP2Regs *regs);
 void gteNCLIP(struct psxCP2Regs *regs);
 void gteDPCS(struct psxCP2Regs *regs);
 void gteINTPL(struct psxCP2Regs *regs);
+#if defined(CONFIG_IDF_TARGET_ESP32P4)
+void gteINTPL_sf0_lm0(struct psxCP2Regs *regs);
+void gteINTPL_sf0_lm1(struct psxCP2Regs *regs);
+void gteINTPL_sf1_lm0(struct psxCP2Regs *regs);
+void gteINTPL_sf1_lm1(struct psxCP2Regs *regs);
+#endif
 void gteMVMVA(struct psxCP2Regs *regs);
 void gteNCDS(struct psxCP2Regs *regs);
 void gteNCDT(struct psxCP2Regs *regs);

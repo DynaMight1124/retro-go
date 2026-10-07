@@ -40,6 +40,24 @@ unsigned char * pSpuIrq=0;
 unsigned short spuCtrl, spuStat, spuIrq=0;             // some vars to store psx reg infos
 unsigned long  spuAddr=0xffffffff;                     // address into spu mem
 char *         pConfigFile=0;
+static unsigned short adsr_dummy_vol;
+#ifdef DRC_DBG
+static unsigned int diagnostic_reads;
+#endif
+
+/* Diagnostic cold restart without reallocating memory or losing callbacks.
+ * The core's SysReset does not reset this plugin's private register/RAM state. */
+void builtin_SPUresetDiagnostic(void)
+{
+#ifdef DRC_DBG
+ diagnostic_reads = 0;
+ memset(regArea, 0, 10000 * sizeof(*regArea));
+ memset(spuMem, 0, 256 * 1024 * sizeof(*spuMem));
+ spuCtrl = spuStat = spuIrq = adsr_dummy_vol = 0;
+ spuAddr = 0xffffffff;
+ pSpuIrq = NULL;
+#endif
+}
 
 ////////////////////////////////////////////////////////////////////////
 
@@ -175,7 +193,7 @@ void CALLBACK builtin_SPUwriteRegister(unsigned long reg, unsigned short val, un
 
 ////////////////////////////////////////////////////////////////////////
 
-unsigned short CALLBACK builtin_SPUreadRegister(unsigned long reg, unsigned int cycles)
+static unsigned short spu_read_register(unsigned long reg, unsigned int cycles)
 {
  unsigned long r=reg&0xfff;
 
@@ -186,7 +204,6 @@ unsigned short CALLBACK builtin_SPUreadRegister(unsigned long reg, unsigned int 
      case 12:                                          // adsr vol
       {
        //int ch=(r>>4)-0xc0;
-       static unsigned short adsr_dummy_vol=0;
        adsr_dummy_vol=!adsr_dummy_vol;
        return adsr_dummy_vol;
       }
@@ -222,6 +239,19 @@ unsigned short CALLBACK builtin_SPUreadRegister(unsigned long reg, unsigned int 
         return spuIrq;
   }
  return regArea[(r-0xc00)>>1];
+}
+
+unsigned short CALLBACK builtin_SPUreadRegister(unsigned long reg, unsigned int cycles)
+{
+ unsigned short value = spu_read_register(reg, cycles);
+#ifdef DRC_DBG
+ /* Bounded and reset for replay, so both CPU runs expose matching reads. */
+ if (diagnostic_reads < 64)
+  printf("RV32 DIFF SPU read #%u addr=%08lx value=%04x cycle=%u\n",
+         diagnostic_reads, reg, (unsigned int)value, cycles);
+ diagnostic_reads++;
+#endif
+ return value;
 }
  
 ////////////////////////////////////////////////////////////////////////

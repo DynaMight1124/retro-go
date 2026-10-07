@@ -5,8 +5,21 @@
  * See the COPYING file in the top-level directory.
  */
 
+#ifdef PCSX_DUAL_DYNAREC
+/* Shared core files use LIGHTREC, but this translation unit must compile the
+ * Ari64 implementation and export a separate CPU descriptor. */
+#undef LIGHTREC
+#define psxRec psxRecRv32
+#define lightrec_plugin_get_profile rv32_plugin_get_profile
+#endif
+
 #include <stdio.h>
 #include <assert.h>
+#if defined(ESP_PLATFORM) && defined(NDRC_GTE_PROFILE)
+#include <esp_cpu.h>
+/* PCSX's portable config supplies its own bounded path length. */
+#undef MAXPATHLEN
+#endif
 
 #include "emu_if.h"
 #include "pcsxmem.h"
@@ -14,6 +27,7 @@
 #include "../psxinterpreter.h"
 #include "../psxcounters.h"
 #include "../psxevents.h"
+#include "../sio.h"
 #include "../psxbios.h"
 #include "../r3000a.h"
 #include "../gte_arm.h"
@@ -127,6 +141,84 @@ void *gte_handlers_nf[64] = {
 	gteRTPT_nf, NULL       , NULL       , NULL      , NULL     , NULL       , NULL       , NULL      , // 30
 	NULL      , NULL       , NULL       , NULL      , NULL     , gteGPF_nf  , gteGPL_nf  , gteNCCT_nf, // 38
 };
+
+#if defined(ESP_PLATFORM)
+#define GTE_PROFILE_SAMPLE_SHIFT 4
+#define GTE_PROFILE_SAMPLE_COUNT (1u << GTE_PROFILE_SAMPLE_SHIFT)
+
+typedef void (*gte_handler_t)(psxCP2Regs *regs);
+
+#ifdef NDRC_GTE_PROFILE
+static gte_handler_t gte_profile_handlers[64];
+static gte_handler_t gte_profile_handlers_nf[64];
+static u64 gte_profile_cycles;
+static u32 gte_profile_calls;
+static u32 gte_profile_no_flags_calls;
+static u64 gte_profile_opcode_cycles[64];
+static u32 gte_profile_opcode_calls[64];
+static u32 gte_profile_sample_phase;
+
+static void gte_profile_call(psxCP2Regs *regs, int no_flags)
+{
+	u32 op = psxRegs.code & 0x3f;
+	gte_handler_t handler = no_flags ? gte_profile_handlers_nf[op] :
+		gte_profile_handlers[op];
+	u32 sample_phase = ++gte_profile_sample_phase;
+	int sample = (sample_phase & (GTE_PROFILE_SAMPLE_COUNT - 1)) == 0;
+	u32 start_cycles = sample ? esp_cpu_get_cycle_count() : 0;
+
+	handler(regs);
+	if (sample) {
+		u32 elapsed = (u32)(esp_cpu_get_cycle_count() - start_cycles);
+		gte_profile_cycles += elapsed;
+		gte_profile_calls++;
+		gte_profile_no_flags_calls += no_flags;
+		gte_profile_opcode_cycles[op] += elapsed;
+		gte_profile_opcode_calls[op]++;
+	}
+}
+
+static void gte_profile_flags(psxCP2Regs *regs)
+{
+	gte_profile_call(regs, 0);
+}
+
+static void gte_profile_no_flags(psxCP2Regs *regs)
+{
+	gte_profile_call(regs, 1);
+}
+#endif
+
+/* Retain the frontend profiling ABI used by the previous Lightrec build so
+ * the same 60-frame report can compare both recompilers directly. */
+void lightrec_plugin_get_profile(u64 *cycles, u32 *calls,
+		u32 *no_flags_calls, u64 opcode_cycles[64],
+		u32 opcode_calls[64])
+{
+#ifdef NDRC_GTE_PROFILE
+	*cycles = gte_profile_cycles << GTE_PROFILE_SAMPLE_SHIFT;
+	*calls = gte_profile_calls << GTE_PROFILE_SAMPLE_SHIFT;
+	*no_flags_calls = gte_profile_no_flags_calls << GTE_PROFILE_SAMPLE_SHIFT;
+	for (u32 i = 0; i < ARRAY_SIZE(gte_profile_opcode_cycles); i++) {
+		opcode_cycles[i] =
+			gte_profile_opcode_cycles[i] << GTE_PROFILE_SAMPLE_SHIFT;
+		opcode_calls[i] =
+			gte_profile_opcode_calls[i] << GTE_PROFILE_SAMPLE_SHIFT;
+		gte_profile_opcode_cycles[i] = 0;
+		gte_profile_opcode_calls[i] = 0;
+	}
+	gte_profile_cycles = 0;
+	gte_profile_calls = 0;
+	gte_profile_no_flags_calls = 0;
+#else
+	*cycles = 0;
+	*calls = 0;
+	*no_flags_calls = 0;
+	memset(opcode_cycles, 0, 64 * sizeof(*opcode_cycles));
+	memset(opcode_calls, 0, 64 * sizeof(*opcode_calls));
+#endif
+}
+#endif
 
 const char *gte_regnames[64] = {
 	NULL  , "RTPS" , NULL   , NULL  , NULL , NULL   , "NCLIP", NULL  , // 00
@@ -623,6 +715,16 @@ static int ari64_init()
 #ifdef DRC_DBG
 	memcpy(gte_handlers_nf, gte_handlers, sizeof(gte_handlers_nf));
 #endif
+#if defined(ESP_PLATFORM) && defined(NDRC_GTE_PROFILE)
+	for (i = 0; i < ARRAY_SIZE(gte_handlers); i++) {
+		if (gte_handlers[i] == NULL)
+			continue;
+		gte_profile_handlers[i] = (gte_handler_t)gte_handlers[i];
+		gte_profile_handlers_nf[i] = (gte_handler_t)gte_handlers_nf[i];
+		gte_handlers[i] = gte_profile_flags;
+		gte_handlers_nf[i] = gte_profile_no_flags;
+	}
+#endif
 	psxH_ptr = psxRegs.ptrs.psxH;
 	zeromem_ptr = zero_mem;
 	scratch_buf_ptr = scratch_buf; // for gte_neon.S
@@ -680,9 +782,56 @@ static void ari64_thread_sync(void) {}
 
 #include <stddef.h>
 static FILE *f;
+static int drc_dbg_mode;
+static int drc_dbg_failed;
+static unsigned drc_dbg_trace_insns;
+/* The 23.0M--23.7M window is now instruction- and RAM-write-exact after the
+ * RV32 LWL/LWR variable-mask fix. Overlap that proven boundary, then continue
+ * through the original frame-60 symptom near 33.8M cycles in one capture. */
+#define DRC_DBG_START_CYCLE 23700000u
+#define DRC_DBG_END_CYCLE 34000000u
+static u32 drc_dbg_block, drc_dbg_ccadj;
+u32 drc_dbg_irq_rel_before, drc_dbg_irq_last_before;
+u32 drc_dbg_irq_cycle_after, drc_dbg_irq_next_after;
+static char drc_dbg_iobuf[32768];
+static psxRegisters trace_oldregs;
+static u32 trace_event_cycles[PSXINT_COUNT];
+static u32 trace_old_irq_test_cycle;
+static u32 trace_old_handler_cycle;
+static u32 trace_old_io_addr;
+static u32 trace_old_io_data;
+static psxRegisters cmp_regs;
+static u32 cmp_mem_addr, cmp_mem_val;
+static u32 cmp_irq_test_cycle;
+static u32 cmp_handler_cycle;
+static u32 cmp_ppc, cmp_failcount;
+static u32 cmp_badregs_mask_prev;
+static unsigned drc_dbg_compare_insns;
+int ndrc_dbg_stopped(void) { return drc_dbg_failed; }
+static int miss_log_i, miss_log_valid;
+static struct {
+	u32 pc, actual_cycle, expected_cycle, block, ccadj, last;
+	s32 raw_cc, stored_cc;
+} cycle_log[32];
+static unsigned cycle_log_i;
 u32 irq_test_cycle;
 u32 handler_cycle;
 u32 last_io_addr;
+static unsigned drc_dbg_interpreter_nesting;
+
+static void do_insn_cmp_internal(u32 block, u32 ccadj, s32 raw_cc,
+	u32 cycle_base);
+
+void ndrc_dbg_interpreter_compare_begin(void)
+{
+	drc_dbg_interpreter_nesting++;
+}
+
+void ndrc_dbg_interpreter_compare_end(void)
+{
+	if (drc_dbg_interpreter_nesting != 0)
+		drc_dbg_interpreter_nesting--;
+}
 
 void dump_mem(const char *fname, void *mem, size_t size)
 {
@@ -697,34 +846,121 @@ static u32 memcheck_read(u32 a)
 {
 	if ((a >> 16) == 0x1f80)
 		// scratchpad/IO
-		return *(u32 *)(psxH + (a & 0xfffc));
+		return *(u32 *)(psxRegs.ptrs.psxH + (a & 0xfffc));
 
 	if ((a >> 16) == 0x1f00)
 		// parallel
-		return *(u32 *)(psxP + (a & 0xfffc));
+		return *(u32 *)(psxRegs.ptrs.psxP + (a & 0xfffc));
 
 //	if ((a & ~0xe0600000) < 0x200000)
 	// RAM
-	return *(u32 *)(psxM + (a & 0x1ffffc));
+	return *(u32 *)(psxRegs.ptrs.psxM + (a & 0x1ffffc));
 }
 
-#if 0
+int ndrc_dbg_trace_begin(const char *path)
+{
+	if (f != NULL)
+		fclose(f);
+	f = fopen(path, "wb");
+	if (f == NULL) {
+		SysPrintf("RV32 DIFF: unable to create %s\n", path);
+		drc_dbg_mode = 0;
+		return -1;
+	}
+	setvbuf(f, drc_dbg_iobuf, _IOFBF, sizeof(drc_dbg_iobuf));
+	memset(&trace_oldregs, 0, sizeof(trace_oldregs));
+	memset(trace_event_cycles, 0, sizeof(trace_event_cycles));
+	trace_old_irq_test_cycle = trace_old_handler_cycle = 0xbad0c0de;
+	trace_old_io_addr = trace_old_io_data = 0xbad0c0de;
+	drc_dbg_trace_insns = 0;
+	drc_dbg_failed = 0;
+	drc_dbg_mode = 1;
+	SysPrintf("RV32 DIFF: recording interpreter reference to %s\n", path);
+	return 0;
+}
+
+void ndrc_dbg_trace_end(void)
+{
+	long bytes = f != NULL ? ftell(f) : -1;
+	if (f != NULL) {
+		fclose(f);
+		f = NULL;
+	}
+	drc_dbg_mode = 0;
+	SysPrintf("RV32 DIFF: reference complete: insns=%u bytes=%ld\n",
+		drc_dbg_trace_insns, bytes);
+}
+
+int ndrc_dbg_compare_begin(const char *path)
+{
+	if (f != NULL)
+		fclose(f);
+	f = fopen(path, "rb");
+	if (f == NULL) {
+		SysPrintf("RV32 DIFF: unable to open %s\n", path);
+		drc_dbg_mode = 0;
+		return -1;
+	}
+	setvbuf(f, drc_dbg_iobuf, _IOFBF, sizeof(drc_dbg_iobuf));
+	memset(&cmp_regs, 0, sizeof(cmp_regs));
+	cmp_mem_addr = cmp_mem_val = 0;
+	cmp_irq_test_cycle = cmp_handler_cycle = 0;
+	cmp_ppc = cmp_failcount = cmp_badregs_mask_prev = 0;
+	drc_dbg_compare_insns = 0;
+	miss_log_i = miss_log_valid = 0;
+	cycle_log_i = 0;
+	drc_dbg_failed = 0;
+	drc_dbg_mode = 2;
+	SysPrintf("RV32 DIFF: native comparison starting\n");
+	return 0;
+}
+
 void do_insn_trace(void)
 {
-	static psxRegisters oldregs;
-	static u32 event_cycles_o[PSXINT_COUNT];
 	u32 *allregs_p = (void *)&psxRegs;
-	u32 *allregs_o = (void *)&oldregs;
+	u32 *allregs_o = (void *)&trace_oldregs;
 	u32 io_data;
 	int i;
 	u8 byte;
 
-	//last_io_addr = 0x5e2c8;
-	if (f == NULL)
-		f = fopen("tracelog", "wb");
+	/* Some HLE helpers deliberately execute a guest instruction through the
+	 * interpreter (notably the generic BIOS vsync-loop accelerator). The
+	 * reference records those instructions, but there is no generated DRC
+	 * comparison site while the same helper is running during native replay.
+	 * Consume and compare those records at the interpreter's own boundaries. */
+	if (drc_dbg_mode == 2 && drc_dbg_interpreter_nesting != 0) {
+		do_insn_cmp_internal(psxRegs.pc, 0, (s32)psxRegs.cycle, 0);
+		return;
+	}
+	if (drc_dbg_mode != 1 || f == NULL)
+		return;
+	if (psxRegs.cycle < DRC_DBG_START_CYCLE)
+		return;
+	if (psxRegs.cycle >= DRC_DBG_END_CYCLE) {
+		drc_dbg_mode = 0;
+		drc_dbg_failed = 1;
+		psxRegs.stop = 1;
+		SysPrintf("RV32 DIFF: reference window complete at cycle=%u\n", psxRegs.cycle);
+		return;
+	}
+	if (drc_dbg_trace_insns == 0)
+		SysPrintf("RV32 DIFF: reference window begins pc=%08x cycle=%u\n",
+			psxRegs.pc, psxRegs.cycle);
+	drc_dbg_trace_insns++;
+	/* Bound SD usage during an extended reference run, and detect full-card
+	 * errors before attempting to replay an incomplete instruction record. */
+	if ((drc_dbg_trace_insns & 65535) == 0 &&
+	    (ferror(f) || ftell(f) >= 128 * 1024 * 1024)) {
+		SysPrintf("RV32 DIFF: reference stopped at storage limit/error, insns=%u\n",
+			drc_dbg_trace_insns);
+		drc_dbg_failed = 1;
+		drc_dbg_mode = 0;
+		psxRegs.stop = 1;
+		return;
+	}
 
 	// log reg changes
-	oldregs.code = psxRegs.code; // don't care
+	trace_oldregs.code = psxRegs.code; // don't care
 	for (i = 0; i < offsetof(psxRegisters, intCycle) / 4; i++) {
 		if (allregs_p[i] != allregs_o[i]) {
 			fwrite(&i, 1, 1, f);
@@ -734,41 +970,31 @@ void do_insn_trace(void)
 	}
 	// log event changes
 	for (i = 0; i < PSXINT_COUNT; i++) {
-		if (psxRegs.event_cycles[i] != event_cycles_o[i]) {
+		if (psxRegs.event_cycles[i] != trace_event_cycles[i]) {
 			byte = 0xf8;
 			fwrite(&byte, 1, 1, f);
 			fwrite(&i, 1, 1, f);
 			fwrite(&psxRegs.event_cycles[i], 1, 4, f);
-			event_cycles_o[i] = psxRegs.event_cycles[i];
+			trace_event_cycles[i] = psxRegs.event_cycles[i];
 		}
 	}
-	#define SAVE_IF_CHANGED(code_, name_) { \
-		static u32 old_##name_ = 0xbad0c0de; \
-		if (old_##name_ != name_) { \
+	#define SAVE_IF_CHANGED(code_, old_, name_) { \
+		if ((old_) != (name_)) { \
 			byte = code_; \
 			fwrite(&byte, 1, 1, f); \
-			fwrite(&name_, 1, 4, f); \
-			old_##name_ = name_; \
+			fwrite(&(name_), 1, 4, f); \
+			(old_) = (name_); \
 		} \
 	}
-	SAVE_IF_CHANGED(0xfb, irq_test_cycle);
-	SAVE_IF_CHANGED(0xfc, handler_cycle);
-	SAVE_IF_CHANGED(0xfd, last_io_addr);
+	SAVE_IF_CHANGED(0xfb, trace_old_irq_test_cycle, irq_test_cycle);
+	SAVE_IF_CHANGED(0xfc, trace_old_handler_cycle, handler_cycle);
+	SAVE_IF_CHANGED(0xfd, trace_old_io_addr, last_io_addr);
 	io_data = memcheck_read(last_io_addr);
-	SAVE_IF_CHANGED(0xfe, io_data);
+	SAVE_IF_CHANGED(0xfe, trace_old_io_data, io_data);
+	#undef SAVE_IF_CHANGED
 	byte = 0xff;
 	fwrite(&byte, 1, 1, f);
-
-#if 0
-	if (psxRegs.cycle == 190230) {
-		dump_mem("/mnt/ntz/dev/pnd/tmp/psxram_i.dump", psxM, 0x200000);
-		dump_mem("/mnt/ntz/dev/pnd/tmp/psxregs_i.dump", psxH, 0x10000);
-		printf("dumped\n");
-		exit(1);
-	}
-#endif
 }
-#endif
 
 static const char *regnames[offsetof(psxRegisters, intCycle) / 4] = {
 	"r0",  "r1",  "r2",  "r3",  "r4",  "r5",  "r6",  "r7",
@@ -799,7 +1025,6 @@ static struct {
 	u32 val, val_expect;
 	u32 pc, cycle;
 } miss_log[64];
-static int miss_log_i;
 #define miss_log_len (sizeof(miss_log)/sizeof(miss_log[0]))
 #define miss_log_mask (miss_log_len-1)
 
@@ -811,28 +1036,34 @@ static void miss_log_add(int reg, u32 val, u32 val_expect, u32 pc, u32 cycle)
 	miss_log[miss_log_i].pc = pc;
 	miss_log[miss_log_i].cycle = cycle;
 	miss_log_i = (miss_log_i + 1) & miss_log_mask;
+	if (miss_log_valid < miss_log_len)
+		miss_log_valid++;
 }
 
 void breakme() {}
 
-void do_insn_cmp(void)
+static void do_insn_cmp_internal(u32 block, u32 ccadj, s32 raw_cc,
+	u32 cycle_base)
 {
-	extern int last_count;
-	static psxRegisters rregs;
-	static u32 mem_addr, mem_val;
-	static u32 irq_test_cycle_intr;
-	static u32 handler_cycle_intr;
+	extern int cycle_count;
 	u32 *allregs_p = (void *)&psxRegs;
-	u32 *allregs_e = (void *)&rregs;
+	u32 *allregs_e = (void *)&cmp_regs;
 	u32 badregs_mask = 0;
-	static u32 ppc, failcount;
-	static u32 badregs_mask_prev;
 	int i, ret, bad = 0, fatal = 0, which_event = -1;
+	s32 stored_cc = cycle_count;
 	u32 ev_cycles = 0;
 	u8 code;
 
-	if (f == NULL)
-		f = fopen("tracelog", "rb");
+	if (drc_dbg_mode != 2 || drc_dbg_failed || f == NULL)
+		return;
+	drc_dbg_block = block;
+	drc_dbg_ccadj = ccadj;
+	/* Generated comparison sites publish a cycle relative to last_count. */
+	if (psxRegs.cycle + cycle_base < DRC_DBG_START_CYCLE)
+		return;
+	if (drc_dbg_compare_insns == 0)
+		SysPrintf("RV32 DIFF: native window begins pc=%08x cycle=%u\n",
+			psxRegs.pc, psxRegs.cycle + cycle_base);
 
 	while (1) {
 		if ((ret = fread(&code, 1, 1, f)) <= 0)
@@ -848,16 +1079,16 @@ void do_insn_cmp(void)
 			fread(&ev_cycles, 1, 4, f);
 			continue;
 		case 0xfb:
-			fread(&irq_test_cycle_intr, 1, 4, f);
+			fread(&cmp_irq_test_cycle, 1, 4, f);
 			continue;
 		case 0xfc:
-			fread(&handler_cycle_intr, 1, 4, f);
+			fread(&cmp_handler_cycle, 1, 4, f);
 			continue;
 		case 0xfd:
-			fread(&mem_addr, 1, 4, f);
+			fread(&cmp_mem_addr, 1, 4, f);
 			continue;
 		case 0xfe:
-			fread(&mem_val, 1, 4, f);
+			fread(&cmp_mem_val, 1, 4, f);
 			continue;
 		}
 		assert(code < offsetof(psxRegisters, intCycle) / 4);
@@ -865,14 +1096,22 @@ void do_insn_cmp(void)
 	}
 
 	if (ret <= 0) {
-		printf("EOF?\n");
-		exit(1);
+		SysPrintf("RV32 DIFF: reference exhausted without an earlier mismatch\n");
+		drc_dbg_failed = 1;
+		psxRegs.stop = 1;
+		return;
 	}
+	drc_dbg_compare_insns++;
 
-	psxRegs.code = rregs.code; // don't care
-	psxRegs.cycle += last_count;
-	//psxRegs.cycle = rregs.cycle; // needs reload in _cmp
-	psxRegs.CP0.r[9] = rregs.CP0.r[9]; // Count
+	psxRegs.code = cmp_regs.code; // don't care
+	psxRegs.cycle += cycle_base;
+	psxRegs.CP0.r[9] = cmp_regs.CP0.r[9]; // Count
+	cycle_log[cycle_log_i & 31] = (typeof(cycle_log[0])) {
+		psxRegs.pc, psxRegs.cycle, cmp_regs.cycle,
+		drc_dbg_block, drc_dbg_ccadj, cycle_base,
+		raw_cc, stored_cc
+	};
+	cycle_log_i++;
 
 	//if (psxRegs.cycle == 166172) breakme();
 
@@ -882,23 +1121,34 @@ void do_insn_cmp(void)
 		fatal = 1;
 	}
 
-	if (irq_test_cycle > irq_test_cycle_intr) {
-		printf("bad irq_test_cycle: %u %u\n", irq_test_cycle, irq_test_cycle_intr);
+	if (irq_test_cycle > cmp_irq_test_cycle) {
+		printf("bad irq_test_cycle: %u %u\n", irq_test_cycle, cmp_irq_test_cycle);
 		fatal = 1;
 	}
 
-	if (handler_cycle != handler_cycle_intr) {
-		printf("bad handler_cycle: %u %u\n", handler_cycle, handler_cycle_intr);
+	if (handler_cycle != cmp_handler_cycle) {
+		printf("bad handler_cycle: %u %u\n", handler_cycle, cmp_handler_cycle);
 		fatal = 1;
 	}
 
-	if (mem_val != memcheck_read(mem_addr)) {
-		printf("bad mem @%08x: %08x %08x\n", mem_addr, memcheck_read(mem_addr), mem_val);
+	if (cmp_mem_val != memcheck_read(cmp_mem_addr)) {
+		printf("bad mem @%08x: %08x %08x\n", cmp_mem_addr,
+			memcheck_read(cmp_mem_addr), cmp_mem_val);
+		SysPrintf("RV32 DIFF memory context: s0=%08x/%08x s5=%08x/%08x\n",
+			psxRegs.GPR.r[16], cmp_regs.GPR.r[16],
+			psxRegs.GPR.r[21], cmp_regs.GPR.r[21]);
+		for (i = 0; i < 6; i++) {
+			u32 src = cmp_regs.GPR.r[16] + i * 4;
+			u32 dst = cmp_regs.GPR.r[21] + i * 4;
+			SysPrintf("RV32 DIFF memory word %d: src[%08x]=%08x "
+				"dst[%08x]=%08x\n", i, src, memcheck_read(src),
+				dst, memcheck_read(dst));
+		}
 		fatal = 1;
 	}
 
-	if (!fatal && !memcmp(&psxRegs, &rregs, offsetof(psxRegisters, intCycle))) {
-		failcount = 0;
+	if (!fatal && !memcmp(&psxRegs, &cmp_regs, offsetof(psxRegisters, intCycle))) {
+		cmp_failcount = 0;
 		goto ok;
 	}
 
@@ -913,12 +1163,12 @@ void do_insn_cmp(void)
 		}
 	}
 
-	if (badregs_mask_prev & badregs_mask)
-		failcount++;
+	if (cmp_badregs_mask_prev & badregs_mask)
+		cmp_failcount++;
 	else
-		failcount = 0;
+		cmp_failcount = 0;
 
-	if (!fatal && psxRegs.pc == rregs.pc && bad < 6 && failcount < 24) {
+	if (!fatal && psxRegs.pc == cmp_regs.pc && bad < 6 && cmp_failcount < 24) {
 		static int last_mcycle;
 		if (last_mcycle != psxRegs.cycle >> 20) {
 			printf("%u\n", psxRegs.cycle);
@@ -927,7 +1177,8 @@ void do_insn_cmp(void)
 		goto ok;
 	}
 
-	for (i = 0; i < miss_log_len; i++, miss_log_i = (miss_log_i + 1) & miss_log_mask)
+	miss_log_i = (miss_log_i - miss_log_valid) & miss_log_mask;
+	for (i = 0; i < miss_log_valid; i++, miss_log_i = (miss_log_i + 1) & miss_log_mask)
 		printf("bad %5s: %08x %08x, pc=%08x, cycle %u\n",
 			regnames[miss_log[miss_log_i].reg], miss_log[miss_log_i].val,
 			miss_log[miss_log_i].val_expect, miss_log[miss_log_i].pc, miss_log[miss_log_i].cycle);
@@ -935,15 +1186,70 @@ void do_insn_cmp(void)
 	for (i = 0; i < 8; i++)
 		printf("r%d=%08x r%2d=%08x r%2d=%08x r%2d=%08x\n", i, allregs_p[i],
 			i+8, allregs_p[i+8], i+16, allregs_p[i+16], i+24, allregs_p[i+24]);
-	printf("PC: %08x/%08x, cycle %u, next %u\n", psxRegs.pc, ppc,
-		psxRegs.cycle, psxRegs.next_interupt);
-	//dump_mem("/tmp/psxram.dump", psxM, 0x200000);
-	//dump_mem("/mnt/ntz/dev/pnd/tmp/psxregs.dump", psxH, 0x10000);
-	exit(1);
+	printf("PC: %08x/%08x, cycle %u/%u, next %u, instruction %u\n",
+		psxRegs.pc, cmp_regs.pc, psxRegs.cycle, cmp_regs.cycle,
+		psxRegs.next_interupt, drc_dbg_compare_insns);
+	SysPrintf("RV32 DIFF FAILED: first persistent architectural mismatch\n");
+	SysPrintf("RV32 DIFF timing: previous_pc=%08x block=%08x ccadj=%d last_count=%u\n",
+		cmp_ppc, drc_dbg_block, (int)drc_dbg_ccadj, cycle_base);
+	SysPrintf("RV32 DIFF interrupt: rel_before=%d last_before=%u cycle_after=%u next_after=%u\n",
+		(int)drc_dbg_irq_rel_before, drc_dbg_irq_last_before,
+		drc_dbg_irq_cycle_after, drc_dbg_irq_next_after);
+	SysPrintf("RV32 DIFF recent cycle history (oldest first):\n");
+	{
+		unsigned count = cycle_log_i < 32 ? cycle_log_i : 32;
+		unsigned first = cycle_log_i - count;
+		for (unsigned n = 0; n < count; n++) {
+			const typeof(cycle_log[0]) *h = &cycle_log[(first + n) & 31];
+			SysPrintf("  %08x %u/%u block=%08x adj=%d last=%u raw=%d stored=%d\n",
+				h->pc, h->actual_cycle, h->expected_cycle,
+				h->block, (int)h->ccadj, h->last,
+				h->raw_cc, h->stored_cc);
+		}
+	}
+	/* Read mapped guest memory directly: diagnostics must not trigger I/O. */
+	for (int side = 0; side < 3; side++) {
+		u32 center = side == 2 ? cmp_ppc : side ? cmp_regs.pc : psxRegs.pc;
+		for (int offset = -32; offset <= 8; offset += 4) {
+			u32 addr = (center + offset) & ~3u;
+			const u32 *word = PSXM(addr);
+			if (word != NULL && word != INVALID_PTR)
+				SysPrintf("RV32 DIFF code %s %08x: %08x\n",
+					side == 2 ? "previous" : side ? "reference" : "native", addr, SWAP32(*word));
+		}
+	}
+	drc_dbg_failed = 1;
+	psxRegs.stop = 1;
+	return;
 ok:
-	//psxRegs.cycle = rregs.cycle + 2; // sync timing
-	ppc = psxRegs.pc;
-	badregs_mask_prev = badregs_mask;
+	cmp_ppc = psxRegs.pc;
+	cmp_badregs_mask_prev = badregs_mask;
+}
+
+void do_insn_cmp(u32 block, u32 ccadj, s32 raw_cc)
+{
+	extern int last_count;
+	do_insn_cmp_internal(block, ccadj, raw_cc, last_count);
+}
+
+#else
+
+/* Keep the Retro-Go front end independent of diagnostic build flags. A
+ * developer can re-enable the full recorder/comparator with DRC_DBG without
+ * changing the application loop. */
+int ndrc_dbg_stopped(void) { return 0; }
+int ndrc_dbg_trace_begin(const char *path)
+{
+	(void)path;
+	return -1;
+}
+
+void ndrc_dbg_trace_end(void) {}
+
+int ndrc_dbg_compare_begin(const char *path)
+{
+	(void)path;
+	return -1;
 }
 
 #endif // DRC_DBG

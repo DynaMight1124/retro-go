@@ -9,8 +9,16 @@
 #include "../libpcsxcore/new_dynarec/new_dynarec.h"
 #endif
 
+#ifdef ESP_PLATFORM
+#include <stdlib.h>
+#include "esp_err.h"
+#include "esp_heap_caps.h"
+#include "esp_pthread.h"
+#include "freertos/FreeRTOS.h"
+#else
 #include "../deps/libretro-common/rthreads/rthreads.c"
 #include "features/features_cpu.h"
+#endif
 #include "pcsxr-threads.h"
 
 // pcsxr "extensions"
@@ -20,9 +28,97 @@ extern void SysPrintf(const char *fmt, ...);
 static bool is_new_3ds;
 #endif
 
+#ifdef ESP_PLATFORM
+struct esp_sthread_start {
+	void (*func)(void *);
+	void *userdata;
+};
+
+static void *esp_sthread_entry(void *arg)
+{
+	struct esp_sthread_start start = *(struct esp_sthread_start *)arg;
+	free(arg);
+	start.func(start.userdata);
+	return NULL;
+}
+
+sthread_t *sthread_create(void (*thread_func)(void *), void *userdata)
+{
+	struct esp_sthread_start *start = malloc(sizeof(*start));
+	sthread_t *thread = malloc(sizeof(*thread));
+	if (!start || !thread) {
+		free(start);
+		free(thread);
+		return NULL;
+	}
+	start->func = thread_func;
+	start->userdata = userdata;
+	if (pthread_create(&thread->id, NULL, esp_sthread_entry, start) != 0) {
+		free(start);
+		free(thread);
+		return NULL;
+	}
+	return thread;
+}
+
+void sthread_join(sthread_t *thread)
+{
+	if (thread) {
+		pthread_join(thread->id, NULL);
+		free(thread);
+	}
+}
+
+slock_t *slock_new(void)
+{
+	slock_t *lock = malloc(sizeof(*lock));
+	if (lock && pthread_mutex_init(lock, NULL) != 0) {
+		free(lock);
+		lock = NULL;
+	}
+	return lock;
+}
+
+void slock_free(slock_t *lock)
+{
+	if (lock) {
+		pthread_mutex_destroy(lock);
+		free(lock);
+	}
+}
+
+void slock_lock(slock_t *lock) { pthread_mutex_lock(lock); }
+void slock_unlock(slock_t *lock) { pthread_mutex_unlock(lock); }
+
+scond_t *scond_new(void)
+{
+	scond_t *cond = malloc(sizeof(*cond));
+	if (cond && pthread_cond_init(cond, NULL) != 0) {
+		free(cond);
+		cond = NULL;
+	}
+	return cond;
+}
+
+void scond_free(scond_t *cond)
+{
+	if (cond) {
+		pthread_cond_destroy(cond);
+		free(cond);
+	}
+}
+
+void scond_wait(scond_t *cond, slock_t *lock) { pthread_cond_wait(cond, lock); }
+void scond_signal(scond_t *cond) { pthread_cond_signal(cond); }
+#endif
+
 void pcsxr_sthread_init(void)
 {
+	#ifdef ESP_PLATFORM
+	SysPrintf("%d cpu core(s) detected\n", CONFIG_FREERTOS_NUMBER_OF_CORES);
+	#else
 	SysPrintf("%d cpu core(s) detected\n", cpu_features_get_core_amount());
+	#endif
 #ifdef _3DS
 	int64_t version = 0;
 	int fpscr = -1;
@@ -90,6 +186,32 @@ sthread_t *pcsxr_sthread_create(void (*thread_func)(void *),
 	}
 	h->id = (pthread_t)ctr_thread;
 #else
+	#ifdef ESP_PLATFORM
+	esp_pthread_cfg_t previous_cfg;
+	esp_pthread_cfg_t cfg = esp_pthread_get_default_config();
+	int have_previous_cfg = esp_pthread_get_cfg(&previous_cfg) == ESP_OK;
+
+	if (have_previous_cfg)
+		cfg = previous_cfg;
+	cfg.stack_size = type == PCSXRT_GPU ? 12 * 1024 : 8 * 1024;
+	cfg.inherit_cfg = false;
+	cfg.thread_name = type == PCSXRT_GPU ? "pcsxr-gpu" : "pcsxr-worker";
+	cfg.pin_to_core = type == PCSXRT_GPU ? 0 : -1;
+	cfg.stack_alloc_caps = MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT;
+	if (esp_pthread_set_cfg(&cfg) != ESP_OK)
+		return NULL;
+
+	h = sthread_create(thread_func, NULL);
+	if (have_previous_cfg)
+		esp_pthread_set_cfg(&previous_cfg);
+	else {
+		cfg = esp_pthread_get_default_config();
+		esp_pthread_set_cfg(&cfg);
+	}
+	SysPrintf("threadCreate: pcsxt %d core %d stack %u: %p\n",
+		type, type == PCSXRT_GPU ? 0 : -1,
+		type == PCSXRT_GPU ? 12 * 1024u : 8 * 1024u, h);
+	#else
 	h = sthread_create(thread_func, NULL);
  #if defined(__GLIBC__) || \
     (defined(__ANDROID_API__) && __ANDROID_API__ >= 26)
@@ -101,6 +223,7 @@ sthread_t *pcsxr_sthread_create(void (*thread_func)(void *),
 		pthread_setname_np(h->id, pcsxr_tnames[type]);
 	}
  #endif
+	#endif
 #endif
 	return h;
 }

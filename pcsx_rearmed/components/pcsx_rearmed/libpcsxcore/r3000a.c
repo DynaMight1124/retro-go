@@ -41,7 +41,23 @@
 #include <esp_heap_caps.h>
 
 R3000Acpu *psxCpu = NULL;
+#if !defined(PCSX_NDRC_RV32_FULL_CORE) && !defined(PCSX_DUAL_DYNAREC)
 psxRegisters psxRegs;
+#endif
+
+#ifdef PCSX_DUAL_DYNAREC
+static int use_rv32_dynarec;
+
+void psxSelectRv32Dynarec(int enabled)
+{
+	use_rv32_dynarec = enabled != 0;
+}
+
+int psxIsRv32DynarecSelected(void)
+{
+	return use_rv32_dynarec;
+}
+#endif
 
 int psxInit() {
 	assert(PSXINT_COUNT <= ARRAY_SIZE(psxRegs.intCycle));
@@ -51,7 +67,13 @@ int psxInit() {
 #ifndef DRC_DISABLE
 	if (Config.Cpu == CPU_INTERPRETER) {
 		psxCpu = &psxInt;
-	} else psxCpu = &psxRec;
+	} else {
+#ifdef PCSX_DUAL_DYNAREC
+		psxCpu = use_rv32_dynarec ? &psxRecRv32 : &psxRec;
+#else
+		psxCpu = &psxRec;
+#endif
+	}
 #else
 	Config.Cpu = CPU_INTERPRETER;
 	psxCpu = &psxInt;

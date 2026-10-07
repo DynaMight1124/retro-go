@@ -419,7 +419,11 @@ static int returned_from_exception(void)
 #ifdef LIGHTREC
 		// lightrec doesn't return at 0x80000080, so look
 		// for the next block too
+#ifdef PCSX_DUAL_DYNAREC
+		|| (!psxIsRv32DynarecSelected() && pc0 == A_EXCEPTION)
+#else
 		|| pc0 == A_EXCEPTION
+#endif
 #endif
 		;
 }
@@ -1078,6 +1082,32 @@ static void do_memset(u32 dst, u32 v, s32 len)
 
 static void do_memcpy(u32 dst, u32 src, s32 len)
 {
+	/* Keep the first invalid BIOS copy visible while bringing up RV32. The
+	 * normal unmapped-byte behavior below must still apply; guest addresses
+	 * must never become native NULL accesses. */
+#if defined(PCSX_NDRC_RV32_FULL_CORE)
+	static int invalid_copy_logged;
+	if (!invalid_copy_logged && len > 0 &&
+	    (PSXM(dst) == INVALID_PTR || PSXM(src) == INVALID_PTR)) {
+		const u32 *return_code = PSXM(ra - 8 * sizeof(*return_code));
+		invalid_copy_logged = 1;
+		SysPrintf("RV32 BIOS unmapped copy: dst=%08x src=%08x len=%08x ra=%08x pc=%08x\n",
+			dst, src, (u32)len, ra, pc0);
+		SysPrintf("RV32 BIOS copy regs: a0=%08x a1=%08x a2=%08x a3=%08x "
+			"s0=%08x s1=%08x s2=%08x s3=%08x s4=%08x s5=%08x "
+			"s6=%08x s7=%08x gp=%08x sp=%08x fp=%08x\n",
+			a0, a1, a2, a3, s0, s1, s2, s3, s4, s5, s6, s7,
+			gp, sp, fp);
+		if (return_code != INVALID_PTR) {
+			SysPrintf("RV32 BIOS copy caller %08x: %08x %08x %08x %08x "
+				"%08x %08x %08x %08x %08x %08x\n", ra - 32,
+				return_code[0], return_code[1], return_code[2],
+				return_code[3], return_code[4], return_code[5],
+				return_code[6], return_code[7], return_code[8],
+				return_code[9]);
+		}
+	}
+#endif
 	u32 d = dst, s = src;
 	s32 l = len;
 	while (l-- > 0) {
@@ -1609,17 +1639,17 @@ static void psxBios_cd() { // 0x40
 
 static void psxBios_format() { // 0x41
 	PSXBIOS_LOG("psxBios_%s %x(%s)\n", biosB0n[0x41], a0, Ra0);
-	if (strcmp(Ra0, "bu00:") == 0 && Config.Mcd1[0] != '\0')
+	if (strcmp(Ra0, "bu00:") == 0 && Config.Mcd1[0] != '\0' && !McdDisable[0])
 	{
 		CreateMcd(Config.Mcd1);
 		LoadMcd(1, Config.Mcd1);
-		v0 = 1;
+		v0 = !McdDisable[0];
 	}
-	else if (strcmp(Ra0, "bu10:") == 0 && Config.Mcd2[0] != '\0')
+	else if (strcmp(Ra0, "bu10:") == 0 && Config.Mcd2[0] != '\0' && !McdDisable[1])
 	{
 		CreateMcd(Config.Mcd2);
 		LoadMcd(2, Config.Mcd2);
-		v0 = 1;
+		v0 = !McdDisable[1];
 	}
 	else
 	{
@@ -4619,7 +4649,15 @@ void psxBiosCheckBranch(void)
 	u32 loops, v0_expect = v0_prev - 1;
 	if (v0 != 1)
 		return;
+#ifdef DRC_DBG
+	extern void ndrc_dbg_interpreter_compare_begin(void);
+	extern void ndrc_dbg_interpreter_compare_end(void);
+	ndrc_dbg_interpreter_compare_begin();
+#endif
 	execI(&psxRegs);
+#ifdef DRC_DBG
+	ndrc_dbg_interpreter_compare_end();
+#endif
 	cycles_passed = psxRegs.cycle - cycles_prev;
 	cycles_prev = psxRegs.cycle;
 	v0_prev = v0;

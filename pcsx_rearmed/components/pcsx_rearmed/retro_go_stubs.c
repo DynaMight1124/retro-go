@@ -13,13 +13,35 @@
 #include "frontend/plugin_lib.h"
 #include "libpcsxcore/new_dynarec/new_dynarec.h"
 #include "libpcsxcore/plugins.h"
+#include "libpcsxcore/spu.h"
+#include "plugins/dfsound/spu_config.h"
+#include "port_video.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-// Full definition of ndrc_globals
+#ifdef PCSX_NDRC_RV32_FULL_CORE
+/* The Retro-Go frontend's periodic diagnostics are shared with the Lightrec
+ * build. Keep that interface available while the full RV32 core owns CPU
+ * execution; dedicated new_dynarec counters can replace these zeroes later. */
+void lightrec_plugin_debug_poll(void) {}
+
+bool lightrec_plugin_failed(void)
+{
+    return false;
+}
+
+#endif
+
+#if !defined(PCSX_NDRC_RV32_FULL_CORE) && !defined(PCSX_DUAL_DYNAREC)
+// The Lightrec build still references the frontend's new_dynarec hooks.
 struct ndrc_globals ndrc_g;
+
+/* Keep the P4 frontend's temporary statistics hook linkable when a build is
+ * explicitly switched back to Lightrec. */
+void new_dynarec_print_stats(void) {}
+#endif
 
 // Pointer for rearmed callbacks
 void (*GPU_rearmedCallbacks_ptr)(const struct rearmed_cbs *cbs);
@@ -35,6 +57,10 @@ extern uint32_t builtin_GPUreadStatus(void);
 extern uint32_t builtin_GPUreadData(void);
 extern void builtin_GPUreadDataMem(uint32_t *, int);
 extern long builtin_GPUdmaChain(uint32_t *, uint32_t, uint32_t *, int32_t *);
+/* gpulib exports GPUfreeze without the builtin_ prefix. Use an alias because
+ * plugins.h already uses GPUfreeze as the function-pointer type name. */
+extern long builtin_GPUfreeze(uint32_t, GPUFreeze_t *, uint16_t **)
+    __asm__("GPUfreeze");
 extern void builtin_GPUupdateLace(void);
 extern void builtin_GPUvBlank(int, int);
 extern void builtin_GPUgetScreenInfo(int *, int *);
@@ -50,11 +76,56 @@ extern unsigned short builtin_SPUreadRegister(unsigned long, unsigned int);
 extern void builtin_SPUwriteDMAMem(unsigned short *, int, unsigned int);
 extern void builtin_SPUreadDMAMem(unsigned short *, int, unsigned int);
 extern void builtin_SPUplayADPCMchannel(xa_decode_t *, unsigned int, int);
+extern long builtin_SPUfreeze(int, SPUFreeze_t *, unsigned short **, void *, unsigned int);
+extern void builtin_SPUregisterCallback(void (*)(int));
+extern void builtin_SPUregisterScheduleCb(void (*)(unsigned int));
 extern void builtin_SPUasync(unsigned int, unsigned int);
-extern int  builtin_SPUplayCDDAchannel(short *, int, unsigned int, int);
-extern void builtin_SPUsetCDvol(unsigned char, unsigned char, unsigned char, unsigned char, unsigned int);
-extern void builtin_SPUregisterCallback(void (*callback)(int));
-extern void builtin_SPUregisterScheduleCb(void (*callback)(unsigned int));
+extern int builtin_SPUplayCDDAchannel(short *, int, unsigned int, int);
+extern void builtin_SPUsetCDvol(unsigned char, unsigned char,
+        unsigned char, unsigned char, unsigned int);
+extern void dfsound_set_output_enabled(int enabled, unsigned int cycles);
+
+static bool retrogo_sound_enabled = true;
+
+static void retrogo_SPUasync(unsigned int cycles, unsigned int flags)
+{
+    /* Even with audio output disabled, the SPU must advance its clock and
+     * deliver emulated IRQs. Games can wait for those during boot. dfsound's
+     * muted path skips decoding, mixing, reverb and output. */
+    builtin_SPUasync(cycles, flags);
+}
+
+static void retrogo_SPUplayADPCMchannel(xa_decode_t *xap,
+        unsigned int cycles, int is_start)
+{
+    if (retrogo_sound_enabled)
+        builtin_SPUplayADPCMchannel(xap, cycles, is_start);
+}
+
+static int retrogo_SPUplayCDDAchannel(short *pcm, int bytes,
+        unsigned int cycles, int is_start)
+{
+    if (!retrogo_sound_enabled)
+        return 0;
+    return builtin_SPUplayCDDAchannel(pcm, bytes, cycles, is_start);
+}
+
+void retrogo_spu_set_options(bool enabled, bool fast_mode)
+{
+    /* This is a no-op before SPUinit. At runtime it also drains any pending
+     * worker item before changing mixer mode and discards stale output. */
+    dfsound_set_output_enabled(enabled, psxRegs.cycle);
+    retrogo_sound_enabled = enabled;
+    /* In PCSX's historical config, non-zero means disable XA/CDDA. Avoid
+     * decoding and feeding those streams as well as bypassing SPU mixing. */
+    Config.Xa = Config.Cdda = enabled ? 0 : 1;
+    spu_config.iUseReverb = fast_mode ? 0 : 1;
+    spu_config.iUseInterpolation = fast_mode ? 0 : 1;
+    RG_LOGI("SPU: %s, quality=%s, worker=%s",
+            enabled ? "enabled" : "disabled",
+            fast_mode ? "fast" : "accurate",
+            spu_config.iUseThread ? "enabled" : "disabled");
+}
 
 void SysPrintf(const char *fmt, ...) {
     va_list args;
@@ -88,6 +159,7 @@ void *SysLoadSym(void *lib, const char *sym) {
     if (strcmp(sym, "GPUreadData") == 0) return (void *)builtin_GPUreadData;
     if (strcmp(sym, "GPUreadDataMem") == 0) return (void *)builtin_GPUreadDataMem;
     if (strcmp(sym, "GPUdmaChain") == 0) return (void *)builtin_GPUdmaChain;
+    if (strcmp(sym, "GPUfreeze") == 0) return (void *)builtin_GPUfreeze;
     if (strcmp(sym, "GPUupdateLace") == 0) return (void *)builtin_GPUupdateLace;
     if (strcmp(sym, "GPUvBlank") == 0) return (void *)builtin_GPUvBlank;
     if (strcmp(sym, "GPUgetScreenInfo") == 0) return (void *)builtin_GPUgetScreenInfo;
@@ -102,6 +174,7 @@ void *SysLoadSym(void *lib, const char *sym) {
     if (strcmp(sym, "SPUwriteDMAMem") == 0) return (void *)builtin_SPUwriteDMAMem;
     if (strcmp(sym, "SPUreadDMAMem") == 0) return (void *)builtin_SPUreadDMAMem;
     if (strcmp(sym, "SPUplayADPCMchannel") == 0) return (void *)builtin_SPUplayADPCMchannel;
+    if (strcmp(sym, "SPUfreeze") == 0) return (void *)builtin_SPUfreeze;
     if (strcmp(sym, "SPUregisterCallback") == 0) return (void *)builtin_SPUregisterCallback;
     if (strcmp(sym, "SPUregisterScheduleCb") == 0) return (void *)builtin_SPUregisterScheduleCb;
     if (strcmp(sym, "SPUasync") == 0) return (void *)builtin_SPUasync;
@@ -182,67 +255,85 @@ int in_type[8];
 unsigned short in_keystate[8];
 
 void pl_gun_byte2(int port, unsigned char byte) {}
-void pl_frame_limit(void) {}
+void pl_frame_limit(void) {
+    /* Match the libretro frontend contract: psxCpu->Execute() returns after
+     * the core reaches the next emulated video frame. Retro-Go performs its
+     * own pacing in the application loop. */
+    psxRegs.stop++;
+}
 
 struct rearmed_cbs pl_rearmed_cbs;
 
 void menu_notify_mode_change(int w, int h, int bpp) {}
 void basic_text_out16_nf(void *fb, int w, int x, int y, const char *text) {}
-void spu_get_debug_info(void *info) {}
-
 extern rg_surface_t *display_surface;
+volatile uint32_t retrogo_vout_flip_count;
+uint64_t retrogo_display_wait_us;
+static int output_width = 320, output_height = 240;
 
-static int wrap_rg_display_init(void) {
-    rg_display_init();
+static int wrap_pl_vout_open(void) {
+    /* rg_system_init() owns the Retro-Go display lifecycle. */
     return 0;
 }
 
+static void wrap_pl_vout_close(void) {
+    /* The launcher, not the emulated GPU, owns the Retro-Go display. */
+}
+
+static void wait_for_display(void) {
+    int64_t start = rg_system_timer();
+    while (rg_display_is_busy())
+        rg_task_yield();
+    retrogo_display_wait_us += (uint64_t)(rg_system_timer() - start);
+}
+
+
 static void wrap_pl_vout_set_mode(int w, int h, int raw_w, int raw_h, int bpp) {
+    if (w <= 0 || h <= 0)
+        return;
+    output_width = w;
+    output_height = h;
     int target_w = (w > 320) ? 320 : w;
     int target_h = (h > 240) ? 240 : h;
 
     if (display_surface && (display_surface->width != target_w || display_surface->height != target_h)) {
+        wait_for_display();
         rg_surface_free(display_surface);
         display_surface = rg_surface_create(target_w, target_h, RG_PIXEL_565_LE, 0);
     } else if (!display_surface) {
         display_surface = rg_surface_create(target_w, target_h, RG_PIXEL_565_LE, 0);
     }
+    if (!display_surface)
+        RG_PANIC("Display surface allocation failed");
+    wait_for_display();
+    memset(display_surface->data, 0, display_surface->stride * display_surface->height);
     rg_display_set_geometry(target_w, target_h, NULL);
 }
 
 static void wrap_pl_vout_flip(const void *vram, int vram_offset, int bgr24,
                               int x, int y, int w, int h, int dims_changed) {
-    if (display_surface && vram) {
-        int target_w = (w > 320) ? 320 : w;
-        int target_h = (h > 240) ? 240 : h;
-        
-        uint16_t *src_base = (uint16_t *)((uint8_t *)vram + vram_offset);
-        uint16_t *dst = (uint16_t *)display_surface->data;
-        
-        // Stride is always 1024 for PS1 VRAM
-        if (w > 320 || h > 240) {
-            int step_x = (w << 8) / target_w;
-            int step_y = (h << 8) / target_h;
+    if (display_surface) {
+        int target_w = display_surface->width;
+        int target_h = display_surface->height;
+        int stride = display_surface->stride / 2;
 
-            for (int j = 0; j < target_h; j++) {
-                uint16_t *line_src = src_base + (((j * step_y) >> 8) * 1024);
-                uint16_t *line_dst = dst + (j * target_w);
-                for (int i = 0; i < target_w; i++) {
-                    uint16_t c = line_src[(i * step_x) >> 8];
-                    line_dst[i] = ((c & 0x001F) << 11) | (c & 0x03E0) | ((c & 0x7C00) >> 10);
-                }
-            }
-        } else {
-            for (int j = 0; j < h; j++) {
-                uint16_t *line_src = src_base + (j * 1024);
-                uint16_t *line_dst = dst + (j * w);
-                for (int i = 0; i < w; i++) {
-                    uint16_t c = line_src[i];
-                    line_dst[i] = ((c & 0x001F) << 11) | (c & 0x03E0) | ((c & 0x7C00) >> 10);
-                }
-            }
+        /* rg_display_submit() is asynchronous; do not overwrite its surface. */
+        wait_for_display();
+
+        if (!vram || dims_changed)
+            memset(display_surface->data, 0, display_surface->stride * target_h);
+        if (!vram) {
+            rg_display_submit(display_surface, 0);
+            retrogo_vout_flip_count++;
+            return;
         }
+        if (w <= 0 || h <= 0)
+            return;
+
+        pcsx_port_blit(display_surface->data, stride, target_w, target_h,
+            vram, vram_offset, bgr24, x, y, w, h, output_width, output_height);
         rg_display_submit(display_surface, 0);
+        retrogo_vout_flip_count++;
     }
 }
 
@@ -268,27 +359,48 @@ void emu_set_default_config(void)
 	Config.icache_emulation = 0;
 	Config.PsxAuto = 1;
 	Config.cycle_multiplier = 400; 
-	Config.GpuListWalking = 1;
+	/* Use the upstream compatibility database. Forced slow walking breaks GPU
+	 * DMA chains into many small callbacks and is particularly expensive now
+	 * that each chunk must also be queued to the asynchronous renderer. */
+	Config.GpuListWalking = -1;
 	Config.FractionalFramerate = -1;
     Config.HLE = 1;
 
-	pl_rearmed_cbs.frameskip = 7;
+    /* Start with upstream's balanced SPU defaults. These preserve XA/CDDA,
+     * interpolation and reverb accuracy independently of the worker thread. */
+    spu_config.iUseReverb = 1;
+    spu_config.iUseInterpolation = 1;
+    spu_config.iXAPitch = 0;
+    spu_config.iVolume = 768;
+    spu_config.iTempo = 0;
+    /* dfsound's channel worker runs on the other CPU core. The option remains
+     * harmless on a single-core target because SPUinit marks it unavailable. */
+    spu_config.iUseThread = 1;
+
+	/* Let gpulib skip only while emulation is behind. Fixed skip values also
+	 * discard frames when the core is keeping up, making 30 Hz games choppy. */
+	pl_rearmed_cbs.frameskip = -1;
 	pl_rearmed_cbs.only_16bpp = 1;
 	pl_rearmed_cbs.dithering = 0;
 	pl_rearmed_cbs.thread_rendering = 1;
 	pl_rearmed_cbs.gpu_neon.allow_interlace = 0; 
 	pl_rearmed_cbs.gpu_peops.dwActFixes = 1<<7;
-	pl_rearmed_cbs.gpu_unai.lighting = 0;
+	/* These are core PSX GPU operations, not optional presentation effects.
+	 * Disabling them turns colour-modulated shadows white and renders
+	 * semi-transparent highlights as opaque pixels. Match upstream UNAI's
+	 * correctness defaults; fast_lighting remains off for accurate colour. */
+	pl_rearmed_cbs.gpu_unai.lighting = 1;
 	pl_rearmed_cbs.gpu_unai.fast_lighting = 0;
-	pl_rearmed_cbs.gpu_unai.blending = 0;
+	pl_rearmed_cbs.gpu_unai.blending = 1;
+	pl_rearmed_cbs.gpu_unai.ilace_force = 0;
 	pl_rearmed_cbs.gpu_unai.pixel_skip = 1;
 
     pl_rearmed_cbs.mmap = wrap_mmap;
     pl_rearmed_cbs.munmap = wrap_munmap;
-    pl_rearmed_cbs.pl_vout_open = wrap_rg_display_init;
+    pl_rearmed_cbs.pl_vout_open = wrap_pl_vout_open;
     pl_rearmed_cbs.pl_vout_set_mode = wrap_pl_vout_set_mode;
     pl_rearmed_cbs.pl_vout_flip = wrap_pl_vout_flip;
-    pl_rearmed_cbs.pl_vout_close = rg_display_deinit;
+    pl_rearmed_cbs.pl_vout_close = wrap_pl_vout_close;
 }
 
 extern int cdra_open(void);
@@ -305,6 +417,7 @@ int OpenPlugins(void) {
     GPU_writeData = builtin_GPUwriteData;
     GPU_writeDataMem = builtin_GPUwriteDataMem;
     GPU_dmaChain = builtin_GPUdmaChain;
+    GPU_freeze = builtin_GPUfreeze;
     GPU_updateLace = builtin_GPUupdateLace;
     GPU_vBlank = builtin_GPUvBlank;
     GPU_getScreenInfo = builtin_GPUgetScreenInfo;
@@ -318,11 +431,12 @@ int OpenPlugins(void) {
     SPU_readRegister = builtin_SPUreadRegister;
     SPU_writeDMAMem = builtin_SPUwriteDMAMem;
     SPU_readDMAMem = builtin_SPUreadDMAMem;
-    SPU_playADPCMchannel = builtin_SPUplayADPCMchannel;
+    SPU_playADPCMchannel = retrogo_SPUplayADPCMchannel;
+    SPU_freeze = builtin_SPUfreeze;
     SPU_registerCallback = builtin_SPUregisterCallback;
     SPU_registerScheduleCb = builtin_SPUregisterScheduleCb;
-    SPU_async = builtin_SPUasync;
-    SPU_playCDDAchannel = builtin_SPUplayCDDAchannel;
+    SPU_async = retrogo_SPUasync;
+    SPU_playCDDAchannel = retrogo_SPUplayCDDAchannel;
     SPU_setCDvol = builtin_SPUsetCDvol;
 
     pl_init();
@@ -334,9 +448,16 @@ int OpenPlugins(void) {
     }
 	if (GPU_open(NULL, NULL, NULL) < 0) return -1;
 	if (SPU_open() < 0) return -1;
+	SPU_registerCallback(SPUirq);
+	SPU_registerScheduleCb(SPUschedule);
 	return 0;
 }
 
+/* Differential tracing is disabled in normal builds. Keep its cold-reset
+ * hook available now that the old null SPU no longer supplies one. */
+void builtin_SPUresetDiagnostic(void) {}
+
+#if !defined(PCSX_NDRC_RV32_FULL_CORE) && !defined(PCSX_DUAL_DYNAREC)
 void new_dynarec_init() {}
 void new_dyna_start(void *context) {}
 void new_dynarec_cleanup() {}
@@ -351,6 +472,7 @@ void new_dyna_pcsx_mem_isolate_2(int enable) {}
 void new_dyna_pcsx_mem_shutdown(void) {}
 int  new_dynarec_save_blocks(void *save, int size) { return 0; }
 void new_dynarec_load_blocks(const void *save, int size) {}
+#endif
 
 void *plat_mmap(unsigned long addr, size_t size, int prot, int flags) {
     size_t alignment = 1024 * 1024;

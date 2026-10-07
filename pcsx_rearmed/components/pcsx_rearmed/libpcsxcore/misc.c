@@ -36,6 +36,10 @@
 #include "database.h"
 #include <zlib.h>
 #include "revision.h"
+#ifdef ESP_PLATFORM
+#include <esp_heap_caps.h>
+#include "state_validation.h"
+#endif
 
 char CdromId[10] = "";
 char CdromLabel[33] = "";
@@ -639,6 +643,7 @@ fail_io:
 
 // STATES
 
+#ifndef ESP_PLATFORM
 static void *zlib_open(const char *name, const char *mode)
 {
 	return gzopen(name, mode);
@@ -663,9 +668,52 @@ static void zlib_close(void *file)
 {
 	gzclose(file);
 }
+#endif
+
+#ifdef ESP_PLATFORM
+/* Freeze helpers write through SaveFuncs without returning an I/O status.
+ * Track short writes so SaveState can reject the temporary file even when
+ * a later buffered operation happens to succeed. State I/O is serialized
+ * by the emulator task. */
+static int stdio_state_write_failed;
+
+static void *stdio_open(const char *name, const char *mode)
+{
+	return fopen(name, mode);
+}
+
+static int stdio_read(void *file, void *buf, u32 len)
+{
+	return fread(buf, 1, len, file);
+}
+
+static int stdio_write(void *file, const void *buf, u32 len)
+{
+	size_t written = fwrite(buf, 1, len, file);
+	if (written != len)
+		stdio_state_write_failed = 1;
+	return (int)written;
+}
+
+static long stdio_seek(void *file, long offs, int whence)
+{
+	if (fseek(file, offs, whence) != 0)
+		return -1;
+	return ftell(file);
+}
+
+static void stdio_close(void *file)
+{
+	fclose(file);
+}
+#endif
 
 struct PcsxSaveFuncs SaveFuncs = {
+#ifdef ESP_PLATFORM
+	stdio_open, stdio_read, stdio_write, stdio_seek, stdio_close
+#else
 	zlib_open, zlib_read, zlib_write, zlib_seek, zlib_close
+#endif
 };
 
 static const char PcsxHeader[32] = "STv4 PCSXra " REV;
@@ -702,18 +750,29 @@ struct misc_save_data {
 
 #define EX_SCREENPIC_SIZE (128 * 96 * 3)
 
+union state_io_buffer {
+	u8 buf[EX_SCREENPIC_SIZE];
+	GPUFreeze_t gpu_hdr;
+	struct {
+		SPUFreeze_t spu_hdr;
+		u8 spu_part2[SPUFREEZE_F2_MAX_SIZE];
+	};
+};
+
+static union state_io_buffer *alloc_state_io_buffer(void)
+{
+#ifdef ESP_PLATFORM
+	return heap_caps_malloc(sizeof(union state_io_buffer),
+		MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+#else
+	return malloc(sizeof(union state_io_buffer));
+#endif
+}
+
 int SaveState(const char *file) {
 	struct misc_save_data *misc = (void *)(psxRegs.ptrs.psxH + 0xf000);
 	struct origin_info oi = { 0, };
-	union {
-		// save stack space
-		u8 buf[EX_SCREENPIC_SIZE];
-		GPUFreeze_t gpu_hdr;
-		struct {
-			SPUFreeze_t spu_hdr;
-			u8 spu_part2[SPUFREEZE_F2_MAX_SIZE];
-		};
-	} u;
+	union state_io_buffer *u;
 	unsigned short *spuram = NULL;
 	uint16_t *vram = NULL;
 	void *f;
@@ -721,9 +780,18 @@ int SaveState(const char *file) {
 	assert(!psxRegs.branching);
 	assert(!psxRegs.cpuInRecursion);
 	assert(!misc->magic);
+	u = alloc_state_io_buffer();
+	if (u == NULL)
+		return -1;
 
 	f = SaveFuncs.open(file, "wb");
-	if (f == NULL) return -1;
+	if (f == NULL) {
+		free(u);
+		return -1;
+	}
+#ifdef ESP_PLATFORM
+	stdio_state_write_failed = 0;
+#endif
 
 	misc->magic = MISC_MAGIC;
 	misc->gteBusyCycle = psxRegs.gteBusyCycle;
@@ -754,9 +822,9 @@ int SaveState(const char *file) {
 
 	// this was space for ScreenPic
 	assert(sizeof(oi) - 3 <= EX_SCREENPIC_SIZE);
-	memset(u.buf, 0, sizeof(u.buf));
-	memcpy(u.buf + 3, &oi, sizeof(oi));
-	SaveFuncs.write(f, u.buf, sizeof(u.buf));
+	memset(u->buf, 0, sizeof(u->buf));
+	memcpy(u->buf + 3, &oi, sizeof(oi));
+	SaveFuncs.write(f, u->buf, sizeof(u->buf));
 
 	if (Config.HLE)
 		psxBiosFreeze(1);
@@ -768,58 +836,124 @@ int SaveState(const char *file) {
 	SaveFuncs.write(f, &psxRegs, offsetof(psxRegisters, gteBusyCycle));
 
 	// gpu
-	u.gpu_hdr.ulFreezeVersion = 1;
-	u.gpu_hdr.ulStatus = 0;
-	memset(u.gpu_hdr.ulControl, 0, sizeof(u.gpu_hdr.ulControl));
-	GPU_freeze(1, &u.gpu_hdr, &vram);
-	SaveFuncs.write(f, &u.gpu_hdr, sizeof(u.gpu_hdr));
+	u->gpu_hdr.ulFreezeVersion = 1;
+	u->gpu_hdr.ulStatus = 0;
+	memset(u->gpu_hdr.ulControl, 0, sizeof(u->gpu_hdr.ulControl));
+	GPU_freeze(1, &u->gpu_hdr, &vram);
+	SaveFuncs.write(f, &u->gpu_hdr, sizeof(u->gpu_hdr));
 	SaveFuncs.write(f, vram, 1024*512*2);
 
 	// spu
-	SPU_freeze(1, &u.spu_hdr, &spuram, u.spu_part2, psxRegs.cycle);
-	assert(u.spu_hdr.Size > sizeof(u.spu_hdr) + 512*1024);
-	assert(u.spu_hdr.Size <= sizeof(u.spu_hdr) + 512*1024 + sizeof(u.spu_part2));
+	SPU_freeze(1, &u->spu_hdr, &spuram, u->spu_part2, psxRegs.cycle);
+	assert(u->spu_hdr.Size > sizeof(u->spu_hdr) + 512*1024);
+	assert(u->spu_hdr.Size <= sizeof(u->spu_hdr) + 512*1024 + sizeof(u->spu_part2));
 	assert(spuram);
-	SaveFuncs.write(f, &u.spu_hdr.Size, 4); // redundant, for compat
-	SaveFuncs.write(f, &u.spu_hdr, sizeof(u.spu_hdr));
+	SaveFuncs.write(f, &u->spu_hdr.Size, 4); // redundant, for compat
+	SaveFuncs.write(f, &u->spu_hdr, sizeof(u->spu_hdr));
 	SaveFuncs.write(f, spuram, 512*1024);
-	SaveFuncs.write(f, &u.spu_part2, u.spu_hdr.Size - sizeof(u.spu_hdr) - 512*1024);
+	SaveFuncs.write(f, &u->spu_part2, u->spu_hdr.Size - sizeof(u->spu_hdr) - 512*1024);
 
 	sioFreeze(f, 1);
 	cdrFreeze(f, 1);
 	psxHwFreeze(f, 1);
 	psxRcntFreeze(f, 1);
 	mdecFreeze(f, 1);
-	ndrc_freeze(f, 1);
+#if !defined(DRC_DISABLE) && (!defined(LIGHTREC) || defined(PCSX_DUAL_DYNAREC))
+#ifdef PCSX_DUAL_DYNAREC
+	if (psxIsRv32DynarecSelected())
+#endif
+		ndrc_freeze(f, 1);
+#endif
 	padFreeze(f, 1);
 
 	memset(misc, 0, sizeof(*misc));
+#ifdef ESP_PLATFORM
+	/* Retro-Go promotes the .new file only when this returns success. Check
+	 * buffered output and fclose too: a full or removed SD card can fail
+	 * after every fwrite above appeared to complete. */
+	{
+		int write_failed = stdio_state_write_failed || ferror((FILE *)f);
+		int flush_failed = fflush((FILE *)f) != 0;
+		int close_failed = fclose((FILE *)f) != 0;
+		if (write_failed || flush_failed || close_failed) {
+			SysPrintf("SaveState: write/flush/close failed for %s\n",
+				file ? file : "(stream)");
+			free(u);
+			return -1;
+		}
+	}
+#else
 	SaveFuncs.close(f);
+#endif
+	free(u);
 	return 0;
 }
 
 int LoadState(const char *file) {
 	struct misc_save_data *misc = (void *)(psxRegs.ptrs.psxH + 0xf000);
 	u32 biosBranchCheckOld = psxRegs.biosBranchCheck;
-	union {
-		// save stack space
-		GPUFreeze_t gpu_hdr;
-		struct {
-			SPUFreeze_t spu_hdr;
-			u8 spu_part2[SPUFREEZE_F2_MAX_SIZE];
-		};
-	} u;
+	union state_io_buffer *u;
 	unsigned short *spuram = NULL;
 	uint16_t *vram = NULL;
-	boolean hle, oldhle;
-	int Size;
+	boolean hle = 0, oldhle;
+	int Size = 0;
 	char header[32];
-	u32 version;
+	u32 version = 0;
 	int result = -1;
 	void *f;
+#ifdef ESP_PLATFORM
+	unsigned char *snapshot = NULL;
+	size_t cache_size = 0;
+	const struct pcsx_state_layout layout = {
+		sizeof(boolean), offsetof(psxRegisters, gteBusyCycle),
+		sizeof(GPUFreeze_t), sizeof(SPUFreeze_t), offsetof(SPUFreeze_t, Size),
+		SPUFREEZE_F2_MAX_SIZE,
+		sioFreeze(NULL, PCSX_FREEZE_SIZE) + cdrFreeze(NULL, PCSX_FREEZE_SIZE) +
+		psxRcntFreeze(NULL, PCSX_FREEZE_SIZE) + mdecFreeze(NULL, PCSX_FREEZE_SIZE),
+		sizeof(PadDataS), 8, offsetof(PadDataS, saveSize)
+	};
+#endif
 
+	u = alloc_state_io_buffer();
+	if (u == NULL)
+		return -1;
 	f = SaveFuncs.open(file, "rb");
-	if (f == NULL) return -1;
+	if (f == NULL) {
+		free(u);
+		return -1;
+	}
+
+#ifdef ESP_PLATFORM
+	/* Read once into cold memory. A truncated file or an SD failure must not
+	 * leave the live machine half restored. The validated stream cannot
+	 * suffer a second storage failure during the existing freeze callbacks. */
+	long length = -1;
+	if (fseek(f, 0, SEEK_END) == 0)
+		length = ftell(f);
+	int valid = length > 0 && length <= 8 * 1024 * 1024 &&
+		fseek(f, 0, SEEK_SET) == 0;
+	if (valid) {
+		snapshot = heap_caps_malloc((size_t)length,
+			MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+		valid = snapshot && fread(snapshot, 1, (size_t)length, f) == (size_t)length;
+	}
+	valid = valid && !ferror((FILE *)f);
+	if (fclose((FILE *)f) != 0)
+		valid = 0;
+	if (!valid || !pcsx_state_validate(snapshot, (size_t)length, &layout,
+			SaveVersion, Config.HLE, &cache_size)) {
+		SysPrintf("LoadState: incomplete, incompatible or unreadable state: %s\n", file);
+		free(snapshot);
+		free(u);
+		return -1;
+	}
+	f = fmemopen(snapshot, (size_t)length, "rb");
+	if (!f) {
+		free(snapshot);
+		free(u);
+		return -1;
+	}
+#endif
 
 	if (!file)
 		file = "(stream)";
@@ -878,23 +1012,23 @@ int LoadState(const char *file) {
 		psxBiosFreeze(0);
 
 	// gpu
-	SaveFuncs.read(f, &u.gpu_hdr, sizeof(u.gpu_hdr));
-	GPU_freeze(0, &u.gpu_hdr, &vram);
+	SaveFuncs.read(f, &u->gpu_hdr, sizeof(u->gpu_hdr));
+	GPU_freeze(0, &u->gpu_hdr, &vram);
 	assert(vram);
 	SaveFuncs.read(f, vram, 1024*512*2);
 	gpuSyncPluginSR();
 
 	// spu
 	SaveFuncs.read(f, &Size, 4);
-	if (sizeof(u.spu_hdr) + 512*1024 < Size &&
-	    (uint32_t)Size <= sizeof(u.spu_hdr) + 512*1024u + sizeof(u.spu_part2))
+	if (sizeof(u->spu_hdr) + 512*1024 < Size &&
+	    (uint32_t)Size <= sizeof(u->spu_hdr) + 512*1024u + sizeof(u->spu_part2))
 	{
 		SPU_freeze(0, NULL, &spuram, NULL, psxRegs.cycle);
 		assert(spuram);
-		SaveFuncs.read(f, &u.spu_hdr, sizeof(u.spu_hdr));
+		SaveFuncs.read(f, &u->spu_hdr, sizeof(u->spu_hdr));
 		SaveFuncs.read(f, spuram, 512*1024);
-		SaveFuncs.read(f, &u.spu_part2, Size - sizeof(u.spu_hdr) - 512*1024);
-		SPU_freeze(0, &u.spu_hdr, &spuram, u.spu_part2, psxRegs.cycle);
+		SaveFuncs.read(f, &u->spu_part2, Size - sizeof(u->spu_hdr) - 512*1024);
+		SPU_freeze(0, &u->spu_hdr, &spuram, u->spu_part2, psxRegs.cycle);
 	}
 	else
 	{
@@ -913,7 +1047,21 @@ int LoadState(const char *file) {
 		psxCpu->Shutdown();
 		psxCpu->Init();
 	}
-	ndrc_freeze(f, 0);
+#if !defined(DRC_DISABLE) && (!defined(LIGHTREC) || defined(PCSX_DUAL_DYNAREC))
+#ifdef PCSX_DUAL_DYNAREC
+	if (psxIsRv32DynarecSelected())
+#endif
+		ndrc_freeze(f, 0);
+#endif
+#ifdef ESP_PLATFORM
+	/* Lightrec/interpreter do not consume the optional RV32 cache record. */
+#if defined(PCSX_DUAL_DYNAREC)
+	if (!psxIsRv32DynarecSelected())
+#elif !defined(DRC_DISABLE) && !defined(LIGHTREC)
+	if (0)
+#endif
+		SaveFuncs.seek(f, (long)cache_size, SEEK_CUR);
+#endif
 	padFreeze(f, 0);
 
 	events_restore();
@@ -924,8 +1072,13 @@ int LoadState(const char *file) {
 
 	result = 0;
 cleanup:
-	memset(misc, 0, sizeof(*misc));
+	if (result == 0)
+		memset(misc, 0, sizeof(*misc));
 	SaveFuncs.close(f);
+#ifdef ESP_PLATFORM
+	free(snapshot);
+#endif
+	free(u);
 	return result;
 }
 
@@ -1062,7 +1215,9 @@ const char *get_build_info(void)
 #if defined(__ARM_FEATURE_SVE) && __ARM_FEATURE_SVE
 		"sve "
 #endif
-#if defined(LIGHTREC)
+#if defined(PCSX_DUAL_DYNAREC)
+		"lightrec/ari64 "
+#elif defined(LIGHTREC)
 		"lightrec "
 #elif !defined(DRC_DISABLE)
 		"ari64 "

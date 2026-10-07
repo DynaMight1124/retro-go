@@ -1814,6 +1814,8 @@ void cdrReset() {
 }
 
 int cdrFreeze(void *f, int Mode) {
+	if (Mode == PCSX_FREEZE_SIZE)
+		return sizeof(cdr) + sizeof(u32);
 	u32 tmp;
 	u8 tmpp[3];
 

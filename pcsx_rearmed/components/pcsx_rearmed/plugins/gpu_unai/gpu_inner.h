@@ -40,6 +40,10 @@
 #include "gpu_inner_quantization.h"
 #include "gpu_inner_light.h"
 
+#if defined(ESP_PLATFORM) && defined(CONFIG_IDF_TARGET_ESP32P4)
+#include "esp_attr.h"
+#endif
+
 #include "arm_features.h"
 #include "compiler_features.h"
 #ifdef __arm__
@@ -742,6 +746,40 @@ endpolytext:
 	}
 }
 
+#if defined(ESP_PLATFORM) && defined(CONFIG_IDF_TARGET_ESP32P4)
+/* CF=0x020 overwhelmingly dominates Ridge Racer. Keep the compact generic
+ * operation order, but execute it from internal RAM so instruction fetches do
+ * not compete in the shared cache with the texture, CLUT, and destination
+ * streams. */
+static IRAM_ATTR noinline void gpuPolySpanFn4bppRawP4(const gpu_unai_t &gpu_unai,
+	le16_t *pDst, u32 count, s32 y)
+{
+	u32 l_u = gpu_unai.inn.u;
+	u32 l_v = gpu_unai.inn.v << 1;
+	const s32 l_u_inc = gpu_unai.inn.u_inc;
+	const s32 l_v_inc = gpu_unai.inn.v_inc << 1;
+	const u32 mask_v00u = gpu_unai.inn.mask_v00u;
+	const u8 * const texture = (const u8 *)gpu_unai.inn.TBA;
+	const le16_t * const clut = gpu_unai.inn.CBA;
+	int pcounter = count - 1;
+
+	(void)y;
+	do {
+		const u32 tu = (l_u >> 10) & mask_v00u;
+		const u32 tv = l_v & (mask_v00u >> 13);
+		const u8 texels = texture[tv + (tu >> 1)];
+		const u16 src = le16_to_u16(
+			clut[(texels >> ((tu & 1) << 2)) & 0xf]);
+		if (src)
+			*pDst = u16_to_le16(src);
+		pDst++;
+		l_u += l_u_inc;
+		l_v += l_v_inc;
+		pcounter--;
+	} while (pcounter >= 0);
+}
+#endif
+
 #ifdef __arm__
 template<int CF>
 static void PolySpanMaybeAsm(const gpu_unai_t &gpu_unai, le16_t *pDst, u32 count, s32 y)
@@ -841,7 +879,11 @@ typedef void (*PP)(const gpu_unai_t &gpu_unai, le16_t *pDst, u32 count, s32 y);
 	TN,            TN,            TN,            TI((ub)|0xf3), TN,            TN,            TN,            TI((ub)|0xf7), \
 	TN,            TN,            TN,            TI((ub)|0xfb), TN,            TN,            TN,            TI((ub)|0xff)
 
-EXT_RAM_BSS_ATTR PP gpuPolySpanDrivers[1024] = {
+/* This is an initialized function-pointer table, not BSS. Placing it in
+ * external BSS discards the initializers and leaves null span drivers; the
+ * first affected polygon then jumps to address zero. Keep the immutable table
+ * in initialized read-only storage. */
+static const PP gpuPolySpanDrivers[1024] = {
 	TIBLOCK(0<<8), TIBLOCK(1<<8), TIBLOCK(2<<8), TIBLOCK(3<<8)
 };
 

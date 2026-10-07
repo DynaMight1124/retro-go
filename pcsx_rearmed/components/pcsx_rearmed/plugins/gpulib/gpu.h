@@ -157,6 +157,15 @@ int  vout_update(struct psx_gpu *gpu, int src_x, int src_y);
 void vout_blank(struct psx_gpu *gpu);
 void vout_set_config(const struct rearmed_cbs *config);
 
+/* Retro-Go performance diagnostics. Values are accumulated since the last
+ * call and reset when read. */
+void builtin_GPUgetProfile(uint64_t *render_us, uint64_t *scanout_us,
+       uint32_t *render_calls, uint32_t *scanout_calls);
+void renderer_get_profile(uint64_t group_cycles[12],
+       uint32_t group_calls[12]);
+void renderer_get_ft4_profile(uint16_t cf[3], uint64_t cycles[3],
+       uint32_t calls[3], uint32_t *overflow);
+
 // helpers
 #define VRAM_MEM_XY(vram_, x, y) &vram_[(y) * 1024 + (x)]
 

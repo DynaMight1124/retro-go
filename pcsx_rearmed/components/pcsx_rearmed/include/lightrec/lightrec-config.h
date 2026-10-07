@@ -28,4 +28,3 @@
 #define OPT_SH4_USE_GBR 0
 
 #endif /* __LIGHTREC_CONFIG_H__ */
-

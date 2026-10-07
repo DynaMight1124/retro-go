@@ -136,7 +136,7 @@ INLINE forceinline int adsr_do(int *samples, ADSRInfoEx *adsr, int ns_to,
       break;
     EnvelopeVol = 0x7fff;
     adsr->State = ADSR_DECAY;
-    // fallthrough to decay
+    /* fall through */
 
   //--------------------------------------------------//
   case ADSR_DECAY:                                    // -> decay
@@ -161,7 +161,7 @@ INLINE forceinline int adsr_do(int *samples, ADSRInfoEx *adsr, int ns_to,
       break;
     adsr->State = ADSR_SUSTAIN;
     adsr->EnvelopeVol = EnvelopeVol;
-    // fallthrough to sustain
+    /* fall through */
 
   //--------------------------------------------------//
   case ADSR_SUSTAIN:                                  // -> sustain

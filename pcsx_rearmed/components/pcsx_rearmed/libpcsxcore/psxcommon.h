@@ -159,6 +159,8 @@ struct PcsxSaveFuncs {
 };
 extern struct PcsxSaveFuncs SaveFuncs;
 
+/* Non-mutating serialized-size query for Retro-Go's state preflight. */
+#define PCSX_FREEZE_SIZE 2
 #define gzfreeze(ptr, size) { \
 	if (Mode == 1) SaveFuncs.write(f, ptr, size); \
 	if (Mode == 0) SaveFuncs.read(f, ptr, size); \

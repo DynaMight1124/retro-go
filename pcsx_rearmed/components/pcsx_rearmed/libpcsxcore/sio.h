@@ -44,15 +44,19 @@ void sioWriteBaud16(unsigned short value);
 
 unsigned char sioRead8();
 unsigned short sioReadStat16();
+unsigned char sioReadStat8Low();
+unsigned char sioReadStat8High();
 unsigned short sioReadMode16();
 unsigned short sioReadCtrl16();
 unsigned short sioReadBaud16();
 
 void sioInterrupt();
+void sioReset(void);
 int sioFreeze(void *f, int Mode);
 
 void LoadMcd(int mcd, char *str);
 void LoadMcds(char *mcd1, char *mcd2);
+const char *sioTakeCardError(void);
 void SaveMcd(char *mcd, char *data, uint32_t adr, int size);
 void CreateMcd(char *mcd);
 void ConvertMcd(char *mcd, char *data);

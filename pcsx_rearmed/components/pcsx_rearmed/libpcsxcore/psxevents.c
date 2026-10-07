@@ -5,13 +5,18 @@
 #include "psxdma.h"
 #include "mdec.h"
 #include "psxevents.h"
+#include "sio.h"
 
 //#define evprintf printf
 #define evprintf(...)
 
 static psxRegisters *cp0TOpsxRegs(psxCP0Regs *cp0)
 {
-#ifndef LIGHTREC
+#if defined(PCSX_DUAL_DYNAREC)
+	if (!psxIsRv32DynarecSelected())
+		return &psxRegs; // Lightrec has its own CP0
+	return (void *)((char *)cp0 - offsetof(psxRegisters, CP0));
+#elif !defined(LIGHTREC)
 	return (void *)((char *)cp0 - offsetof(psxRegisters, CP0));
 #else
 	// lightrec has it's own cp0
@@ -80,7 +85,9 @@ void irq_test(psxCP0Regs *cp0)
 	cp0->n.Cause &= ~0x400;
 	if (psxHu32(0x1070) & psxHu32(0x1074))
 		cp0->n.Cause |= 0x400;
-	if (((cp0->n.Cause | 1) & cp0->n.SR & 0x401) == 0x401)
+	int exception_taken =
+		((cp0->n.Cause | 1) & cp0->n.SR & 0x401) == 0x401;
+	if (exception_taken)
 		psxException(0, 0, cp0);
 }
 

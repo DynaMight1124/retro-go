@@ -10,6 +10,13 @@ struct psx_gpu_async;
 
 #ifdef USE_ASYNC_GPU
 
+enum gpu_async_profile_wait {
+  AGPU_PROFILE_WAIT_FULL = 0,
+  AGPU_PROFILE_WAIT_SCANOUT,
+  AGPU_PROFILE_WAIT_SPACE,
+  AGPU_PROFILE_WAIT_COUNT,
+};
+
 #define gpu_async_enabled(gpu) ((gpu)->async)
 
 int gpu_async_do_cmd_list(struct psx_gpu *gpu, const uint32_t *list, int list_len,
@@ -23,6 +30,8 @@ void gpu_async_sync_ecmds(struct psx_gpu *gpu);
 void gpu_async_try_delayed_flip(struct psx_gpu *gpu, int force);
 void gpu_async_notify_screen_change(struct psx_gpu *gpu);
 void gpu_async_set_interlace(struct psx_gpu *gpu, int enable, int is_odd);
+void gpu_async_get_profile(uint64_t wait_us[AGPU_PROFILE_WAIT_COUNT],
+      uint32_t wait_calls[AGPU_PROFILE_WAIT_COUNT]);
 
 #else
 

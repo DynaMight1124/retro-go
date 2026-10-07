@@ -54,6 +54,7 @@
 __attribute__((aligned(32)))
 SPUInfo         spu;
 SPUConfig       spu_config;
+static int      output_enabled = 1;
 
 static int iFMod[NSSIZE];
 static int RVB[NSSIZE * 2];
@@ -599,7 +600,7 @@ static void do_silent_chans(int ns_to, int silentch)
    if (spu.dwChannelDead & (1<<ch)) continue;
 
    s_chan = &spu.s_chan[ch];
-   if (s_chan->pCurr > spu.pSpuIrq && s_chan->pLoop > spu.pSpuIrq)
+   if (output_enabled && s_chan->pCurr > spu.pSpuIrq && s_chan->pLoop > spu.pSpuIrq)
     continue;
 
    s_chan->spos += s_chan->iSBPos << 16;
@@ -1003,6 +1004,48 @@ void do_samples(unsigned int cycles_to, int force_no_thread)
  int cycle_diff;
  int ns_to;
 
+ /* Muting skips sample decoding/mixing but must not stop the emulated SPU
+  * clock. Games may wait for a decode-buffer or ADPCM-block IRQ at boot. */
+ if (!output_enabled) {
+  int muted_cycle_diff = cycles_to - spu.cycles_played;
+  int muted_ns_to;
+  unsigned int new_channels;
+  int ch;
+
+  if (muted_cycle_diff < -2*1048576 || muted_cycle_diff > 2*1048576) {
+   spu.cycles_played = cycles_to;
+   return;
+  }
+  if (muted_cycle_diff < 2 * 768)
+   return;
+
+  muted_ns_to = (muted_cycle_diff / 768 + 1) & ~1;
+  if (muted_ns_to > NSSIZE)
+   muted_ns_to = NSSIZE;
+
+  if (unlikely((spu.spuCtrl & CTRL_IRQ) && spu.pSpuIrq < spu.spuMemC + 0x1000)) {
+   int irq_pos = (spu.pSpuIrq - spu.spuMemC) / 2 & 0x1ff;
+   int left = (irq_pos - spu.decode_pos) & 0x1ff;
+   if (0 < left && left <= muted_ns_to)
+    do_irq(0);
+  }
+  if (!spu.cycles_dma_end || (int)(spu.cycles_dma_end - cycles_to) < 0) {
+   spu.cycles_dma_end = 0;
+   check_irq_io(spu.spuAddr);
+  }
+
+  new_channels = spu.dwNewChannel & 0xffffff;
+  for (ch = 0; new_channels != 0; ch++, new_channels >>= 1)
+   if (new_channels & 1)
+    StartSound(ch);
+  do_silent_chans(muted_ns_to, 0xffffff);
+
+  spu.cycles_played += muted_ns_to * 768;
+  spu.decode_pos = (spu.decode_pos + muted_ns_to) & 0x1ff;
+  spu.spuStat = (spu.spuStat & ~0x800) | ((spu.decode_pos << 3) & 0x800);
+  return;
+ }
+
  cycle_diff = cycles_to - spu.cycles_played;
  if (cycle_diff < -2*1048576 || cycle_diff > 2*1048576)
   {
@@ -1303,6 +1346,11 @@ static void RemoveStreams(void)
 #include <pthread.h>
 #include <semaphore.h>
 #include <unistd.h>
+#ifdef ESP_PLATFORM
+#include "esp_err.h"
+#include "esp_heap_caps.h"
+#include "esp_pthread.h"
+#endif
 
 static struct {
  pthread_t thread;
@@ -1350,14 +1398,48 @@ static void *spu_worker_thread(void *unused)
  return NULL;
 }
 
+static int create_spu_thread(void)
+{
+#ifdef ESP_PLATFORM
+ esp_pthread_cfg_t previous_cfg = esp_pthread_get_default_config();
+ esp_pthread_cfg_t cfg = previous_cfg;
+ int have_previous_cfg = esp_pthread_get_cfg(&previous_cfg) == ESP_OK;
+
+ if (have_previous_cfg)
+  cfg = previous_cfg;
+ cfg.stack_size = 8 * 1024;
+ cfg.inherit_cfg = false;
+ cfg.thread_name = "pcsxr-spu";
+ /* The emulation task is pinned to core 1. Keep channel mixing on core 0
+  * where it can overlap guest CPU execution (and share time with the
+  * asynchronous GPU worker) instead of extending the emulation frame. */
+ cfg.pin_to_core = 0;
+ cfg.stack_alloc_caps = MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT;
+ if (esp_pthread_set_cfg(&cfg) != ESP_OK)
+  return -1;
+#endif
+
+ int ret = pthread_create(&t.thread, NULL, spu_worker_thread, NULL);
+
+#ifdef ESP_PLATFORM
+ esp_pthread_set_cfg(&previous_cfg);
+#endif
+ return ret;
+}
+
 static void init_spu_thread(void)
 {
  int ret;
 
  spu.sb_thread = spu.sb_thread_;
 
+#ifdef ESP_PLATFORM
+ if (CONFIG_FREERTOS_NUMBER_OF_CORES <= 1)
+  return;
+#else
  if (sysconf(_SC_NPROCESSORS_ONLN) <= 1)
   return;
+#endif
 
  worker = calloc(1, sizeof(*worker));
  if (worker == NULL)
@@ -1369,11 +1451,14 @@ static void init_spu_thread(void)
  if (ret != 0)
   goto fail_sem_done;
 
- ret = pthread_create(&t.thread, NULL, spu_worker_thread, NULL);
+ ret = create_spu_thread();
  if (ret != 0)
   goto fail_thread;
 
  spu_config.iThreadAvail = 1;
+#ifdef ESP_PLATFORM
+ printf("SPU worker thread started on core 0\n");
+#endif
  return;
 
 fail_thread:
@@ -1384,6 +1469,9 @@ fail_sem_avail:
  free(worker);
  worker = NULL;
  spu_config.iThreadAvail = 0;
+#ifdef ESP_PLATFORM
+ printf("SPU worker thread unavailable; using synchronous mixer\n");
+#endif
 }
 
 static void exit_spu_thread(void)
@@ -1417,6 +1505,17 @@ long CALLBACK SPUfreeze(int ulFreezeMode, SPUFreeze_t * pF, unsigned short **ram
  if (worker != NULL)
   sync_worker_thread(1);
  return DoFreeze(ulFreezeMode, pF, ram, pF2, cycles);
+}
+
+void dfsound_set_output_enabled(int enabled, unsigned int cycles)
+{
+ if (spu.bSpuInit && worker != NULL)
+  sync_worker_thread(1);
+ output_enabled = enabled;
+ if (!spu.bSpuInit)
+  return;
+ spu.cycles_played = cycles;
+ spu.pS = (short *)spu.pSpuBuffer;
 }
 
 // SPUINIT: this func will be called first by the main emu

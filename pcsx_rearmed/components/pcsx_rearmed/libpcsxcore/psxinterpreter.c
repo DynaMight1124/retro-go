@@ -239,6 +239,7 @@ static u32 INT_ATTR fetchICache(psxRegisters *regs, const uintptr_t *memRLUT, u3
 // FIXME: count cache misses, memory latencies, stalls to get rid of this
 static inline void addCycle(psxRegisters *regs)
 {
+#ifndef DRC_DBG
 	// Instruction Discount (Super Overclock):
 	// Makes virtual instructions 'cheaper' so the engine runs faster.
 	// 4: 4x Speedup (Balanced).
@@ -247,6 +248,7 @@ static inline void addCycle(psxRegisters *regs)
 	static int skip = 0;
 	if (++skip < 4) return;
 	skip = 0;
+#endif
 
 	assert(regs->subCycleStep >= 0x10000);
 	regs->subCycle += regs->subCycleStep;
@@ -448,7 +450,14 @@ static void doBranch(psxRegisters *regs, u32 tar, enum R3000Abdt taken) {
 		regs->CP0.n.Target = pc_final;
 	regs->branching = 0;
 
+#ifdef DRC_DBG
+	/* The outer instruction is charged after this handler in trace mode. */
+	regs->cycle += regs->subCycleStep >> 16;
+#endif
 	psxBranchTest();
+#ifdef DRC_DBG
+	regs->cycle -= regs->subCycleStep >> 16;
+#endif
 }
 
 static void doBranchReg(psxRegisters *regs, u32 tar) {
@@ -569,9 +578,16 @@ OP(psxMULT) {
 
 OP(psxMULT_stall) {
 	// approximate, but maybe good enough
+#ifdef DRC_DBG
+	/* Ari64 check_multdiv uses a fixed 11-cycle MULT(U) approximation.
+	 * Differential execution needs the same model, not operand-dependent
+	 * reference stalls that create timing-only divergence at MFHI/MFLO. */
+	u32 c = 11;
+#else
 	u32 rs = _rRs_;
 	u32 lz = __builtin_clz(((rs ^ ((s32)rs >> 21)) | 1));
 	u32 c = 7 + (2 - (lz / 11)) * 4;
+#endif
 	regs_->muldivBusyCycle = regs_->cycle + c;
 	psxMULT(regs_, code);
 }
@@ -585,8 +601,12 @@ OP(psxMULTU) {
 
 OP(psxMULTU_stall) {
 	// approximate, but maybe good enough
+#ifdef DRC_DBG
+	u32 c = 11; // match Ari64 check_multdiv, as for signed MULT above
+#else
 	u32 lz = __builtin_clz(_rRs_ | 1);
 	u32 c = 7 + (2 - (lz / 11)) * 4;
+#endif
 	regs_->muldivBusyCycle = regs_->cycle + c;
 	psxMULTU(regs_, code);
 }
@@ -1130,6 +1150,11 @@ OP(psxREGIMM) {
 
 OP(psxHLE) {
 	u32 hleCode;
+#ifdef DRC_DBG
+	/* Trace mode charges instructions after their handlers, as in the
+	 * upstream comparison patch. HLE markers must remain zero-cost. */
+	u32 hle_cycles = regs_->subCycleStep >> 16;
+#endif
 	if (unlikely(!Config.HLE)) {
 		psxSWCx(regs_, code);
 		return;
@@ -1142,6 +1167,12 @@ OP(psxHLE) {
 	dloadFlush(regs_);
 	psxHLEt[hleCode]();
 	regs_->branchSeen = 1;
+#ifdef DRC_DBG
+	/* Match upstream patches/trace_drc_chk: native HLE dispatch charges
+	 * the handler, not an additional guest instruction for the HLE marker.
+	 * Scale to this build's instruction timing (4 cycles, not upstream's 2). */
+	regs_->cycle -= hle_cycles;
+#endif
 }
 
 static void (INT_ATTR *psxBSC[64])(psxRegisters *regs_, u32 code) = {
@@ -1189,18 +1220,29 @@ static void intReset() {
 	psxRegs.subCycle = 0;
 }
 
+#ifdef DRC_DBG
+extern void do_insn_trace(void);
+#endif
+
 static inline void execI_(
 	u32 (INT_ATTR *fetch)(struct psxRegisters *r, const uintptr_t *luts, u32 pc),
 	const uintptr_t *memRLUT, psxRegisters *regs)
 {
 	u32 pc = regs->pc;
 
+#ifdef DRC_DBG
+	do_insn_trace();
+#else
 	addCycle(regs);
+#endif
 	dloadStep(regs);
 
 	regs->pc += 4;
 	regs->code = fetch(regs, memRLUT, pc);
 	psxBSC[regs->code >> 26](regs, regs->code);
+#ifdef DRC_DBG
+	addCycle(regs);
+#endif
 }
 
 static inline void execIbp(
@@ -1209,7 +1251,11 @@ static inline void execIbp(
 {
 	u32 pc = regs->pc;
 
+#ifdef DRC_DBG
+	do_insn_trace();
+#else
 	addCycle(regs);
+#endif
 	dloadStep(regs);
 
 	if (execBreakCheck(regs, pc))
@@ -1218,6 +1264,9 @@ static inline void execIbp(
 	regs->pc += 4;
 	regs->code = fetch(regs, memRLUT, pc);
 	psxBSC[regs->code >> 26](regs, regs->code);
+#ifdef DRC_DBG
+	addCycle(regs);
+#endif
 }
 
 static void intExecute(psxRegisters *regs) {
@@ -1398,6 +1447,121 @@ void execI(psxRegisters *regs) {
 		execIbp(fetch, memRLUT, regs);
 	} while (regs->dloadReg[0] || regs->dloadReg[1]);
 }
+
+#ifdef PCSX_NDRC_RV32_SELFTEST
+/* Diagnostic-only access to real arithmetic handlers. Never use execI here:
+ * fetch/exception paths reference live global state. Whitelist pure register
+ * operations and intercept overflow BEFORE a handler can call psxException.
+ * Returns 0=completed, 1=would overflow, -1=unsupported. No pending load delay.
+ */
+static int ndrc_rv32_interpreter_step(psxRegisters *test, u32 code)
+{
+  u32 *gpr = test->GPR.r;
+  void (*handler)(psxRegisters *, u32) = NULL;
+  u32 op = code >> 26, f = code & 63;
+  s32 a = (s32)gpr[(code >> 21) & 31], b = (s32)gpr[(code >> 16) & 31], sum;
+  if (op == 8 && add_overflow(a, (s32)(s16)code, sum)) return 1;
+  if (!op && f == 0x20 && add_overflow(a, b, sum)) return 1;
+  if (!op && f == 0x22 && sub_overflow(a, b, sum)) return 1;
+  if (!op) switch (f) {
+    case 0: handler = psxSLL; break;
+    case 2: handler = psxSRL; break;
+    case 3: handler = psxSRA; break;
+    case 4: handler = psxSLLV; break;
+    case 6: handler = psxSRLV; break;
+    case 7: handler = psxSRAV; break;
+    case 0x20: handler = psxADD; break;
+    case 0x21: handler = psxADDU; break;
+    case 0x22: handler = psxSUB; break;
+    case 0x23: handler = psxSUBU; break;
+    case 0x24: handler = psxAND; break;
+    case 0x25: handler = psxOR; break;
+    case 0x26: handler = psxXOR; break;
+    case 0x27: handler = psxNOR; break;
+    case 0x2a: handler = psxSLT; break;
+    case 0x2b: handler = psxSLTU; break;
+  }
+  else switch (op) {
+    case 8: handler = psxADDI; break;
+    case 9: handler = psxADDIU; break;
+    case 10: handler = psxSLTI; break;
+    case 11: handler = psxSLTIU; break;
+    case 12: handler = psxANDI; break;
+    case 13: handler = psxORI; break;
+    case 14: handler = psxXORI; break;
+    case 15: handler = psxLUI; break;
+  }
+  if (!handler || gpr[0]) return -1;
+  handler(test, code);
+  return 0;
+}
+
+int ndrc_rv32_interpreter_alu(u32 gpr[32], u32 code)
+{
+  psxRegisters test = {0};
+  int result;
+  memcpy(test.GPR.r, gpr, 32 * sizeof(*gpr));
+  result = ndrc_rv32_interpreter_step(&test, code);
+  memcpy(gpr, test.GPR.r, 32 * sizeof(*gpr));
+  return result;
+}
+
+/* Isolated diagnostic RAM only. Validate every address before calling the real
+ * memory handlers: the single-entry LUT must never reach hardware or live RAM.
+ * Faults are normalized test statuses, not architectural exception delivery.
+ * No fetch, event processing, global CPU state, or live cache invalidation.
+ */
+int ndrc_rv32_interpreter_memory(u32 gpr[32], u32 ram[64],
+    const u32 *words, unsigned count, u32 *pc, u32 *cycles)
+{
+  psxRegisters test = {0};
+  uintptr_t lut[1] = {(uintptr_t)ram};
+  int status = 0;
+  if (!count || count > 64 || gpr[0]) return -1;
+  memcpy(test.GPR.r, gpr, 32 * sizeof(*gpr));
+  test.ptrs.memRLUT = lut;
+  test.ptrs.memWLUT = lut;
+  for (unsigned i = 0; i < count; i++) {
+    u32 code = words[i], op = code >> 26;
+    test.pc = i * 4;
+    test.cycle++;
+    if ((op >= 0x20 && op <= 0x26) ||
+        op == 0x28 || op == 0x29 || op == 0x2a || op == 0x2b ||
+        op == 0x2e) {
+      u32 address = test.GPR.r[(code >> 21) & 31] + (u32)(s32)(s16)code;
+      int load = op >= 0x20 && op <= 0x26;
+      unsigned align = (op == 0x21 || op == 0x25 || op == 0x29) ? 1 :
+        (op == 0x23 || op == 0x2b) ? 3 : 0;
+      unsigned max = align == 3 ? 252 : align == 1 ? 254 : 255;
+      if ((address & align) || address > max) status = load ? 3 : 4;
+      else switch (op) {
+        case 0x20: psxLB(&test, code); break;
+        case 0x21: psxLH(&test, code); break;
+        case 0x22: psxLWL(&test, code); break;
+        case 0x23: psxLW(&test, code); break;
+        case 0x24: psxLBU(&test, code); break;
+        case 0x25: psxLHU(&test, code); break;
+        case 0x26: psxLWR(&test, code); break;
+        case 0x28: psxSB(&test, code); break;
+        case 0x29: psxSH(&test, code); break;
+        case 0x2a: psxSWL(&test, code); break;
+        case 0x2b: psxSW(&test, code); break;
+        case 0x2e: psxSWR(&test, code); break;
+      }
+    }
+    else status = ndrc_rv32_interpreter_step(&test, code);
+    if (status) { dloadFlush(&test); break; }
+    dloadStep(&test);
+    test.pc += 4;
+  }
+  /* This stage deliberately rejects a load still pending at block exit. */
+  if (!status && (test.dloadReg[0] || test.dloadReg[1])) status = -1;
+  memcpy(gpr, test.GPR.r, 32 * sizeof(*gpr));
+  *pc = test.pc;
+  *cycles = test.cycle;
+  return status;
+}
+#endif
 
 R3000Acpu psxInt = {
 	intInit,

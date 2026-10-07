@@ -27,7 +27,7 @@
 #ifdef LOG_UNHANDLED
 #define log_unhandled printf
 #else
-#define log_unhandled(...)
+#define log_unhandled(...) ((void)0)
 #endif
 
 #ifdef __GNUC__

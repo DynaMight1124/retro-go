@@ -80,7 +80,7 @@ static inline void * psxm_ptr(u32 mem, int write)
 	u8 *ret;
 	if (psxm_(&ret, &psxRegs, mem, write))
 		return ret;
-    return NULL;
+	return INVALID_PTR;
 }
 
 #define PSXM(mem) psxm_ptr(mem, 0)

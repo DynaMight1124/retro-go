@@ -22,6 +22,7 @@
 */
 
 #include <stdio.h>
+#include <errno.h>
 #include "misc.h"
 #include "psxcounters.h"
 #include "psxevents.h"
@@ -60,12 +61,12 @@ static unsigned char buf[256];
 static unsigned char cardh1[4] = { 0xff, 0x08, 0x5a, 0x5d };
 static unsigned char cardh2[4] = { 0xff, 0x08, 0x5a, 0x5d };
 
-// Transfer Ready and the Buffer is Empty
-// static unsigned short StatReg = 0x002b;
-static unsigned short StatReg = TX_RDY | TX_EMPTY;
-static unsigned short ModeReg;
-static unsigned short CtrlReg;
-static unsigned short BaudReg;
+/* Keep SIO registers in the mapped hardware page. Byte reads of these
+ * registers use that page, while halfword/word reads use the accessors below. */
+#define StatReg psxHu16ref(0x1044)
+#define ModeReg psxHu16ref(0x1048)
+#define CtrlReg psxHu16ref(0x104a)
+#define BaudReg psxHu16ref(0x104e)
 
 static unsigned int bufcount;
 static unsigned int parp;
@@ -106,7 +107,9 @@ void sioWrite8(unsigned char value) {
 					set_event(PSXINT_SIO, SIO_CYCLES);
 				}
 			}
-			else padst = 0;
+			else {
+				padst = 0;
+			}
 			return;
 		case 2:
 			parp++;
@@ -294,11 +297,10 @@ unsigned char sioRead8() {
 			if (padst == 2) padst = 0;
 			if (mcdst == 1) {
 				mcdst = 2;
-				StatReg|= RX_RDY;
+				StatReg |= RX_RDY;
 			}
 		}
 	}
-
 #if 0
 	s32 framec = psxRegs.cycle - rcnts[3].cycleStart;
 	printf("%d:%03d sio read8  %04x %02x\n", frame_counter,
@@ -309,6 +311,14 @@ unsigned char sioRead8() {
 
 unsigned short sioReadStat16() {
 	return StatReg;
+}
+
+unsigned char sioReadStat8Low() {
+	return StatReg;
+}
+
+unsigned char sioReadStat8High() {
+	return StatReg >> 8;
 }
 
 unsigned short sioReadMode16() {
@@ -334,6 +344,38 @@ void sioInterrupt() {
 	}
 }
 
+void sioReset(void) {
+	StatReg = TX_RDY | TX_EMPTY;
+}
+
+static char card_error[192];
+
+const char *sioTakeCardError(void) {
+	static char message[sizeof(card_error)];
+	if (!card_error[0])
+		return NULL;
+	memcpy(message, card_error, sizeof(message));
+	card_error[0] = 0;
+	return message;
+}
+
+static void report_card_error(const char *path) {
+	/* Notify from the frontend, not from the middle of a serial transaction. */
+	if (!card_error[0])
+		snprintf(card_error, sizeof(card_error),
+			"Memory card I/O failed. Check storage before restarting.\n%s", path);
+	SysPrintf("Memory card I/O failed: %s\n", path);
+}
+
+static long card_offset(FILE *f) {
+	long length;
+	if (fseek(f, 0, SEEK_END) != 0 || (length = ftell(f)) < 0)
+		return -1;
+	if (length == MCD_SIZE || length == MCD_SIZE + 64 || length == MCD_SIZE + 3904)
+		return length - MCD_SIZE;
+	return -1;
+}
+
 void LoadMcd(int mcd, char *str) {
 	FILE *f;
 	char *data = NULL;
@@ -357,55 +399,26 @@ void LoadMcd(int mcd, char *str) {
 		return;
 #endif
 
-	if (str == NULL || strcmp(str, "none") == 0) {
-		McdDisable[mcd - 1] = 1;
+	McdDisable[mcd - 1] = 1;
+	if (!str || !*str || strcmp(str, "none") == 0)
 		return;
-	}
-	if (*str == 0)
-		return;
-
 	f = fopen(str, "rb");
-	if (f == NULL) {
-		SysPrintf(_("The memory card %s doesn't exist - creating it\n"), str);
+	if (!f && errno == ENOENT) {
 		CreateMcd(str);
 		f = fopen(str, "rb");
-		if (f != NULL) {
-			struct stat buf;
-
-			if (stat(str, &buf) != -1) {
-				if (buf.st_size == MCD_SIZE + 64)
-					fseek(f, 64, SEEK_SET);
-				else if(buf.st_size == MCD_SIZE + 3904)
-					fseek(f, 3904, SEEK_SET);
-			}
-			if (fread(data, 1, MCD_SIZE, f) != MCD_SIZE) {
-#ifndef NDEBUG
-				SysPrintf(_("File IO error in <%s:%s>.\n"), __FILE__, __func__);
-#endif
-				memset(data, 0x00, MCD_SIZE);
-			}
-			fclose(f);
-		}
-		else
-			SysMessage(_("Memory card %s failed to load!\n"), str);
 	}
-	else {
-		struct stat buf;
-		SysPrintf(_("Loading memory card %s\n"), str);
-		if (stat(str, &buf) != -1) {
-			if (buf.st_size == MCD_SIZE + 64)
-				fseek(f, 64, SEEK_SET);
-			else if(buf.st_size == MCD_SIZE + 3904)
-				fseek(f, 3904, SEEK_SET);
-		}
-		if (fread(data, 1, MCD_SIZE, f) != MCD_SIZE) {
-#ifndef NDEBUG
-			SysPrintf(_("File IO error in <%s:%s>.\n"), __FILE__, __func__);
-#endif
-			memset(data, 0x00, MCD_SIZE);
-		}
-		fclose(f);
+	int ok = 0;
+	if (f) {
+		long offset = card_offset(f);
+		ok = offset >= 0 && fseek(f, offset, SEEK_SET) == 0 &&
+			fread(data, 1, MCD_SIZE, f) == MCD_SIZE && !ferror(f);
+		if (fclose(f) != 0)
+			ok = 0;
 	}
+	if (ok)
+		McdDisable[mcd - 1] = 0;
+	else
+		report_card_error(str);
 }
 
 void LoadMcds(char *mcd1, char *mcd2) {
@@ -418,36 +431,28 @@ void SaveMcd(char *mcd, char *data, uint32_t adr, int size) {
 
 	if (mcd == NULL || *mcd == 0 || strcmp(mcd, "none") == 0)
 		return;
+	if ((data == Mcd1Data && McdDisable[0]) ||
+	    (data == Mcd2Data && McdDisable[1]))
+		return;
+	if (size < 0 || adr > MCD_SIZE || (uint32_t)size > MCD_SIZE - adr)
+		return;
 
 	f = fopen(mcd, "r+b");
 	if (f != NULL) {
-		struct stat buf;
-
-		if (stat(mcd, &buf) != -1) {
-			if (buf.st_size == MCD_SIZE + 64)
-				fseek(f, adr + 64, SEEK_SET);
-			else if (buf.st_size == MCD_SIZE + 3904)
-				fseek(f, adr + 3904, SEEK_SET);
-			else
-				fseek(f, adr, SEEK_SET);
-		} else
-			fseek(f, adr, SEEK_SET);
-
-		fwrite(data + adr, 1, size, f);
-		fclose(f);
+		long offset = card_offset(f);
+		int ok = offset >= 0 && fseek(f, offset + adr, SEEK_SET) == 0 &&
+			fwrite(data + adr, 1, (size_t)size, f) == (size_t)size;
+		if (fflush(f) != 0 || ferror(f))
+			ok = 0;
+		if (fclose(f) != 0)
+			ok = 0;
+		if (!ok)
+			report_card_error(mcd);
 		return;
 	}
 
-#if 0
-	// try to create it again if we can't open it
-	f = fopen(mcd, "wb");
-	if (f != NULL) {
-		fwrite(data, 1, MCD_SIZE, f);
-		fclose(f);
-	}
-#endif
-
-	ConvertMcd(mcd, data);
+	/* Never recreate an existing card after an access/media error. */
+	report_card_error(mcd);
 }
 
 void CreateMcd(char *mcd) {
@@ -458,7 +463,7 @@ void CreateMcd(char *mcd) {
 
 	f = fopen(mcd, "wb");
 	if (f == NULL) {
-		SysPrintf("CreateMcd: couldn't open %s\n", mcd);
+		report_card_error(mcd);
 		return;
 	}
 
@@ -605,7 +610,13 @@ void CreateMcd(char *mcd) {
 	while ((s--) >= 0)
 		fputc(0, f);
 
-	fclose(f);
+	int ok = !ferror(f);
+	if (fflush(f) != 0)
+		ok = 0;
+	if (fclose(f) != 0)
+		ok = 0;
+	if (!ok)
+		report_card_error(mcd);
 }
 
 void ConvertMcd(char *mcd, char *data) {
@@ -775,6 +786,11 @@ void GetMcdBlockInfo(int mcd, int block, McdBlock *Info) {
 }
 
 int sioFreeze(void *f, int Mode) {
+	if (Mode == PCSX_FREEZE_SIZE)
+		return sizeof(buf) + sizeof(StatReg) + sizeof(ModeReg) +
+			sizeof(CtrlReg) + sizeof(BaudReg) + sizeof(bufcount) +
+			sizeof(parp) + sizeof(mcdst) + sizeof(rdwr) +
+			sizeof(adrH) + sizeof(adrL) + sizeof(padst);
 	gzfreeze(buf, sizeof(buf));
 	gzfreeze(&StatReg, sizeof(StatReg));
 	gzfreeze(&ModeReg, sizeof(ModeReg));

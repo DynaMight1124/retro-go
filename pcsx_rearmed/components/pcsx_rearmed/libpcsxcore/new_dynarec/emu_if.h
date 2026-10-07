@@ -39,6 +39,17 @@ extern const uint64_t gte_reg_writes[64];
 extern void *mem_rtab;
 extern void *mem_wtab;
 
+#if defined(__riscv) && __riscv_xlen == 32
+u32 jump_handler_read8(u32 addr, u32 *table, u32 cycles);
+u32 jump_handler_read16(u32 addr, u32 *table, u32 cycles);
+u32 jump_handler_read32(u32 addr, u32 *table, u32 cycles);
+u32 jump_handler_write8(u32 addr, u32 data, u32 cycles, u32 *table);
+u32 jump_handler_write16(u32 addr, u32 data, u32 cycles, u32 *table);
+u32 jump_handler_write32(u32 addr, u32 data, u32 cycles, u32 *table);
+u32 jump_handler_write_h(u32 addr, u32 data, u32 cycles, void *handler);
+u32 jump_handle_swl(u32 addr, u32 data, u32 cycles);
+u32 jump_handle_swr(u32 addr, u32 data, u32 cycles);
+#else
 void jump_handler_read8(u32 addr, u32 *table, u32 cycles);
 void jump_handler_read16(u32 addr, u32 *table, u32 cycles);
 void jump_handler_read32(u32 addr, u32 *table, u32 cycles);
@@ -48,6 +59,7 @@ void jump_handler_write32(u32 addr, u32 data, u32 cycles, u32 *table);
 void jump_handler_write_h(u32 addr, u32 data, u32 cycles, void *handler);
 void jump_handle_swl(u32 addr, u32 data, u32 cycles);
 void jump_handle_swr(u32 addr, u32 data, u32 cycles);
+#endif
 u32  rcnt0_read_count_m0(u32 addr, u32, u32 cycles);
 u32  rcnt0_read_count_m1(u32 addr, u32, u32 cycles);
 u32  rcnt1_read_count_m0(u32 addr, u32, u32 cycles);
@@ -75,4 +87,3 @@ void pcsx_mtc0_ds(struct psxRegisters *regs, u32 reg, u32 val);
 
 /* misc */
 extern void SysPrintf(const char *fmt, ...);
-

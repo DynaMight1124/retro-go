@@ -593,6 +593,10 @@ void psxRcntInit()
 
 s32 psxRcntFreeze( void *f, s32 Mode )
 {
+    if (Mode == PCSX_FREEZE_SIZE)
+        return sizeof(Rcnt) * CounterQuantity + sizeof(hSyncCount) +
+            sizeof(u32) + sizeof(psxRegs.psxNextCounter) +
+            sizeof(psxRegs.psxNextsCounter);
     u32 spuSyncCount = 0;
     u32 count;
     s32 i;

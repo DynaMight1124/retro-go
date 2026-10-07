@@ -707,6 +707,10 @@ void mdec1Interrupt() {
 }
 
 int mdecFreeze(void *f, int Mode) {
+	if (Mode == PCSX_FREEZE_SIZE)
+		return sizeof(mdec.reg0) + sizeof(mdec.reg1) + 3 * sizeof(u32) +
+			sizeof(mdec.block_buffer) + sizeof(mdec.pending_dma1) +
+			sizeof(iq_y) + sizeof(iq_uv);
 	u8 *base = (u8 *)psxRegs.ptrs.psxM;
 	u32 v;
 
