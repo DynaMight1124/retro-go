@@ -52,6 +52,10 @@ int			r_clipflags;
 
 byte		*r_warpbuffer;
 
+// Reused by the single renderer owner. Keep large scratch independent of the
+// task stack; quake.lf places engine BSS in PSRAM on the Retro-Go build.
+static byte warpbuffer[WARP_WIDTH * WARP_HEIGHT];
+
 byte		*r_stack_start;
 
 #if defined(ESP32_QUAKE) && !defined(CONFIG_IDF_TARGET_ESP32)
@@ -958,8 +962,6 @@ r_refdef must be set before the first call
 */
 void R_RenderView_ (void)
 {
-	byte	warpbuffer[WARP_WIDTH * WARP_HEIGHT];
-
 	r_warpbuffer = warpbuffer;
 
 	if (r_timegraph.value || r_speeds.value || r_dspeeds.value)

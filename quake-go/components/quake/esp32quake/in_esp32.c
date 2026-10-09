@@ -1,5 +1,6 @@
 #include "quakedef.h"
 #include "rg_system.h"
+#include "music_esp32.h"
 
 static uint32_t gamepad_state = 0;
 static uint32_t prev_gamepad = 0;
@@ -64,10 +65,12 @@ static void open_retrogo_menu(bool options)
     prev_gamepad = 0;
 
     int64_t start = rg_system_timer();
+    Music_MenuPause(true);
     if (options)
         rg_gui_options_menu();
     else
         rg_gui_game_menu();
+    Music_MenuPause(false);
     Sys_ExcludePauseTime((uint32_t)(rg_system_timer() - start));
 
     // A button used to close the dialog must not leak into gameplay. Polling

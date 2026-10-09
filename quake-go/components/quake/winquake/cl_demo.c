@@ -304,10 +304,12 @@ void CL_PlayDemo_f (void)
 	cls.state = ca_connected;
 	cls.forcetrack = 0;
 
-	while ((c = quake_fgetc(cls.demofile)) != '\n')
+	// Hipnotic's hipdemo1 header starts with a space before track 2.
+	// Ignore non-digits instead of incorporating whitespace into the number.
+	while ((c = quake_fgetc(cls.demofile)) != '\n' && c != EOF)
 		if (c == '-')
 			neg = true;
-		else
+		else if (c >= '0' && c <= '9')
 			cls.forcetrack = cls.forcetrack * 10 + (c - '0');
 
 	if (neg)

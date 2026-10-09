@@ -25,6 +25,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include "freertos/semphr.h"
 #include "freertos/task.h"
 #include "rg_system.h"
+#include "music_esp32.h"
 
 // Forward declarations from common.c
 byte *COM_LoadFile(char *path, int usehunk);
@@ -51,7 +52,7 @@ static SemaphoreHandle_t sound_mutex = NULL;
 static volatile TaskHandle_t audio_task_handle = NULL;
 
 // sound.h visible stuff
-cvar_t bgmvolume = {"bgmvolume", "1", true};
+cvar_t bgmvolume = {"bgmvolume", "0.7", true};
 cvar_t volume = {"volume", "0.7", true};
 cvar_t nosound = {"nosound", "0"};
 cvar_t ambient_level = {"ambient_level", "0.3"};
@@ -71,7 +72,7 @@ int paintedtime; // MUST be int
 static int64_t hardware_sample_offset = 0;
 
 // Keep mixer latency and the time spent holding sound_mutex bounded. At the
-// 11,025 Hz output rate, 256 frames represent about 23 ms of audio.
+// 22,050 Hz output rate, 256 frames represent about 12 ms of audio.
 #define AUDIO_BUFFER_SAMPLES 256
 
 // Spatialization can double an 8-bit channel volume. Even with all 32 channels
@@ -124,7 +125,7 @@ static bool LoadSound(sfx_t *s)
     s->cache.sampleCount = info.samples;
 
     int outputRate = rg_audio_get_sample_rate();
-    if (outputRate <= 0) outputRate = 11025; // default
+    if (outputRate <= 0) outputRate = 22050; // default
 
     s->cache.stepFixedPoint = (uint32_t)((float)info.rate * ESP32_SOUND_STEP / outputRate);
     s->cache.effectiveLength = (s->cache.sampleCount * (int64_t)ESP32_SOUND_STEP) / s->cache.stepFixedPoint;
@@ -320,6 +321,10 @@ static void audio_task(void *arg)
 
         paintedtime += AUDIO_BUFFER_SAMPLES;
         xSemaphoreGive(sound_mutex);
+
+        // Music has its own short buffer lock; never hold the effects lock
+        // across music consumption, and never perform SD reads in this task.
+        Music_Mix(output_buffer, AUDIO_BUFFER_SAMPLES);
 
         // The Retro-Go audio backend blocks as needed to pace the producer.
         rg_audio_submit(output_buffer, AUDIO_BUFFER_SAMPLES);

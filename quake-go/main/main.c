@@ -1,5 +1,6 @@
 #include <string.h>
 #include <strings.h>
+#include <stdio.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "esp_attr.h"
@@ -7,17 +8,18 @@
 
 #include "rg_system.h"
 #include "quake_main.h"
+#include "esp32quake/music_esp32.h"
 
 static const char TAG[] = "main";
 
+#define QUAKE_AUDIO_RATE 22050
+
 #if defined(CONFIG_IDF_TARGET_ESP32)
 #define ESP32_QUAKE_TASK_STACK_SIZE 65536
-// The original ESP32 DAC path only supports rates from 22.05 kHz upward.
-#define QUAKE_AUDIO_RATE 22050
 static DRAM_ATTR uint8_t quake_task_stack[ESP32_QUAKE_TASK_STACK_SIZE];
 #else
-#define ESP32_QUAKE_TASK_STACK_SIZE 300000
-#define QUAKE_AUDIO_RATE 11025
+// 160 KiB task retains about 39 KiB / 33 KiB of observed headroom.
+#define ESP32_QUAKE_TASK_STACK_SIZE (160 * 1024)
 static EXT_RAM_BSS_ATTR uint8_t quake_task_stack[ESP32_QUAKE_TASK_STACK_SIZE];
 #endif
 static DRAM_ATTR StaticTask_t quake_task_internal;
@@ -27,6 +29,49 @@ static volatile TaskHandle_t quake_task;
 #define QUAKE_TASK_CORE 0
 
 static rg_app_t *app;
+
+#define SETTING_MUSIC "Music"
+
+static void load_music_setting(void)
+{
+    Music_SetEnabled(rg_settings_get_boolean(NS_APP, SETTING_MUSIC, true));
+}
+
+static rg_gui_event_t music_update_cb(rg_gui_option_t *option, rg_gui_event_t event)
+{
+    bool enabled = Music_IsEnabled();
+    bool changed = event == RG_DIALOG_PREV || event == RG_DIALOG_NEXT || event == RG_DIALOG_ENTER;
+    if (changed) {
+        enabled = !enabled;
+        Music_SetEnabled(enabled);
+        rg_settings_set_boolean(NS_APP, SETTING_MUSIC, enabled);
+    }
+    sprintf(option->value, "%s", enabled ? _("On") : _("Off"));
+    return changed ? RG_DIALOG_REDRAW : RG_DIALOG_VOID;
+}
+
+static void options_handler(rg_gui_option_t *dest)
+{
+    *dest++ = (rg_gui_option_t){0, _("Music"), "-", RG_DIALOG_FLAG_NORMAL, music_update_cb};
+    *dest++ = (rg_gui_option_t)RG_DIALOG_END;
+}
+
+void __real_rg_system_exit(void);
+
+// The shared menu calls rg_system_exit before RG_EVENT_SHUTDOWN. Launcher
+// selection maps flash, which cannot run on Quake's S3/P4 PSRAM stack.
+// Finish on the engine owner, then let app_main perform the platform exit
+// on its internal stack. Never return into the engine after freeing it.
+void __wrap_rg_system_exit(void)
+{
+    if (quake_task && xTaskGetCurrentTaskHandle() == quake_task) {
+        quake_shutdown();
+        quake_task = NULL;
+        vTaskDelete(NULL);
+        return;
+    }
+    __real_rg_system_exit();
+}
 
 static const char *selected_pak_path(void)
 {
@@ -223,10 +268,12 @@ void app_main(void)
             .reset = native_reset_handler,
             .screenshot = screenshot_handler,
             .event = event_handler,
+            .options = options_handler,
         },
     };
 
     app = rg_system_init(&config);
+    load_music_setting();
     app->frameskip = -1;
 
     const char *pak_path = selected_pak_path();

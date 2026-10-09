@@ -290,7 +290,7 @@ model_t *Mod_LoadModel (model_t *mod, qboolean crash)
 //
 // allocate a new model
 //
-	COM_FileBase (mod->name, loadname);
+	COM_FileBase (mod->name, loadname, sizeof(loadname));
 	
 	loadmodel = mod;
 
@@ -542,8 +542,9 @@ void Mod_LoadEntities (lump_t *l)
 		loadmodel->entities = NULL;
 		return;
 	}
-	loadmodel->entities = Hunk_AllocName ( l->filelen, loadname);	
+	loadmodel->entities = Hunk_AllocName ( l->filelen + 1, loadname);
 	memcpy (loadmodel->entities, mod_base + l->fileofs, l->filelen);
+	loadmodel->entities[l->filelen] = 0;
 }
 
 
@@ -1241,7 +1242,8 @@ void * Mod_LoadAliasFrame (void * pin, int *pframeindex, int numv,
 
 	pdaliasframe = (daliasframe_t *)pin;
 
-	strcpy (name, pdaliasframe->name);
+	memcpy(name, pdaliasframe->name, sizeof(pdaliasframe->name));
+	name[sizeof(pdaliasframe->name) - 1] = 0;
 
 	for (i=0 ; i<3 ; i++)
 	{
