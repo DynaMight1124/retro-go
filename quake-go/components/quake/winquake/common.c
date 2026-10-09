@@ -699,7 +699,15 @@ float MSG_ReadFloat (void)
         float   f;
         int     l;
     } dat;
-    
+
+    // Match the other message readers before touching a truncated payload.
+    if (msg_readcount < 0 || msg_readcount > net_message.cursize ||
+        net_message.cursize - msg_readcount < 4)
+    {
+        msg_badread = true;
+        return 0;
+    }
+
     dat.b[0] =      net_message.data[msg_readcount];
     dat.b[1] =      net_message.data[msg_readcount+1];
     dat.b[2] =      net_message.data[msg_readcount+2];
@@ -870,26 +878,34 @@ char *COM_FileExtension (char *in)
 COM_FileBase
 ============
 */
-void COM_FileBase (char *in, char *out)
+void COM_FileBase (const char *in, char *out, size_t outsize)
 {
-    char *s, *s2;
-    
-    s = in + strlen(in) - 1;
-    
-    while (s != in && *s != '.')
-        s--;
-    
-    for (s2 = s ; *s2 && *s2 != '/' ; s2--)
-    ;
-    
-    if (s-s2 < 2)
-        strcpy (out,"?model?");
-    else
+    const char *s, *base = in, *dot = NULL;
+    size_t len;
+
+    if (!outsize)
+        return;
+    // QuakeGeneric's bounded API, including extensionless/empty paths.
+    for (s = in; *s; s++)
     {
-        s--;
-        strncpy (out,s2+1, s-s2);
-        out[s-s2] = 0;
+        if (*s == '/' || *s == '\\')
+        {
+            base = s + 1;
+            dot = NULL;
+        }
+        else if (*s == '.')
+            dot = s;
     }
+    len = (size_t)((dot ? dot : s) - base);
+    if (len < 2)
+    {
+        base = "?model?";
+        len = strlen(base);
+    }
+    if (len >= outsize)
+        len = outsize - 1;
+    memcpy(out, base, len);
+    out[len] = 0;
 }
 
 
@@ -960,14 +976,15 @@ skipwhite:
         data++;
         while (1)
         {
-            c = *data++;
+            c = (unsigned char)*data;
             if (c=='\"' || !c)
             {
                 com_token[len] = 0;
-                return data;
+                return c ? data + 1 : data;
             }
-            com_token[len] = c;
-            len++;
+            data++;
+            if (len < sizeof(com_token) - 1)
+                com_token[len++] = c;
         }
     }
 
@@ -983,9 +1000,9 @@ skipwhite:
 // parse a regular word
     do
     {
-        com_token[len] = c;
+        if (len < sizeof(com_token) - 1)
+            com_token[len++] = c;
         data++;
-        len++;
         c = *data;
     if (c=='{' || c=='}'|| c==')'|| c=='(' || c=='\'' || c==':')
             break;
@@ -1714,7 +1731,7 @@ byte *COM_LoadFile (char *path, int usehunk)
         return NULL;
     
 // extract the filename base name for hunk tag
-    COM_FileBase (path, base);
+    COM_FileBase (path, base, sizeof(base));
     
     if (usehunk == 1)
         buf = Hunk_AllocName (len+1, base);

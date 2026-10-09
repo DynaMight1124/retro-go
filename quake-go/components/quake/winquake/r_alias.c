@@ -42,6 +42,13 @@ float				r_shadelight;
 aliashdr_t			*paliashdr;
 finalvert_t			*pfinalverts;
 auxvert_t			*pauxverts;
+
+// Models are drawn serially by the renderer owner. Reuse these buffers rather
+// than reserving them on each call's stack. The application linker policy
+// places engine BSS in PSRAM; retain the original capacity and alignment slack.
+static finalvert_t finalverts[MAXALIASVERTS +
+		((CACHE_SIZE - 1) / sizeof(finalvert_t)) + 1];
+static auxvert_t auxverts[MAXALIASVERTS];
 static float		ziscale;
 static model_t		*pmodel;
 
@@ -702,10 +709,6 @@ R_AliasDrawModel
 */
 void R_AliasDrawModel (alight_t *plighting)
 {
-	finalvert_t		finalverts[MAXALIASVERTS +
-						((CACHE_SIZE - 1) / sizeof(finalvert_t)) + 1];
-	auxvert_t		auxverts[MAXALIASVERTS];
-
 	r_amodels_drawn++;
 
 // cache align

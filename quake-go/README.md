@@ -34,6 +34,23 @@ Quake configuration and native save games are stored under Retro-Go's config
 and save roots. Use Quake's in-game menus for native saving, loading, and a new
 game. Retro-Go's screenshot command is supported.
 
+## Music
+
+Optional music uses 22,050 Hz stereo, signed 16-bit PCM WAV files named
+`track02.wav`, `track03.wav`, etc. Put them in the active game's music folder:
+
+- `roms/quake/id1/music/` for the base game
+- `roms/quake/hipnotic/music/` for Scourge of Armagon
+- `roms/quake/rogue/music/` for Dissolution of Eternity
+
+Mods use their own `music/` folder beside their PAK files. Music is
+optional and does not prevent playing. Retro-Go's emulator options include a
+saved **Music On/Off** setting, defaulting to On. Quake's sound and music volume
+sliders adjust the mix; Retro-Go controls the combined output volume.
+
+See [tools/README.md](tools/README.md) for MP3/OGG conversion with Python or
+FFmpeg alone, naming, and installation instructions. You can Google search for the following files to find the OGG versions: `quake_music.zip, rogue_music.zip, hipnotic_music.zip` or follow this link: https://www.quaddicted.com/files/music/
+
 ## Controls
 
 - D-pad: move and turn; navigate native menus

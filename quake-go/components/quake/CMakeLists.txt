@@ -60,11 +60,13 @@ set(WINQUAKE_SRCS
 	winquake/sv_phys.c
 	winquake/sv_move.c
 	winquake/sv_user.c
-	winquake/cd_null.c
 	winquake/net_none.c
 	winquake/snd_mem.c)
 
 set(ESP32QUAKE_SRCS
+	esp32quake/cd_wav.c
+	esp32quake/music_pcm.c
+	esp32quake/music_esp32.c
 	esp32quake/in_esp32.c
 	esp32quake/sys_esp32.c
 	esp32quake/vid_esp32.c
@@ -98,6 +100,6 @@ endforeach()
 set_source_files_properties(${QUAKE_RENDER_SRCS} PROPERTIES
     COMPILE_OPTIONS "-O2;-fno-strict-aliasing;-fwrapv"
 )
-set_source_files_properties(esp32quake/snd_esp32.c PROPERTIES
+set_source_files_properties(esp32quake/snd_esp32.c esp32quake/music_pcm.c esp32quake/music_esp32.c PROPERTIES
     COMPILE_OPTIONS "-O2;-fno-strict-aliasing;-fwrapv"
 )
