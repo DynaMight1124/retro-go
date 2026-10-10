@@ -1,0 +1,7 @@
+menu "Quake II Retro-Go"
+config QUAKE2_ESP32P4_DEBUG
+    bool "Engine memory diagnostics"
+    default n
+    help
+      Log engine arena, hunk and heap statistics for port validation.
+endmenu
