@@ -55,6 +55,14 @@ xml/*
 
 # Torch
 include/assets/*
+# Retro-Go needs these ROM-independent declarations and course tables in a
+# fresh checkout. Keep them in Git; the generators read tracked YAML only.
+!include/assets/common_data.h
+!include/assets/startup_logo.h
+!include/assets/ceremony_data.h
+!include/assets/data_800E8700.h
+!include/assets/data_800E45C0.h
+!include/assets/course_metadata/
 tools/torch/*
 
 # no context header for now, until it's greenlit for the repo
