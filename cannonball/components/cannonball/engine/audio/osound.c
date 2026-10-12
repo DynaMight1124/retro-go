@@ -1016,7 +1016,7 @@ void OSound_engine_process_chan(uint8_t* chan, uint8_t* pcm)
             return;
         }
     }
-    if (engine_channel & BIT_0) OSound_init_fm_chip(); // Was OSound_unk78c7, changed to match original intent
+    if (engine_channel & BIT_0) OSound_unk78c7(chan, pcm);
     if (!chan[ch_engines_VOL0]) { OSound_engine_mute_channel(chan, pcm, 1); return; }
     if (chan[ch_engines_VOL0] == chan[ch_engines_VOL1]) chan[ch_engines_FLAGS] |= BIT_1; 
     else { chan[ch_engines_FLAGS] &= ~BIT_1; chan[ch_engines_VOL1] = chan[ch_engines_VOL0]; }
