@@ -22,9 +22,7 @@
 
 #include "libretro.h"
 
-#define FEAT_AUTODETECT  -1
-#define FEAT_DISABLE      0
-#define FEAT_ENABLE       1
+#include "gpsp_features.h"
 
 #define DMA_CHAN_CNT   4
 
@@ -204,16 +202,26 @@ typedef enum
 #define FLASH_DEVICE_AMTEL_64KB      0x3D
 #define FLASH_DEVICE_SST_64K         0xD4
 #define FLASH_DEVICE_PANASONIC_64KB  0x1B
+#if defined(RISCV_ARCH) /* GBSP_BACKEND_VARIANT */
 #define FLASH_DEVICE_MACRONIX_128KB  0x09
 #define FLASH_DEVICE_SANYO_128KB     0x13
 
+#else /* GBSP_BACKEND_VARIANT */
+#define FLASH_DEVICE_MACRONIX_128KB  0x09
+
+#endif /* GBSP_BACKEND_VARIANT */
 
 #define FLASH_MANUFACTURER_MACRONIX  0xC2
 #define FLASH_MANUFACTURER_AMTEL     0x1F
 #define FLASH_MANUFACTURER_PANASONIC 0x32
+#if defined(RISCV_ARCH) /* GBSP_BACKEND_VARIANT */
 #define FLASH_MANUFACTURER_SST       0xBF
 #define FLASH_MANUFACTURER_SANYO     0x62
 
+#else /* GBSP_BACKEND_VARIANT */
+#define FLASH_MANUFACTURER_SST       0xBF
+
+#endif /* GBSP_BACKEND_VARIANT */
 u32 function_cc read_memory8(u32 address);
 u32 function_cc read_memory8s(u32 address);
 u32 function_cc read_memory16(u32 address);
@@ -239,11 +247,25 @@ extern const u32 def_seq_cycles[16][2];
 extern u8 ws_cyc_seq[16][2];
 extern u8 ws_cyc_nseq[16][2];
 
+#if defined(RISCV_ARCH) /* GBSP_BACKEND_VARIANT */
 extern u32 gamepak_size;
 extern bool gamepak_mini_materialized;
-extern bool gamepak_header_nonstandard;
 extern char gamepak_code[5];
 extern char gamepak_filename[512];
+#elif defined(XTENSA_ARCH) /* GBSP_BACKEND_VARIANT */
+extern u32 gamepak_size;
+extern u32 gamepak_page_loads;   /* 32 KB pages read from SD (diagnostics) */
+extern char gamepak_title[13];
+extern char gamepak_code[5];
+extern char gamepak_maker[3];
+extern char gamepak_filename[512];
+#else /* GBSP_BACKEND_VARIANT */
+extern u32 gamepak_size;
+extern char gamepak_title[13];
+extern char gamepak_code[5];
+extern char gamepak_maker[3];
+extern char gamepak_filename[512];
+#endif /* GBSP_BACKEND_VARIANT */
 
 cpu_alert_type dma_transfer(unsigned dma_chan, int *cycles);
 u8 *memory_region(u32 address, u32 *memory_limit);
@@ -255,26 +277,54 @@ void init_gamepak_buffer(void);
 bool gamepak_must_swap(void);
 void memory_term(void);
 u8 *load_gamepak_page(u32 physical_index);
-
+#include "gpsp_state.h"
 extern u32 oam_update;
 extern u32 gbc_sound_wave_update;
 extern dma_transfer_type dma[DMA_CHAN_CNT];
+#if defined(RISCV_ARCH) /* GBSP_BACKEND_VARIANT */
 
 extern u8 open_gba_bios_rom[1024*16];
 extern u16 palette_ram[512];
+#else /* GBSP_BACKEND_VARIANT */
+
+// If we're not using the dynamic recompiler we don't need to detect SMC (Self Modifying Code)
+// So we can save 288KB of memory by effectively disabling the SMC check.
+#ifdef HAVE_DYNAREC
+#define SMC_DETECTION 1
+#else /* RETRO_GO */
+#define SMC_DETECTION 0
+#endif
+
+extern u16 palette_ram[512];
+#endif /* GBSP_BACKEND_VARIANT */
 extern u16 oam_ram[512];
 extern u16 palette_ram_converted[512];
 extern u16 io_registers[512];
+#if defined(RISCV_ARCH) /* GBSP_BACKEND_VARIANT */
 extern u8 vram[1024 * 96];
 extern u8 bios_rom[1024 * 16];
 // Double buffer used for SMC detection
 extern u8 ewram[1024 * 256 * 2];
 extern u8 iwram[1024 * 32 * 2];
 
+#else /* GBSP_BACKEND_VARIANT */
+extern u8 vram[1024 * 96];
+extern const u8 *bios_rom; // [1024 * 16];
+// Double buffer used for SMC detection
+extern u8 ewram[(1024 * 256) << SMC_DETECTION];
+extern u8 iwram[(1024 * 32) << SMC_DETECTION];
+
+#endif /* GBSP_BACKEND_VARIANT */
 extern u8 *memory_map_read[8 * 1024];
+#if defined(XTENSA_ARCH) /* GBSP_BACKEND_VARIANT */
+
+extern u32 reg[80];
+
+#else /* GBSP_BACKEND_VARIANT */
 
 extern u32 reg[64];
 
+#endif /* GBSP_BACKEND_VARIANT */
 #define BACKUP_SRAM       0
 #define BACKUP_FLASH      1
 #define BACKUP_EEPROM     2
@@ -329,5 +379,63 @@ static inline void clear_gamepak_stickybits(void)
 bool memory_check_savestate(const u8*src);
 bool memory_read_savestate(const u8*src);
 unsigned memory_write_savestate(u8 *dst);
+#if defined(RISCV_ARCH) /* GBSP_BACKEND_VARIANT */
 
+#elif defined(XTENSA_ARCH) /* GBSP_BACKEND_VARIANT */
+
+
+#ifdef RETRO_GO
+// We wrap certain globals to move them under a dynamic allocation, whilst still preserving the functionality
+// of any code treating them as fixed arrays. This results in very minimal code changes to the rest of gbSP.
+typedef struct
+{
+  // TODO: Evaluate what is best left in internal memory for performance reasons (for the few that could fit)
+  u8 vram[1024 * 96];
+  u8 ewram[(1024 * 256) << SMC_DETECTION];
+  // iwram: a static array in internal RAM (cpu.cpp) -- the game's stack and
+  // its fastest code live there, PSRAM made every push/pop a cache risk
+  // u8 *memory_map_read[8 * 1024];
+  u8 gamepak_backup[1024 * 128];
+  // There's also stuff from video.cpp to consider:
+  // u8 obj_priority_list[5][160][128];
+  // u8 obj_priority_count[5][160];
+  // u8 obj_alpha_count[160];
+} gbsp_memory_t;
+
+extern gbsp_memory_t *gbsp_memory;
+#define vram gbsp_memory->vram
+#define ewram gbsp_memory->ewram
+// #define memory_map_read gbsp_memory->memory_map_read
+#define gamepak_backup gbsp_memory->gamepak_backup
+#endif
+
+#else /* GBSP_BACKEND_VARIANT */
+
+
+#ifdef RETRO_GO
+// We wrap certain globals to move them under a dynamic allocation, whilst still preserving the functionality
+// of any code treating them as fixed arrays. This results in very minimal code changes to the rest of gbSP.
+typedef struct
+{
+  // TODO: Evaluate what is best left in internal memory for performance reasons (for the few that could fit)
+  u8 vram[1024 * 96];
+  u8 ewram[(1024 * 256) << SMC_DETECTION];
+  u8 iwram[(1024 * 32) << SMC_DETECTION];
+  // u8 *memory_map_read[8 * 1024];
+  u8 gamepak_backup[1024 * 128];
+  // There's also stuff from video.cpp to consider:
+  // u8 obj_priority_list[5][160][128];
+  // u8 obj_priority_count[5][160];
+  // u8 obj_alpha_count[160];
+} gbsp_memory_t;
+
+extern gbsp_memory_t *gbsp_memory;
+#define vram gbsp_memory->vram
+#define ewram gbsp_memory->ewram
+#define iwram gbsp_memory->iwram
+// #define memory_map_read gbsp_memory->memory_map_read
+#define gamepak_backup gbsp_memory->gamepak_backup
+#endif
+
+#endif /* GBSP_BACKEND_VARIANT */
 #endif

@@ -19,11 +19,14 @@
 
 
 #include "common.h"
+#include "gpsp_audio_output.h"
 
 direct_sound_struct direct_sound_channel[2];
 gbc_sound_struct gbc_sound_channel[4];
 
 const u32 sound_frequency = GBA_SOUND_FREQUENCY;
+bool sound_master_enable = true;
+#if defined(RISCV_ARCH) /* GBSP_BACKEND_VARIANT */
 
 u32 sound_on;
 #if defined(CONFIG_IDF_TARGET_ESP32P4) || defined(CONFIG_IDF_TARGET_ESP32S31)
@@ -33,6 +36,13 @@ EXT_RAM_BSS_ATTR static s16 sound_buffer[BUFFER_SIZE];
 static s16 sound_buffer[BUFFER_SIZE];
 #endif
 static u32 sound_buffer_base;
+#else /* GBSP_BACKEND_VARIANT */
+
+
+u32 sound_on;
+static s16 sound_buffer[BUFFER_SIZE];
+static u32 sound_buffer_base;
+#endif /* GBSP_BACKEND_VARIANT */
 
 static fixed16_16 gbc_sound_tick_step;
 
@@ -55,9 +65,15 @@ void sound_timer_queue32(u32 channel, u32 value)
   ds->fifo_top &= 31;
 }
 
+#if defined(XTENSA_ARCH) /* GBSP_BACKEND_VARIANT */
+
+XT_HOT unsigned sound_timer(fixed8_24 frequency_step, u32 channel)
+{
+#else /* GBSP_BACKEND_VARIANT */
 
 unsigned sound_timer(fixed8_24 frequency_step, u32 channel)
 {
+#endif /* GBSP_BACKEND_VARIANT */
   int ret = 0;
   u32 sample_status = DIRECT_SOUND_INACTIVE;
   direct_sound_struct *ds = &direct_sound_channel[channel];
@@ -69,9 +85,15 @@ unsigned sound_timer(fixed8_24 frequency_step, u32 channel)
   current_sample = ds->fifo[ds->fifo_base] * 16;
   ds->fifo_base = (ds->fifo_base + 1) % 32;
   next_sample = ds->fifo[ds->fifo_base] * 16;
+#if defined(RISCV_ARCH) /* GBSP_BACKEND_VARIANT */
 
   if(sound_on == 1)
   {
+#else /* GBSP_BACKEND_VARIANT */
+
+  if(sound_on == 1 && sound_master_enable)
+  {
+#endif /* GBSP_BACKEND_VARIANT */
     current_sample >>= ds->volume_halve;
     next_sample >>= ds->volume_halve;
 
@@ -428,9 +450,15 @@ void render_gbc_sound()
     buffer_ticks += 1;
     gbc_sound_partial_ticks &= 0xFFFF;
   }
+#if defined(RISCV_ARCH) /* GBSP_BACKEND_VARIANT */
 
   if(sound_on == 1)
   {
+#else /* GBSP_BACKEND_VARIANT */
+
+  if(sound_on == 1 && sound_master_enable)
+  {
+#endif /* GBSP_BACKEND_VARIANT */
     s8 *wave_bank;
     gs = gbc_sound_channel + 0;
     if(gs->active_flag)
@@ -617,7 +645,7 @@ bool sound_check_savestate(const u8 *src)
   for (i = 0; i < sizeof(gvars)/sizeof(gvars[0]); i++)
     if (!bson_contains_key(snddoc, gvars[i], BSON_TYPE_INT32))
       return false;
-  if (!bson_contains_key(snddoc, "wav-samples", BSON_TYPE_BIN))
+  if (!bson_read_bytes(snddoc, "wav-samples", NULL, sizeof(wave_samples)))
     return false;
 
 
@@ -628,11 +656,11 @@ bool sound_check_savestate(const u8 *src)
     if (!sndchan)
       return false;
 
-    for (i = 0; i < sizeof(dsvars)/sizeof(dsvars[0]); i++)
-      if (!bson_contains_key(sndchan, dsvars[i], BSON_TYPE_INT32))
+    for (unsigned j = 0; j < sizeof(dsvars)/sizeof(dsvars[0]); j++)
+      if (!bson_contains_key(sndchan, dsvars[j], BSON_TYPE_INT32))
         return false;
 
-    if (!bson_contains_key(sndchan, "fifo-bytes", BSON_TYPE_BIN))
+    if (!bson_read_bytes(sndchan, "fifo-bytes", NULL, sizeof(direct_sound_channel[0].fifo)))
       return false;
   }
 
@@ -643,8 +671,8 @@ bool sound_check_savestate(const u8 *src)
     if (!sndchan)
       return false;
 
-    for (i = 0; i < sizeof(gsvars)/sizeof(gsvars[0]); i++)
-      if (!bson_contains_key(sndchan, gsvars[i], BSON_TYPE_INT32))
+    for (unsigned j = 0; j < sizeof(gsvars)/sizeof(gsvars[0]); j++)
+      if (!bson_contains_key(sndchan, gsvars[j], BSON_TYPE_INT32))
         return false;
   }
 
@@ -656,6 +684,7 @@ bool sound_read_savestate(const u8 *src)
 {
   int i;
   const u8 *snddoc = bson_find_key(src, "sound");
+#if defined(RISCV_ARCH) /* GBSP_BACKEND_VARIANT */
 
   /* The 128KiB ring buffer holding rendered samples is intentionally not
    * serialized (it would inflate the savestate well beyond its hard size
@@ -669,6 +698,10 @@ bool sound_read_savestate(const u8 *src)
   memset(sound_buffer, 0, sizeof(sound_buffer));
 
   if (!(
+#else /* GBSP_BACKEND_VARIANT */
+
+  if (!(
+#endif /* GBSP_BACKEND_VARIANT */
     bson_read_int32(snddoc, "on", &sound_on) &&
     bson_read_int32(snddoc, "buf-base", &sound_buffer_base) &&
     bson_read_int32(snddoc, "gbc-buf-idx", &gbc_sound_buffer_index) &&
@@ -833,35 +866,13 @@ u32 sound_read_samples(s16 *out, u32 frames)
 
       sound_buffer[source_index] = 0;
 
-      /* Two-segment soft clipper, smooth everywhere (C1 continuous):
-       *
-       * Segment 1 (|s| <= 4096): cubic y = (3x - x³)/2, x = s/4096
-       *   Output range ±24576, gain ~9x at center, slope 0 at boundary.
-       *
-       * Segment 2 (4096 < |s| <= 6144): Hermite cubic extension
-       *   Smoothly compresses from ±24576 to ±32767 with slope 0 at
-       *   both ends. Covers worst-case 2 DMA + 4 GBC channels (~±5900).
-       *
-       * No hard clipping within the GBA's possible output range. */
-      s32 s = current_sample;
-      s32 abs_s = (s >= 0) ? s : -s;
-      s32 out_val;
-
-      if(abs_s <= 4096)
+      /* Muting must still drain the ring and return paced stereo frames. */
+      if (!sound_master_enable)
       {
-         s32 q = 50331648 - s * s;   /* 3 * 4096² - s² */
-         out_val = (s32)(((s64)s * q * 24576LL) >> 37);
+         out[i] = 0;
+         continue;
       }
-      else
-      {
-         if(abs_s > 6144) abs_s = 6144;
-         s32 u = abs_s - 4096;        /* 0..2048 */
-         s64 h = (s64)u * u * (6144 - 2 * u);
-         s32 ext = (s32)((8191LL * h) >> 33);
-         out_val = (s >= 0) ? (24576 + ext) : (-24576 - ext);
-      }
-
-      out[i] = (s16)(out_val * 3 >> 2);
+      out[i] = gpsp_audio_convert_sample((s16)current_sample);
    }
 
    sound_buffer_base += samples_to_read;

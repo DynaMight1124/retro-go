@@ -33,10 +33,14 @@ typedef enum {
 
 void process_cheats(void);
 cheat_error cheat_parse(unsigned index, const char *code);
+#if defined(RISCV_ARCH) /* GBSP_BACKEND_VARIANT */
 void cheat_clear(void);
 void cheat_disable(unsigned index);
 
+#else /* GBSP_BACKEND_VARIANT */
+void cheat_clear(void);
+
+#endif /* GBSP_BACKEND_VARIANT */
 extern u32 cheat_master_hook;
 
 #endif
-

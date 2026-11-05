@@ -1,3 +1,4 @@
+#include "gpsp_video.h"
 /* gameplaySP
  *
  * Copyright (C) 2006 Exophase <exophase@gmail.com>
@@ -18,8 +19,16 @@
  */
 
 #include "common.h"
+#if defined(XTENSA_ARCH) /* GBSP_BACKEND_VARIANT */
+#include <ctype.h>
+#ifdef RETRO_GO
+void gbsp_render_sync(void);   /* video.cpp: lines drawn on core 1 */
+#endif
+
+#else /* GBSP_BACKEND_VARIANT */
 #include <ctype.h>
 
+#endif /* GBSP_BACKEND_VARIANT */
 timer_type timer[4];
 
 u32 frame_counter = 0;
@@ -47,9 +56,15 @@ void rand_seed(u32 data) {
   random_state ^= rand_gen() ^ data;
 }
 
+#if defined(XTENSA_ARCH) /* GBSP_BACKEND_VARIANT */
+
+XT_HOT static unsigned update_timers(irq_type *irq_raised, unsigned completed_cycles)
+{
+#else /* GBSP_BACKEND_VARIANT */
 
 static unsigned update_timers(irq_type *irq_raised, unsigned completed_cycles)
 {
+#endif /* GBSP_BACKEND_VARIANT */
    unsigned i, ret = 0;
    for (i = 0; i < 4; i++)
    {
@@ -85,8 +100,22 @@ static unsigned update_timers(irq_type *irq_raised, unsigned completed_cycles)
             ret += sound_timer(timer[i].frequency_step, 1);
       }
 
+#if defined(XTENSA_ARCH) /* GBSP_BACKEND_VARIANT */
+      timer[i].count += (timer[i].reload << timer[i].prescale);
+      /* The counter reads its reload value right after an overflow, as on the
+         hardware. A count-up timer's register was otherwise left at 0x0000
+         (written by the decrement above) until the next overflow of the timer
+         below it: NFS Underground's mixer reads TM1 there, computes a negative
+         length and its IWRAM memset erases itself (gbahost, 2026-10-11). */
+      if(timer[i].status == TIMER_CASCADE)
+         write_ioreg(REG_TMXD(i), -timer[i].count);
+      else
+         write_ioreg(REG_TMXD(i), -(timer[i].count >> timer[i].prescale));
+   }
+#else /* GBSP_BACKEND_VARIANT */
       timer[i].count += (timer[i].reload << timer[i].prescale);
    }
+#endif /* GBSP_BACKEND_VARIANT */
    return ret;
 }
 
@@ -116,9 +145,15 @@ void init_main(void)
   init_emitter(gamepak_must_swap());
 #endif
 }
+#if defined(XTENSA_ARCH) /* GBSP_BACKEND_VARIANT */
+
+XT_HOT u32 function_cc update_gba(int remaining_cycles)
+{
+#else /* GBSP_BACKEND_VARIANT */
 
 u32 function_cc update_gba(int remaining_cycles)
 {
+#endif /* GBSP_BACKEND_VARIANT */
   u32 changed_pc = 0;
   u32 frame_complete = 0;
   irq_type irq_raised = IRQ_NONE;
@@ -139,9 +174,15 @@ u32 function_cc update_gba(int remaining_cycles)
 
     // Timers can trigger DMA (usually sound) and consume cycles
     dma_cycles = update_timers(&irq_raised, completed_cycles);
+#if defined(XTENSA_ARCH) /* GBSP_BACKEND_VARIANT */
+    // Check for serial port IRQs as well.
+    if (!update_serial_idle() && update_serial(completed_cycles))
+      irq_raised |= IRQ_SERIAL;
+#else /* GBSP_BACKEND_VARIANT */
     // Check for serial port IRQs as well.
     if (update_serial(completed_cycles))
       irq_raised |= IRQ_SERIAL;
+#endif /* GBSP_BACKEND_VARIANT */
 
     // Video count tracks the video cycles remaining until the next event
     video_count -= completed_cycles;
@@ -231,8 +272,8 @@ u32 function_cc update_gba(int remaining_cycles)
 
           // Force audio generation. Need to flush samples for this frame.
           render_gbc_sound();
+          gbsp_render_sync(); /* finish snapshots before the next emulated frame */
 
-          // We completed a frame, tell the dynarec to exit to the main thread
           frame_complete = 0x80000000;
           frame_counter++;
         }
@@ -300,11 +341,28 @@ u32 function_cc update_gba(int remaining_cycles)
 }
 
 void reset_gba(void)
+#if defined(RISCV_ARCH) /* GBSP_BACKEND_VARIANT */
 {
+  gbsp_render_wait();
+  gbp_reset();
   init_memory();
+#elif defined(XTENSA_ARCH) /* GBSP_BACKEND_VARIANT */
+{
+  gbsp_render_wait();
+#if defined(XTENSA_ARCH) && defined(RETRO_GO) && defined(ESP_PLATFORM)
+  extern void gbsp_vram_mark_all(void);   /* video.cpp: the renderer's VRAM copy */
+  gbsp_vram_mark_all();
+#endif
+  init_memory();
+#else /* GBSP_BACKEND_VARIANT */
+{
+  gbsp_render_wait();
+  init_memory();
+#endif /* GBSP_BACKEND_VARIANT */
   init_main();
   init_cpu();
   reset_sound();
+  gbsp_render_invalidate();
 }
 
 #ifdef TRACE_REGISTERS
@@ -333,8 +391,16 @@ bool main_check_savestate(const u8 *src)
       !bson_contains_key(p1, "exec-cycles", BSON_TYPE_INT32) ||
       !bson_contains_key(p1, "video-count", BSON_TYPE_INT32) ||
       !bson_contains_key(p1, "sleep-cycles", BSON_TYPE_INT32))
+#if defined(RISCV_ARCH) /* GBSP_BACKEND_VARIANT */
+    return false;
+  /* serial-irq-cycles is optional for forward compatibility with states
+   * written before this field existed; missing simply means "no pending
+   * serial IRQ", which is also the default after serialproto_reset. */
+
+#else /* GBSP_BACKEND_VARIANT */
     return false;
 
+#endif /* GBSP_BACKEND_VARIANT */
   for (i = 0; i < 4; i++)
   {
     char tname[2] = {'0' + i, 0};
@@ -371,8 +437,37 @@ bool main_read_savestate(const u8 *src)
 
   if (!bson_read_int32(p1, "frame-count", &frame_counter))
     frame_counter = 60 * 10;  // Use "fake" 10 seconds.
+#if defined(RISCV_ARCH) /* GBSP_BACKEND_VARIANT */
+
+  {
+    u32 sirq;
+    if (bson_read_int32(p1, "serial-irq-cycles", &sirq))
+      serial_set_irq_cycles(sirq);
+    else
+      serial_set_irq_cycles(0);   /* Older states: no pending IRQ. */
+  }
+
+  /* random_state is also optional for backwards compat. Missing means
+   * 'use whatever is currently in the static'; the RFU path will reseed
+   * from cpu_ticks on the next rfu_reset, which is also deterministic. */
+  bson_read_int32(p1, "rand-state", &random_state);
+
+  /* gbp-state is optional for backwards compat.  Older states either
+   * never had a GBP session active or are post-handshake (steady-state
+   * loop where missing the precise gbp_seq_n is harmless within a few
+   * frames).  Default: don't touch the in-memory values, gbp_reset
+   * runs at content load and that's a safe starting point. */
+  {
+    u32 gbps;
+    if (bson_read_int32(p1, "gbp-state", &gbps))
+      gbp_set_state(gbps);
+  }
 
   for (i = 0; i < 4; i++)
+#else /* GBSP_BACKEND_VARIANT */
+
+  for (i = 0; i < 4; i++)
+#endif /* GBSP_BACKEND_VARIANT */
   {
     char tname[2] = {'0' + i, 0};
     const u8 *p = bson_find_key(p2, tname);
@@ -400,8 +495,16 @@ unsigned main_write_savestate(u8* dst)
   bson_write_int32(dst, "cpu-ticks", cpu_ticks);
   bson_write_int32(dst, "exec-cycles", execute_cycles);
   bson_write_int32(dst, "video-count", video_count);
+#if defined(RISCV_ARCH) /* GBSP_BACKEND_VARIANT */
+  bson_write_int32(dst, "sleep-cycles", reg[REG_SLEEP_CYCLES]);
+  bson_write_int32(dst, "serial-irq-cycles", serial_get_irq_cycles());
+  bson_write_int32(dst, "rand-state", random_state);
+  bson_write_int32(dst, "gbp-state", gbp_get_state());
+  bson_finish_document(dst, wbptr);
+#else /* GBSP_BACKEND_VARIANT */
   bson_write_int32(dst, "sleep-cycles", reg[REG_SLEEP_CYCLES]);
   bson_finish_document(dst, wbptr);
+#endif /* GBSP_BACKEND_VARIANT */
 
   bson_start_document(dst, "timers", wbptr);
   for (i = 0; i < 4; i++)
@@ -421,5 +524,3 @@ unsigned main_write_savestate(u8* dst)
 
   return (unsigned int)(dst - startp);
 }
-
-

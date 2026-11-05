@@ -1,3 +1,4 @@
+#if defined(RISCV_ARCH)
 /* Minimal libretro compatibility shim for standalone gpSP on ESP32-P4 */
 #ifndef LIBRETRO_H
 #define LIBRETRO_H
@@ -63,3 +64,6 @@ static inline void netpacket_send(uint16_t client_id, const void *buf, size_t le
 static inline void netpacket_poll_receive(void) { }
 
 #endif /* LIBRETRO_H */
+#else
+#include "libretro/libretro-common/include/libretro.h"
+#endif

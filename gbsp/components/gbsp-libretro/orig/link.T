@@ -1,6 +1,0 @@
-{
-   global: retro_*;
-   local: *;
-};
-
-

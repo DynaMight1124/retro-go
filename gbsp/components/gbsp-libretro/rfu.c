@@ -164,9 +164,15 @@ typedef struct {
 static t_client_broadcast rfu_peer_bcst[MAX_RFU_PEERS];
 
 // Constants used for the network protocol.
+#if defined(RISCV_ARCH) /* GBSP_BACKEND_VARIANT */
 
 #define NET_RFU_HEADER          0x52465531       // RFU1
 
+#else /* GBSP_BACKEND_VARIANT */
+
+#define NET_RFU_HEADER          0x52465531
+
+#endif /* GBSP_BACKEND_VARIANT */
 #define NET_RFU_BROADCAST       0x00    // Host to everyone broadcast packet
 #define NET_RFU_CONNECT_REQ     0x01    // Client connection request
 #define NET_RFU_CONNECT_ACK     0x02    // Host connection response (accept)
@@ -241,6 +247,7 @@ void rfu_reset() {
 
   // Clear all the received broadcasts.
   memset(&rfu_peer_bcst, 0, sizeof(rfu_peer_bcst));
+#if defined(RISCV_ARCH) /* GBSP_BACKEND_VARIANT */
 
   // Re-seed random gen.  cpu_ticks is determined by the GBA program and
   // is therefore replay-reproducible; time(NULL) is not, and would break
@@ -248,14 +255,26 @@ void rfu_reset() {
   // to vary across resets within a session, which cpu_ticks already
   // satisfies (rfu_reset is called from a GPIO pulse driven by the game).
   rand_seed(cpu_ticks);
+#else /* GBSP_BACKEND_VARIANT */
+
+  // Re-seed random gen.
+  rand_seed(time(NULL));
+  rand_seed(cpu_ticks);
+#endif /* GBSP_BACKEND_VARIANT */
 }
 
 static u16 new_devid() {
+#if defined(RISCV_ARCH) /* GBSP_BACKEND_VARIANT */
   while (1) {
     /* Mix in cpu_ticks (deterministic) rather than time(NULL) so the
      * generated device ID is reproducible across record/replay. */
     u16 n = rand_gen() ^ (u16)cpu_ticks;
     if (n)
+#else /* GBSP_BACKEND_VARIANT */
+  while (1) {
+    u16 n = rand_gen() ^ time(NULL);
+    if (n)
+#endif /* GBSP_BACKEND_VARIANT */
       return n;
   }
 }
@@ -869,6 +888,7 @@ void rfu_net_receive(const void* buf, size_t len, uint16_t client_id) {
 
 // Account for consumed cycles and return if a serial IRQ should be raised.
 bool rfu_update(unsigned cycles) {
+#if defined(RISCV_ARCH) /* GBSP_BACKEND_VARIANT */
   if (rfu_comstate == RFU_COMSTATE_WAITEVENT) {
     /* Force receive packets so that we can perhaps abort the wait.
      * This helps minimize latency (otherwise we need to wait a full
@@ -882,6 +902,12 @@ bool rfu_update(unsigned cycles) {
      * re-fetch these globals after this point - do NOT cache rfu_state
      * etc. into a local across this call. */
     netpacket_poll_receive();
+#else /* GBSP_BACKEND_VARIANT */
+  if (rfu_comstate == RFU_COMSTATE_WAITEVENT) {
+    // Force receive packets so that we can perhaps abort the wait
+    // This helps minimize latency (othweise we need to wait a full frame!)
+    netpacket_poll_receive();
+#endif /* GBSP_BACKEND_VARIANT */
 
     // Check if we are running our of time to respond.
     rfu_timeout_cycles -= MIN(cycles, rfu_timeout_cycles);
@@ -947,4 +973,3 @@ bool rfu_update(unsigned cycles) {
 
   return false;
 }
-

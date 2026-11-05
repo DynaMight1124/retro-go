@@ -20,6 +20,7 @@
 #include "common.h"
 
 int serial_mode = SERIAL_MODE_AUTO;
+#if defined(RISCV_ARCH) /* GBSP_BACKEND_VARIANT */
 
 static u32 serial_irq_cycles = 0;
 
@@ -32,10 +33,22 @@ u32 serial_get_irq_cycles(void) { return serial_irq_cycles; }
 void serial_set_irq_cycles(u32 v) { serial_irq_cycles = v; }
 
 // Timings are very aproximate, hopefully they are good enough.
+#elif defined(XTENSA_ARCH) /* GBSP_BACKEND_VARIANT */
+
+u32 serial_irq_cycles = 0;   /* serial.h: update_serial_idle() reads it */
+
+// Timings are very aproximate, hopefully they are good enough.
+#else /* GBSP_BACKEND_VARIANT */
+
+static u32 serial_irq_cycles = 0;
+
+// Timings are very aproximate, hopefully they are good enough.
+#endif /* GBSP_BACKEND_VARIANT */
 #define CLOCK_CYC_256KHZ_8BIT        524    // CLOCK / 256KHz * 8
 #define CLOCK_CYC_256KHZ_32BIT      2097    // CLOCK / 256KHz * 32
 #define CLOCK_CYC_2MHZ_8BIT           67    // CLOCK / 2MHz * 8
 #define CLOCK_CYC_2MHZ_32BIT         268    // CLOCK / 2MHz * 32
+#if defined(RISCV_ARCH) /* GBSP_BACKEND_VARIANT */
 #define CLOCK_CYC_64KHZ_32BIT       8192    // CLOCK / 64kHz * 32
 // Multiplayer mode timings (for each player message)
 #define CLOCK_CYC_9600_16BIT       31457    // CLOCK /  9600 * 18
@@ -43,6 +56,10 @@ void serial_set_irq_cycles(u32 v) { serial_irq_cycles = v; }
 #define CLOCK_CYC_57600_16BIT       5242    // CLOCK / 57600 * 18
 #define CLOCK_CYC_115200_16BIT      2621    // CLOCK / 115200 * 18
 
+#else /* GBSP_BACKEND_VARIANT */
+#define CLOCK_CYC_64KHZ_32BIT       8192    // CLOCK / 64kHz * 32
+
+#endif /* GBSP_BACKEND_VARIANT */
 // Available serial modes
 #define SERIAL_MODE_NORMAL      0
 #define SERIAL_MODE_MULTI       1
@@ -63,6 +80,7 @@ static u32 get_serial_mode(u16 siocnt, u16 rcnt) {
       return SERIAL_MODE_NORMAL;
   }
 }
+#if defined(RISCV_ARCH) /* GBSP_BACKEND_VARIANT */
 
 uint16_t serial_mul_siocnt() {
   // Calculate parent/child, ID and some other fields.
@@ -82,7 +100,17 @@ cpu_alert_type write_rcnt(u16 value) {
 
   switch (nwmode) {
   case SERIAL_MODE_GPIO:
+#else /* GBSP_BACKEND_VARIANT */
+
+cpu_alert_type write_rcnt(u16 value) {
+  u16 pval = read_ioreg(REG_RCNT);
+  write_ioreg(REG_RCNT, value);
+
+  switch (get_serial_mode(read_ioreg(REG_SIOCNT), value)) {
+  case SERIAL_MODE_GPIO:
+#endif /* GBSP_BACKEND_VARIANT */
     // Check if we are pulling PD high. This resets the RFU module.
+#if defined(RISCV_ARCH) /* GBSP_BACKEND_VARIANT */
     if (serial_mode == SERIAL_MODE_RFU) {
       if ((value & 0x20) && !(oldval & 0x02))
         rfu_reset();
@@ -96,6 +124,13 @@ cpu_alert_type write_rcnt(u16 value) {
     // Update SI/SD/ID/Error fields
     write_ioreg(REG_SIOCNT, (read_ioreg(REG_SIOCNT) & 0xFF83) | serial_mul_siocnt());
     break;
+#else /* GBSP_BACKEND_VARIANT */
+    if (serial_mode == SERIAL_MODE_RFU) {
+      if ((value & 0x20) && !(pval & 0x02))
+        rfu_reset();
+    }
+    break;
+#endif /* GBSP_BACKEND_VARIANT */
 
   case SERIAL_MODE_NORMAL:
     break;
@@ -106,12 +141,19 @@ cpu_alert_type write_rcnt(u16 value) {
 
 cpu_alert_type write_siocnt(u16 value) {
   u16 oldval = read_ioreg(REG_SIOCNT);
+#if defined(RISCV_ARCH) /* GBSP_BACKEND_VARIANT */
   u16 newval = (value & 0x7F8B) | (oldval & 0x0004);
   u32 pvmode = get_serial_mode(oldval, read_ioreg(REG_RCNT));
   u32 nwmode = get_serial_mode(newval, read_ioreg(REG_RCNT));
 
   switch (nwmode) {
   case SERIAL_MODE_NORMAL:
+#else /* GBSP_BACKEND_VARIANT */
+  u16 newval = (value & 0x7F8B) | (oldval & 0x0004);
+
+  switch (get_serial_mode(newval, read_ioreg(REG_RCNT))) {
+  case SERIAL_MODE_NORMAL:
+#endif /* GBSP_BACKEND_VARIANT */
     // For connected Wireless devices
     if (serial_mode == SERIAL_MODE_RFU) {
       // If Start bit is set, we are in master mode (internal clock), and
@@ -158,6 +200,7 @@ cpu_alert_type write_siocnt(u16 value) {
         serial_irq_cycles = CLOCK_CYC_64KHZ_32BIT;
       }
     }
+#if defined(RISCV_ARCH) /* GBSP_BACKEND_VARIANT */
     break;
 
   case SERIAL_MODE_MULTI:
@@ -182,6 +225,10 @@ cpu_alert_type write_siocnt(u16 value) {
 
     break;
   };
+#else /* GBSP_BACKEND_VARIANT */
+    break;
+  };
+#endif /* GBSP_BACKEND_VARIANT */
 
   // Update reg with its new value
   write_ioreg(REG_SIOCNT, newval);
@@ -203,6 +250,7 @@ bool update_serial(unsigned cycles) {
   case SERIAL_MODE_RFU:
     if (rfu_update(cycles))
       return true;
+#if defined(RISCV_ARCH) /* GBSP_BACKEND_VARIANT */
     break;
   case SERIAL_MODE_SERIAL_POKE:
     if (serialpoke_update(cycles))
@@ -217,10 +265,17 @@ bool update_serial(unsigned cycles) {
 
   bool trigger_irq = false;
   if (serial_irq_cycles) {
+#else /* GBSP_BACKEND_VARIANT */
+    break;
+  };
+
+  if (serial_irq_cycles) {
+#endif /* GBSP_BACKEND_VARIANT */
     if (serial_irq_cycles > cycles)
       serial_irq_cycles -= cycles;
     else {
       // Event happening now!
+#if defined(RISCV_ARCH) /* GBSP_BACKEND_VARIANT */
       serial_irq_cycles = 0;
       trigger_irq = true;
     }
@@ -231,9 +286,14 @@ bool update_serial(unsigned cycles) {
     switch (get_serial_mode(read_ioreg(REG_SIOCNT), read_ioreg(REG_RCNT))) {
     case SERIAL_MODE_NORMAL:
       // Clear the send bit, signal data is ready.
+#else /* GBSP_BACKEND_VARIANT */
+      serial_irq_cycles = 0;
+      // Clear the send bit, signal data is ready.
+#endif /* GBSP_BACKEND_VARIANT */
       // Set the device busy bit, to perform the weird SO/SI handshake.
       write_ioreg(REG_SIOCNT, (read_ioreg(REG_SIOCNT) & ~0x80) | 0x04);
       // Return if IRQs are enabled.
+#if defined(RISCV_ARCH) /* GBSP_BACKEND_VARIANT */
       return read_ioreg(REG_SIOCNT) & 0x4000;
     case SERIAL_MODE_MULTI:
       // Clear the start bit, signal data is ready.
@@ -242,7 +302,11 @@ bool update_serial(unsigned cycles) {
       return read_ioreg(REG_SIOCNT) & 0x4000;
     };
   }
+#else /* GBSP_BACKEND_VARIANT */
+      return read_ioreg(REG_SIOCNT) & 0x4000;
+    }
+  }
+#endif /* GBSP_BACKEND_VARIANT */
 
   return false;
 }
-

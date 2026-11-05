@@ -39,6 +39,7 @@ static const u32 gbp_seq[16] = {
 };
 
 static u32 gbp_seq_n = 0;
+#if defined(RISCV_ARCH) /* GBSP_BACKEND_VARIANT */
 static bool gbp_rumble = false;
 static bool gbp_allow_rumble = false;
 
@@ -74,8 +75,13 @@ void gbp_reset(void) {
   gbp_allow_rumble = false;
 }
 
+#else /* GBSP_BACKEND_VARIANT */
+static bool gbp_rumble = false;
+
+#endif /* GBSP_BACKEND_VARIANT */
 // GB Player sequencing
 u32 gbp_transfer(u32 value) {
+#if defined(RISCV_ARCH) /* GBSP_BACKEND_VARIANT */
   u32 ret = gbp_seq[gbp_seq_n++];
 
   if (!gbp_allow_rumble &&
@@ -93,6 +99,11 @@ u32 gbp_transfer(u32 value) {
     }
 
     bool rumble_active = (value & 2);
+#else /* GBSP_BACKEND_VARIANT */
+  u32 ret = gbp_seq[gbp_seq_n++];
+  if (gbp_seq_n == 16) {
+    bool rumble_active = (value & 2);
+#endif /* GBSP_BACKEND_VARIANT */
     write_rumble(gbp_rumble, rumble_active);
     gbp_rumble = rumble_active;
     gbp_seq_n = 0;

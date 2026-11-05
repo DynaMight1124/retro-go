@@ -1,5 +1,6 @@
 /* gpSP ESP32-P4 / ESP32-S31 platform glue */
 #include "gpsp_esp.h"
+#include "gpsp_log.h"
 #include "common.h"
 #include "cpu.h"
 #include "gba_memory.h"
@@ -88,7 +89,7 @@ bool gpsp_init(void)
         extern u32 reg_mode[][7];
         ptrdiff_t spsr_off = (u8*)spsr - (u8*)reg;
         ptrdiff_t regmode_off = (u8*)reg_mode - (u8*)reg;
-        ESP_LOGI(TAG, "Layout: spsr=+0x%x reg_mode=+0x%x", (unsigned)spsr_off, (unsigned)regmode_off);
+        GPSP_TRACE( "Layout: spsr=+0x%x reg_mode=+0x%x", (unsigned)spsr_off, (unsigned)regmode_off);
         assert(spsr_off == 0x100 && regmode_off == 0x118);
     }
 #endif
@@ -108,7 +109,7 @@ bool gpsp_init(void)
         /* Allocate JIT buffer from PSRAM heap, page-aligned for MMU mapping */
         u8 *jit_data = (u8 *)heap_caps_aligned_alloc(page_size, total, MALLOC_CAP_SPIRAM);
         if (!jit_data) {
-            ESP_LOGE(TAG, "Failed to allocate JIT buffer (%u bytes)", (unsigned)total);
+            RG_LOGE( "Failed to allocate JIT buffer (%u bytes)", (unsigned)total);
             return false;
         }
 
@@ -117,11 +118,11 @@ bool gpsp_init(void)
         mmu_target_t paddr_target = 0;
         esp_err_t err = esp_mmu_vaddr_to_paddr(jit_data, &paddr, &paddr_target);
         if (err != ESP_OK) {
-            ESP_LOGE(TAG, "esp_mmu_vaddr_to_paddr failed: %s", esp_err_to_name(err));
+            RG_LOGE( "esp_mmu_vaddr_to_paddr failed: %s", esp_err_to_name(err));
             free(jit_data);
             return false;
         }
-        ESP_LOGI(TAG, "JIT data ptr=%p, paddr=0x%08x, size=%u",
+        GPSP_TRACE( "JIT data ptr=%p, paddr=0x%08x, size=%u",
                  jit_data, (unsigned)paddr, (unsigned)total);
 
         /* Create executable mapping of the same physical PSRAM pages.
@@ -132,12 +133,12 @@ bool gpsp_init(void)
             MMU_MEM_CAP_EXEC,
             ESP_MMU_MMAP_FLAG_PADDR_SHARED, &jit_base);
         if (err != ESP_OK) {
-            ESP_LOGE(TAG, "esp_mmu_map for JIT failed (%d bytes): %s",
+            RG_LOGE( "esp_mmu_map for JIT failed (%d bytes): %s",
                      (int)total, esp_err_to_name(err));
             free(jit_data);
             return false;
         }
-        ESP_LOGI(TAG, "JIT exec mapping at %p (data at %p, %u bytes)",
+        GPSP_TRACE( "JIT exec mapping at %p (data at %p, %u bytes)",
                  jit_base, jit_data, (unsigned)total);
 
         /* Exec mapping has IBUS1+DBUS1, so it's readable, writable, and executable.
@@ -165,7 +166,7 @@ bool gpsp_init(void)
 
     if (!gba_screen_pixels) {
 #ifdef ESP_PLATFORM
-        ESP_LOGE(TAG, "Failed to allocate framebuffer");
+        RG_LOGE( "Failed to allocate framebuffer");
 #endif
         return false;
     }
@@ -175,25 +176,20 @@ bool gpsp_init(void)
 
 int gpsp_load_rom(const char *rom_path)
 {
-    /* Use built-in BIOS */
-    extern u8 open_gba_bios_rom[];
-    extern u8 bios_rom[];
-    memcpy(bios_rom, open_gba_bios_rom, 16 * 1024);
-
     memset(gamepak_backup, 0xFF, sizeof(gamepak_backup));
 
-    ESP_LOGI(TAG, "Loading gamepak: %s", rom_path);
-    if (load_gamepak(NULL, rom_path, FEAT_AUTODETECT, FEAT_DISABLE, SERIAL_MODE_AUTO) != 0) {
+    GPSP_TRACE( "Loading gamepak: %s", rom_path);
+    if (load_gamepak(NULL, rom_path, FEAT_AUTODETECT, FEAT_DISABLE, SERIAL_MODE_DISABLED) != 0) {
 #ifdef ESP_PLATFORM
-        ESP_LOGE(TAG, "Failed to load ROM: %s", rom_path);
+        RG_LOGE( "Failed to load ROM: %s", rom_path);
 #endif
         return -1;
     }
-    ESP_LOGI(TAG, "Gamepak loaded, calling reset_gba()");
+    GPSP_TRACE( "Gamepak loaded, calling reset_gba()");
 
-    ESP_LOGI(TAG, "selected_boot_mode=%d (boot_game=%d)", selected_boot_mode, boot_game);
+    GPSP_TRACE( "selected_boot_mode=%d (boot_game=%d)", selected_boot_mode, boot_game);
     reset_gba();
-    ESP_LOGI(TAG, "reset_gba() done, dynarec=%d PC=0x%08x CPSR=0x%08x mode=%u",
+    GPSP_TRACE( "reset_gba() done, dynarec=%d PC=0x%08x CPSR=0x%08x mode=%u",
              dynarec_enable, reg[REG_PC], reg[REG_CPSR], reg[CPU_MODE]);
     return 0;
 }

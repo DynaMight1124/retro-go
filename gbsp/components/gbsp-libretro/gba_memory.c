@@ -18,8 +18,20 @@
  */
 
 #include "common.h"
+#include "gpsp_video.h"
+#include "gpsp_load.h"
+#include <errno.h>
+#include "gpsp_log.h"
+#include "gpsp_rom_info.h"
+#include "gpsp_cartridge.h"
+#if defined(RISCV_ARCH) /* GBSP_BACKEND_VARIANT */
 #include "streams/file_stream.h"
 
+#else /* GBSP_BACKEND_VARIANT */
+#include "streams/file_stream.h"
+#include "bios/open_gba_bios.h"
+
+#endif /* GBSP_BACKEND_VARIANT */
 /* Sound */
 #define gbc_sound_tone_control_low(channel, regn)                             \
 {                                                                             \
@@ -271,10 +283,6 @@ static void trigger_timer(u32 timer_number, u32 value)
    }
    write_ioreg(REG_TMXCNT(timer_number), value);
 }
-
-bool is_known_game = false;
-bool require_m1_hle_bios = false;
-
 /* Memory timings */
 const u8 ws012_nonseq[] = {4, 3, 2, 8};
 const u8 ws0_seq[] = {2, 1};
@@ -338,6 +346,7 @@ const u32 def_seq_cycles[16][2] =
   { 9, 17 }, // Gamepak (wait 2)
   { 9, 17 }, // Gamepak (wait 2)
 };
+#if defined(RISCV_ARCH) /* GBSP_BACKEND_VARIANT */
 
 
 #if defined(CONFIG_IDF_TARGET_ESP32P4) || defined(CONFIG_IDF_TARGET_ESP32S31)
@@ -351,6 +360,16 @@ u8 bios_rom[1024 * 16];
 #ifndef ESP_PLATFORM
 u8 gamepak_backup[1024 * 128];
 #endif
+#else /* GBSP_BACKEND_VARIANT */
+
+static u8 *bios_rom_alloc; // [1024 * 16];
+const u8 *bios_rom = open_gba_bios_rom; // [1024 * 16];
+
+#ifndef RETRO_GO
+// Up to 128kb, store SRAM, flash ROM, or EEPROM here.
+u8 gamepak_backup[1024 * 128];
+#endif
+#endif /* GBSP_BACKEND_VARIANT */
 
 u32 dma_bus_val;
 dma_transfer_type dma[4];
@@ -361,13 +380,21 @@ dma_transfer_type dma[4];
 
 u8 *gamepak_buffers[32];    /* Pointers to malloc'ed blocks */
 u32 gamepak_buffer_count;   /* Value between 1 and 32 */
+#if defined(RISCV_ARCH) /* GBSP_BACKEND_VARIANT */
 u32 gamepak_size;           /* Size of the ROM in bytes */
 u32 gamepak_file_blocks;    /* Physical payload size in 32KB blocks */
 bool gamepak_mirror_1m;     /* 1MiB Classic NES/Famicom Mini mirror mode */
 static u8 *gamepak_mini_rom;
 bool gamepak_mini_materialized;
-bool gamepak_header_nonstandard;
 // We allocate in 1MB chunks.
+#elif defined(XTENSA_ARCH) /* GBSP_BACKEND_VARIANT */
+u32 gamepak_size;           /* Size of the ROM in bytes */
+u32 gamepak_page_loads;     /* 32 KB ROM pages read from the SD card (diagnostics) */
+// We allocate in 1MB chunks.
+#else /* GBSP_BACKEND_VARIANT */
+u32 gamepak_size;           /* Size of the ROM in bytes */
+// We allocate in 1MB chunks.
+#endif /* GBSP_BACKEND_VARIANT */
 const unsigned gamepak_buffer_blocksize = 1024*1024;
 
 // LRU queue with the loaded blocks and what they map to
@@ -388,8 +415,33 @@ u32 gamepak_sticky_bit[1024/32];
 
 // This is global so that it can be kept open for large ROMs to swap
 // pages from, so there's no slowdown with opening and closing the file
+#if defined(RISCV_ARCH) /* GBSP_BACKEND_VARIANT */
 // a lot.
 RFILE *gamepak_file_large = NULL;
+
+#elif defined(XTENSA_ARCH) /* GBSP_BACKEND_VARIANT */
+// a lot.
+FILE *gamepak_file_large = NULL;
+/* set by the front end: its own read of ROM data from the file (on the ESP32 a
+   plain fread into PSRAM is one 512-byte sector per SD command); NULL = fread */
+size_t (*gamepak_fread)(void *buffer, size_t length, FILE *fp);
+#define GAMEPAK_FREAD(buf, n, fp) (gamepak_fread ? gamepak_fread((buf), (n), (fp)) : fread((buf), 1, (n), (fp)))
+
+#else /* GBSP_BACKEND_VARIANT */
+// a lot.
+FILE *gamepak_file_large = NULL;
+
+#endif /* GBSP_BACKEND_VARIANT */
+/* Shared checked file boundary; the backend may retain its faster read shim. */
+#if defined(RISCV_ARCH)
+#define GP_ROM_READ(fp, dst, n) filestream_read(fp, dst, n)
+#elif defined(XTENSA_ARCH)
+#define GP_ROM_READ(fp, dst, n) ((int64_t)GAMEPAK_FREAD(dst, n, fp))
+#endif
+#include "gpsp_rom_file.h"
+static uint32_t gamepak_disk_size;
+
+u8 gamepak_backup_dirty;   /* cartridge persistence: set on backup bus writes */
 
 // Writes to these respective locations should trigger an update
 // so the related subsystem may react to it.
@@ -397,8 +449,13 @@ RFILE *gamepak_file_large = NULL;
 // If the GBC audio waveform is modified:
 u32 gbc_sound_wave_update = 0;
 
+#if defined(XTENSA_ARCH) /* GBSP_BACKEND_VARIANT */
 u32 backup_type = BACKUP_UNKN;
 u32 backup_type_reset = BACKUP_UNKN;
+#else /* GBSP_BACKEND_VARIANT */
+u32 backup_type = BACKUP_UNKN;
+u32 backup_type_reset = BACKUP_UNKN;
+#endif /* GBSP_BACKEND_VARIANT */
 u32 flash_mode = FLASH_BASE_MODE;
 u32 flash_command_position = 0;
 u32 flash_bank_num;  // 0 or 1
@@ -451,6 +508,7 @@ u8 read_backup(u32 address)
     if (flash_bank_cnt == FLASH_SIZE_128KB)
     {
       /* ID manufacturer type */
+#if defined(RISCV_ARCH) /* GBSP_BACKEND_VARIANT */
       if(address == 0x0000)
       {
         if (flash_device_id == FLASH_DEVICE_SANYO_128KB)
@@ -467,6 +525,14 @@ u8 read_backup(u32 address)
           value = FLASH_DEVICE_MACRONIX_128KB;
       }
     }
+#else /* GBSP_BACKEND_VARIANT */
+      if(address == 0x0000)
+        value = FLASH_MANUFACTURER_MACRONIX;
+      /* ID device type */
+      else if(address == 0x0001)
+        value = FLASH_DEVICE_MACRONIX_128KB;
+    }
+#endif /* GBSP_BACKEND_VARIANT */
     else
     {
       /* ID manufacturer type */
@@ -508,14 +574,46 @@ u8 read_backup(u32 address)
 // EEPROM is 512 bytes by default; it is autodetecte as 8KB if
 // 14bit address DMAs are made (this is done in the DMA handler).
 
+#if defined(XTENSA_ARCH) /* GBSP_BACKEND_VARIANT */
+u32 eeprom_size = EEPROM_512_BYTE;
+#ifdef EETRACE
+/* gbahost diagnostics (NFS Underground, 2026-10-11): every EEPROM command and
+   every DMA3 to/from the EEPROM, first EETRACE_MAX of them, with the size gpSP
+   believed at that moment. */
+#include <stdio.h>
+#define EETRACE_MAX 20000
+static int eetrace_n;
+int eet_frame;   /* set by gbahost each frame */
+#define EET(...) do { if (eetrace_n < EETRACE_MAX) { eetrace_n++; printf("EET f%d ", eet_frame); printf(__VA_ARGS__); } } while (0)
+#define EET8(what, a) EET("%s %04x: %02x %02x %02x %02x %02x %02x %02x %02x\n", what, (unsigned)(a), \
+    gamepak_backup[(a)], gamepak_backup[(a)+1], gamepak_backup[(a)+2], gamepak_backup[(a)+3], \
+    gamepak_backup[(a)+4], gamepak_backup[(a)+5], gamepak_backup[(a)+6], gamepak_backup[(a)+7])
+#else
+#define EET(...) do { } while (0)
+#define EET8(what, a) do { } while (0)
+#endif
+u32 eeprom_mode = EEPROM_BASE_MODE;
+/* After a write a real EEPROM is busy for ~6 ms and reads 0 until it is done
+   (mGBA: EEPROM_SETTLE_CYCLES). gpSP answered "ready" at once. eeprom_busy_reads
+   is how many reads answer "busy" after each write; 0 keeps gpSP's behaviour
+   (gbahost: EEBUSY=n). */
+u32 eeprom_busy_reads = 0;
+static u32 eeprom_busy_left = 0;
+u32 eeprom_address = 0;
+#else /* GBSP_BACKEND_VARIANT */
 u32 eeprom_size = EEPROM_512_BYTE;
 u32 eeprom_mode = EEPROM_BASE_MODE;
 u32 eeprom_address = 0;
+#endif /* GBSP_BACKEND_VARIANT */
 u32 eeprom_counter = 0;
 
 void function_cc write_eeprom(u32 unused_address, u32 value)
 {
+#if defined(XTENSA_ARCH) /* GBSP_BACKEND_VARIANT */
+  gamepak_backup_dirty = 1;
+#endif /* GBSP_BACKEND_VARIANT */
   switch(eeprom_mode)
+
   {
     case EEPROM_BASE_MODE:
       backup_type = BACKUP_EEPROM;
@@ -551,18 +649,27 @@ void function_cc write_eeprom(u32 unused_address, u32 value)
           eeprom_address >>= 2;    // Addr is 14 bits (drop 2LSB)
 
         eeprom_address <<= 3;   // EEPROM accessed in blocks of 8 bytes
+#if defined(XTENSA_ARCH) /* GBSP_BACKEND_VARIANT */
+
+        EET("%s addr %04x size %s pc %08x\n", eeprom_mode == EEPROM_ADDRESS_MODE ? "READ " : "WRITE",
+            (unsigned)eeprom_address, eeprom_size == EEPROM_512_BYTE ? "512B" : "8KB", (unsigned)reg[REG_PC]);
+        if(eeprom_mode == EEPROM_ADDRESS_MODE)
+#else /* GBSP_BACKEND_VARIANT */
 
         if(eeprom_mode == EEPROM_ADDRESS_MODE)
+#endif /* GBSP_BACKEND_VARIANT */
           eeprom_mode = EEPROM_ADDRESS_FOOTER_MODE;
         else
         {
           eeprom_mode = EEPROM_WRITE_MODE;
+          gamepak_backup_dirty = 1;
           memset(gamepak_backup + eeprom_address, 0, 8);
         }
       }
       break;
 
     case EEPROM_WRITE_MODE:
+      gamepak_backup_dirty = 1;
       gamepak_backup[eeprom_address + (eeprom_counter / 8)] |=
        (value & 0x01) << (7 - (eeprom_counter % 8));
       eeprom_counter++;
@@ -578,9 +685,20 @@ void function_cc write_eeprom(u32 unused_address, u32 value)
       eeprom_counter = 0;
       if(eeprom_mode == EEPROM_ADDRESS_FOOTER_MODE)
         eeprom_mode = EEPROM_READ_HEADER_MODE;
+#if defined(XTENSA_ARCH) /* GBSP_BACKEND_VARIANT */
+      else
+      {
+        eeprom_mode = EEPROM_BASE_MODE;
+        eeprom_busy_left = eeprom_busy_reads;
+        EET8("WDATA", eeprom_address);
+        EET("WRITE done, busy for %u reads pc %08x\n", (unsigned)eeprom_busy_left, (unsigned)reg[REG_PC]);
+      }
+      break;
+#else /* GBSP_BACKEND_VARIANT */
       else
         eeprom_mode = EEPROM_BASE_MODE;
       break;
+#endif /* GBSP_BACKEND_VARIANT */
 
     default:
       break;
@@ -634,16 +752,32 @@ u32 function_cc read_eeprom(void)
   switch(eeprom_mode)
   {
     case EEPROM_BASE_MODE:
+#if defined(XTENSA_ARCH) /* GBSP_BACKEND_VARIANT */
+      value = 1;
+      if (eeprom_busy_left)
+      {
+        eeprom_busy_left--;
+        value = 0;
+      }
+      break;
+#else /* GBSP_BACKEND_VARIANT */
       value = 1;
       break;
+#endif /* GBSP_BACKEND_VARIANT */
 
     case EEPROM_READ_MODE:
       value = (gamepak_backup[eeprom_address + (eeprom_counter / 8)] >>
        (7 - (eeprom_counter % 8))) & 0x01;
       eeprom_counter++;
       if(eeprom_counter == 64)
+#if defined(XTENSA_ARCH) /* GBSP_BACKEND_VARIANT */
+      {
+        EET8("RDATA", eeprom_address);
+        eeprom_counter = 0;
+#else /* GBSP_BACKEND_VARIANT */
       {
         eeprom_counter = 0;
+#endif /* GBSP_BACKEND_VARIANT */
         eeprom_mode = EEPROM_BASE_MODE;
       }
       break;
@@ -667,6 +801,7 @@ u32 function_cc read_eeprom(void)
 }
 
 
+#if defined(RISCV_ARCH) /* GBSP_BACKEND_VARIANT */
 #define read_memory(type)                                                     \
   switch(address >> 24)                                                       \
   {                                                                           \
@@ -746,6 +881,87 @@ u32 function_cc read_eeprom(void)
       break;                                                                  \
   }                                                                           \
 
+#else /* GBSP_BACKEND_VARIANT */
+#define read_memory(type)                                                     \
+  switch(address >> 24)                                                       \
+  {                                                                           \
+    case 0x00:                                                                \
+      /* BIOS */                                                              \
+      if (address < 0x4000) {                                                 \
+        if(reg[REG_PC] >= 0x4000)                                             \
+          value = (u##type)(reg[REG_BUS_VALUE] >> ((address & 0x03) << 3));   \
+        else                                                                  \
+          value = readaddress##type(bios_rom, address & 0x3FFF);              \
+      } else {                                                                \
+        read_open##type();                                                    \
+      }                                                                       \
+      break;                                                                  \
+                                                                              \
+    case 0x02:                                                                \
+      /* external work RAM */                                                 \
+      value = readaddress##type(ewram, (address & 0x3FFFF));                  \
+      break;                                                                  \
+                                                                              \
+    case 0x03:                                                                \
+      /* internal work RAM */                                                 \
+      value = readaddress##type(iwram, (address & 0x7FFF) + (0x8000 * SMC_DETECTION));\
+      break;                                                                  \
+                                                                              \
+    case 0x04:                                                                \
+      /* I/O registers */                                                     \
+      value = readaddress##type(io_registers, address & 0x3FF);               \
+      break;                                                                  \
+                                                                              \
+    case 0x05:                                                                \
+      /* palette RAM */                                                       \
+      value = readaddress##type(palette_ram, address & 0x3FF);                \
+      break;                                                                  \
+                                                                              \
+    case 0x06:                                                                \
+      /* VRAM */                                                              \
+      address &= 0x1FFFF;                                                     \
+      if(address >= 0x18000)                                                  \
+        address -= 0x8000;                                                    \
+                                                                              \
+      value = readaddress##type(vram, address);                               \
+      break;                                                                  \
+                                                                              \
+    case 0x07:                                                                \
+      /* OAM RAM */                                                           \
+      value = readaddress##type(oam_ram, address & 0x3FF);                    \
+      break;                                                                  \
+                                                                              \
+    case 0x0D:                                                                \
+      if (backup_type == BACKUP_EEPROM) {                                     \
+        value = read_eeprom();                                                \
+        break;                                                                \
+      }                                                                       \
+      /* fallthrough */                                                       \
+    case 0x08:                                                                \
+    case 0x09:                                                                \
+    case 0x0A:                                                                \
+    case 0x0B:                                                                \
+    case 0x0C:                                                                \
+      /* gamepak ROM */                                                       \
+      if((address & 0x1FFFFFF) >= gamepak_size)                               \
+        value = unmapped_rom_read##type(address);                             \
+      else                                                                    \
+      {                                                                       \
+        read_memory_gamepak(type);                                            \
+      }                                                                       \
+      break;                                                                  \
+                                                                              \
+    case 0x0E:                                                                \
+    case 0x0F:                                                                \
+      read_backup##type();                                                    \
+      break;                                                                  \
+                                                                              \
+    default:                                                                  \
+      read_open##type();                                                      \
+      break;                                                                  \
+  }                                                                           \
+
+#endif /* GBSP_BACKEND_VARIANT */
 static cpu_alert_type trigger_dma(u32 dma_number, u32 value)
 {
   if(value & 0x8000)
@@ -783,8 +999,16 @@ static cpu_alert_type trigger_dma(u32 dma_number, u32 value)
 
         if((dma_number == 3) && ((dst_address >> 24) == 0x0D) &&
          ((length & 0x1F) == 17))
+#if defined(XTENSA_ARCH) /* GBSP_BACKEND_VARIANT */
+          eeprom_size = EEPROM_8_KBYTE;
+        if((dma_number == 3) && (((dst_address >> 24) == 0x0D) || ((src_address >> 24) == 0x0D)))
+          EET("DMA3 %s len %u size %s pc %08x\n", (dst_address >> 24) == 0x0D ? "to  " : "from",
+              (unsigned)length, eeprom_size == EEPROM_512_BYTE ? "512B" : "8KB", (unsigned)reg[REG_PC]);
+
+#else /* GBSP_BACKEND_VARIANT */
           eeprom_size = EEPROM_8_KBYTE;
 
+#endif /* GBSP_BACKEND_VARIANT */
         if(dma_number < 3)
           length &= 0x3FFF;
 
@@ -832,9 +1056,15 @@ static inline s32 signext28(u32 value)
 }
 
 cpu_alert_type function_cc write_io_register16(u32 address, u32 value)
+#if defined(RISCV_ARCH) /* GBSP_BACKEND_VARIANT */
 {
   uint32_t ioreg = ((address & 0xffffff) >> 1);
   value &= 0xffff;
+#else /* GBSP_BACKEND_VARIANT */
+{
+  uint16_t ioreg = (address & 0x3FE) >> 1;
+  value &= 0xffff;
+#endif /* GBSP_BACKEND_VARIANT */
   switch(ioreg)
   {
     case REG_DISPCNT:
@@ -987,19 +1217,30 @@ cpu_alert_type function_cc write_io_register16(u32 address, u32 value)
       break;
 
     // Registers without side effects
+#if defined(RISCV_ARCH) /* GBSP_BACKEND_VARIANT */
     default:
       if (ioreg < 0x200)
         write_ioreg(ioreg, value);
       break;
+#else /* GBSP_BACKEND_VARIANT */
+    default:
+      write_ioreg(ioreg, value);
+      break;
+#endif /* GBSP_BACKEND_VARIANT */
   }
 
   return CPU_ALERT_NONE;
 }
 
 cpu_alert_type function_cc write_io_register8(u32 address, u32 value)
+#if defined(RISCV_ARCH) /* GBSP_BACKEND_VARIANT */
 {
   address &= 0xffffff;
   if (address == 0x301) {
+#else /* GBSP_BACKEND_VARIANT */
+{
+  if (address == 0x301) {
+#endif /* GBSP_BACKEND_VARIANT */
     if (value & 1)
       reg[CPU_HALT_STATE] = CPU_STOP;
     else
@@ -1007,6 +1248,7 @@ cpu_alert_type function_cc write_io_register8(u32 address, u32 value)
     return CPU_ALERT_HALT;
   }
 
+#if defined(RISCV_ARCH) /* GBSP_BACKEND_VARIANT */
   // Partial 16 bit write, treat like a regular merge-write
   if (address < 0x400) {
     if (address & 1)
@@ -1018,11 +1260,25 @@ cpu_alert_type function_cc write_io_register8(u32 address, u32 value)
 
   return CPU_ALERT_NONE;
 }
+#else /* GBSP_BACKEND_VARIANT */
+  // Partial 16 bit write, treat like a regular merge-write
+  if (address & 1)
+    value = (value << 8) | (read_ioreg(address >> 1) & 0x00ff);
+  else
+    value = (value & 0xff) | (read_ioreg(address >> 1) & 0xff00);
+  return write_io_register16(address & 0x3FE, value);
+}
+#endif /* GBSP_BACKEND_VARIANT */
 
 cpu_alert_type function_cc write_io_register32(u32 address, u32 value)
+#if defined(RISCV_ARCH) /* GBSP_BACKEND_VARIANT */
 {
   address &= 0xfffffc;
   // Handle sound FIFO data write
+#else /* GBSP_BACKEND_VARIANT */
+{
+  // Handle sound FIFO data write
+#endif /* GBSP_BACKEND_VARIANT */
   if (address == 0xA0) {
     sound_timer_queue32(0, value);
     return CPU_ALERT_NONE;
@@ -1039,16 +1295,24 @@ cpu_alert_type function_cc write_io_register32(u32 address, u32 value)
   return allow | alhigh;
 }
 
+
+#define gbsp_pal_mark() do { if (gbsp_render_core1) gbsp_pal_dirty = 1; } while (0)
+
+
 #define write_palette8(address, value)                                        \
 {                                                                             \
+  gbsp_pal_mark();                                                            \
   u32 aladdr = address & ~1U;                                                 \
   u16 val16 = (value << 8) | value;                                           \
   address16(palette_ram, aladdr) = eswap16(val16);                            \
   address16(palette_ram_converted, aladdr) = convert_palette(val16);          \
 }
 
+
+
 #define write_palette16(address, value)                                       \
 {                                                                             \
+  gbsp_pal_mark();                                                            \
   u32 palette_address = address;                                              \
   address16(palette_ram, palette_address) = eswap16(value);                   \
   value = convert_palette(value);                                             \
@@ -1057,6 +1321,7 @@ cpu_alert_type function_cc write_io_register32(u32 address, u32 value)
 
 #define write_palette32(address, value)                                       \
 {                                                                             \
+  gbsp_pal_mark();                                                            \
   u32 palette_address = address;                                              \
   u32 value_high = value >> 16;                                               \
   u32 value_low = value & 0xFFFF;                                             \
@@ -1068,9 +1333,12 @@ cpu_alert_type function_cc write_io_register32(u32 address, u32 value)
 }                                                                             \
 
 
+
 void function_cc write_backup(u32 address, u32 value)
 {
+  gamepak_backup_dirty = 1;
   value &= 0xFF;
+
 
   if(backup_type == BACKUP_EEPROM)
     return;
@@ -1228,6 +1496,11 @@ typedef enum
 
 static bool rtc_enabled = false, rumble_enabled = false;
 
+bool gpsp_rtc_is_enabled(void)
+{
+  return rtc_enabled;
+}
+
 // I/O registers (for RTC, rumble, etc)
 u8 gpio_regs[3];
 
@@ -1239,30 +1512,11 @@ u64 rtc_data;
 u32 rtc_data_bits;
 u32 rtc_status = 0x40;
 s32 rtc_bit_count;
+#if defined(RISCV_ARCH) /* GBSP_BACKEND_VARIANT */
 
-/* Baseline UNIX time captured at content load. The emulated RTC reports
- * (rtc_base_time + frame_counter * GBA_FRAME_SECONDS), so the visible
- * clock keeps its real-time feel (one in-game second per second of
- * native emulation, faster when fast-forwarding - matching real GBA
- * behaviour where the RTC oscillator is independent of the CPU) while
- * being fully determined by frame_counter and rtc_base_time. Both
- * round-trip through the savestate, so a replay from any saved state
- * reproduces the same in-game clock. Without this, the RTC fed
- * wall-clock time straight into the game's bit-stream on every read,
- * making record/replay and cross-machine state sharing impossible for
- * RTC-using titles (Pokemon Ruby/Sapphire/Emerald, Boktai series,
- * Sennen Kazoku, Rockman EXE 4.5, etc.).
- *
- * frame_counter is chosen over cpu_ticks as the time source because
- * cpu_ticks is u32 and wraps every ~256 seconds at the native cycle
- * rate, which would rewind the in-game clock every few minutes.
- * frame_counter wraps after ~2.27 years of continuous emulation. */
+/* Legacy P4 savestate metadata is retained for old readers. Cartridge time
+ * now uses the shared real-elapsed clock and is independent of state rewind. */
 static s64 rtc_base_time = 0;
-
-/* Cycles per frame at the native rate; same divisor at the 60FPS
- * overclock since GBC_BASE_RATE scales correspondingly. */
-#define GBA_CYCLES_PER_FRAME 280896
-#define GBA_FRAME_SECONDS    ((double)GBA_CYCLES_PER_FRAME / (double)GBC_BASE_RATE)
 
 static void rtc_init_base_time(void)
 {
@@ -1271,14 +1525,11 @@ static void rtc_init_base_time(void)
   rtc_base_time = (s64)t;
 }
 
-static time_t rtc_current_time(void)
-{
-  return (time_t)(rtc_base_time +
-                  (s64)((double)frame_counter * GBA_FRAME_SECONDS));
-}
-
+// Rumble trackin vars, not really preserved (it's just aproximate)
+#else /* GBSP_BACKEND_VARIANT */
 
 // Rumble trackin vars, not really preserved (it's just aproximate)
+#endif /* GBSP_BACKEND_VARIANT */
 static u32 rumble_enable_tick, rumble_ticks;
 
 static u8 encode_bcd(u8 value)
@@ -1331,10 +1582,16 @@ static void write_rtc(u8 old, u8 new)
   // CS low to high transition!
   if (!(old & GPIO_RTC_CSS))
     rtc_state = RTC_COMMAND;
+#if defined(RISCV_ARCH) /* GBSP_BACKEND_VARIANT */
 
   // Capture data on raising edge
   if (!(old & GPIO_RTC_CLK) && (new & GPIO_RTC_CLK)) {
     // Advance clock state, input/ouput data.
+#else /* GBSP_BACKEND_VARIANT */
+
+  if ((old & GPIO_RTC_CLK) && !(new & GPIO_RTC_CLK)) {
+    // Advance clock state, input/ouput data.
+#endif /* GBSP_BACKEND_VARIANT */
     switch (rtc_state) {
     case RTC_COMMAND:
       rtc_command <<= 1;
@@ -1356,9 +1613,8 @@ static void write_rtc(u8 old, u8 new)
           break;
         case RTC_COMMAND_OUTPUT_TIME_FULL:
           {
-            struct tm *current_time;
-            time_t current_time_flat = rtc_current_time();
-            current_time = localtime(&current_time_flat);
+            time_t current_time_flat = (time_t)gpsp_rtc_time();
+            struct tm *current_time = localtime(&current_time_flat);
 
             rtc_state = RTC_OUTPUT_DATA;
             rtc_data_bits = 56;
@@ -1373,9 +1629,8 @@ static void write_rtc(u8 old, u8 new)
           break;
         case RTC_COMMAND_OUTPUT_TIME:
           {
-            struct tm *current_time;
-            time_t current_time_flat = rtc_current_time();
-            current_time = localtime(&current_time_flat);
+            time_t current_time_flat = (time_t)gpsp_rtc_time();
+            struct tm *current_time = localtime(&current_time_flat);
 
             rtc_state = RTC_OUTPUT_DATA;
             rtc_data_bits = 24;
@@ -1471,6 +1726,7 @@ void function_cc write_gpio(u32 address, u32 value) {
 
 #define write_gpio8()                                                         \
 
+#if defined(RISCV_ARCH) /* GBSP_BACKEND_VARIANT */
 #define write_gpio16()                                                        \
   write_gpio(address & 0xFF, value)                                           \
 
@@ -1515,6 +1771,7 @@ void function_cc write_gpio(u32 address, u32 value) {
       if(address >= 0x18000)                                                  \
         address -= 0x8000;                                                    \
                                                                               \
+      gbsp_video_vram_write(address);                                        \
       write_vram##type();                                                     \
       break;                                                                  \
                                                                               \
@@ -1547,6 +1804,148 @@ void function_cc write_gpio(u32 address, u32 value) {
       break;                                                                  \
   }                                                                           \
 
+#elif defined(XTENSA_ARCH) /* GBSP_BACKEND_VARIANT */
+#define write_gpio16()                                                        \
+  write_gpio(address & 0xFF, value)                                           \
+
+#define GBSP_SYNC_SRC(v) ((void)0)
+#define VRAM_WRITE_BEFORE()
+#define VRAM_WRITE_AFTER(off)
+
+#define write_gpio32()                                                        \
+
+#define write_memory(type)                                                    \
+  switch(address >> 24)                                                       \
+  {                                                                           \
+    case 0x02:                                                                \
+      /* external work RAM */                                                 \
+      address##type(ewram, (address & 0x3FFFF)) = eswap##type(value);         \
+      break;                                                                  \
+                                                                              \
+    case 0x03:                                                                \
+      /* internal work RAM */                                                 \
+      address##type(iwram, (address & 0x7FFF) + (0x8000 * SMC_DETECTION)) = eswap##type(value); \
+      break;                                                                  \
+                                                                              \
+    case 0x04:                                                                \
+      /* I/O registers */                                                     \
+      return write_io_register##type(address & 0x3FF, value);                 \
+                                                                              \
+    case 0x05:                                                                \
+      /* palette RAM */                                                       \
+      write_palette##type(address & 0x3FF, value);                            \
+      break;                                                                  \
+                                                                              \
+    case 0x06:                                                                \
+      /* VRAM */                                                              \
+      GBSP_SYNC_SRC((address & 0x10000) ? 2 : 1);                             \
+      VRAM_WRITE_BEFORE();                                                    \
+      address &= 0x1FFFF;                                                     \
+      if(address >= 0x18000)                                                  \
+        address -= 0x8000;                                                    \
+      VRAM_WRITE_AFTER(address);                                              \
+                                                                              \
+      gbsp_video_vram_write(address);                                        \
+      write_vram##type();                                                     \
+      break;                                                                  \
+                                                                              \
+    case 0x07:                                                                \
+      /* OAM RAM */                                                           \
+      if (type != 8) {                                                        \
+        reg[OAM_UPDATED] = 1;                                                 \
+        address##type(oam_ram, address & 0x3FF) = eswap##type(value);         \
+      }                                                                       \
+      break;                                                                  \
+                                                                              \
+    case 0x08:                                                                \
+      /* gamepak ROM or RTC */                                                \
+      write_gpio##type();                                                     \
+      break;                                                                  \
+                                                                              \
+    case 0x09:                                                                \
+    case 0x0A:                                                                \
+    case 0x0B:                                                                \
+    case 0x0C:                                                                \
+      /* gamepak ROM space */                                                 \
+      break;                                                                  \
+                                                                              \
+    case 0x0D:                                                                \
+      write_eeprom##type(address, value);                                     \
+      break;                                                                  \
+                                                                              \
+    case 0x0E:                                                                \
+      write_backup##type();                                                   \
+      break;                                                                  \
+  }                                                                           \
+
+#else /* GBSP_BACKEND_VARIANT */
+#define write_gpio16()                                                        \
+  write_gpio(address & 0xFF, value)                                           \
+
+#define write_gpio32()                                                        \
+
+#define write_memory(type)                                                    \
+  switch(address >> 24)                                                       \
+  {                                                                           \
+    case 0x02:                                                                \
+      /* external work RAM */                                                 \
+      address##type(ewram, (address & 0x3FFFF)) = eswap##type(value);         \
+      break;                                                                  \
+                                                                              \
+    case 0x03:                                                                \
+      /* internal work RAM */                                                 \
+      address##type(iwram, (address & 0x7FFF) + (0x8000 * SMC_DETECTION)) = eswap##type(value); \
+      break;                                                                  \
+                                                                              \
+    case 0x04:                                                                \
+      /* I/O registers */                                                     \
+      return write_io_register##type(address & 0x3FF, value);                 \
+                                                                              \
+    case 0x05:                                                                \
+      /* palette RAM */                                                       \
+      write_palette##type(address & 0x3FF, value);                            \
+      break;                                                                  \
+                                                                              \
+    case 0x06:                                                                \
+      /* VRAM */                                                              \
+      address &= 0x1FFFF;                                                     \
+      if(address >= 0x18000)                                                  \
+        address -= 0x8000;                                                    \
+                                                                              \
+      gbsp_video_vram_write(address);                                        \
+      write_vram##type();                                                     \
+      break;                                                                  \
+                                                                              \
+    case 0x07:                                                                \
+      /* OAM RAM */                                                           \
+      if (type != 8) {                                                        \
+        reg[OAM_UPDATED] = 1;                                                 \
+        address##type(oam_ram, address & 0x3FF) = eswap##type(value);         \
+      }                                                                       \
+      break;                                                                  \
+                                                                              \
+    case 0x08:                                                                \
+      /* gamepak ROM or RTC */                                                \
+      write_gpio##type();                                                     \
+      break;                                                                  \
+                                                                              \
+    case 0x09:                                                                \
+    case 0x0A:                                                                \
+    case 0x0B:                                                                \
+    case 0x0C:                                                                \
+      /* gamepak ROM space */                                                 \
+      break;                                                                  \
+                                                                              \
+    case 0x0D:                                                                \
+      write_eeprom##type(address, value);                                     \
+      break;                                                                  \
+                                                                              \
+    case 0x0E:                                                                \
+      write_backup##type();                                                   \
+      break;                                                                  \
+  }                                                                           \
+
+#endif /* GBSP_BACKEND_VARIANT */
 u32 function_cc read_memory8(u32 address)
 {
   u8 value;
@@ -1593,21 +1992,31 @@ u32 function_cc read_memory16(u32 address)
 u32 function_cc read_memory32(u32 address)
 {
   u32 value;
+#if defined(RISCV_ARCH) /* GBSP_BACKEND_VARIANT */
   u32 rotate = (address & 0x03) * 8;
   u32 orig_addr = address;
   address &= ~0x03;
+#else /* GBSP_BACKEND_VARIANT */
+  u32 rotate = (address & 0x03) * 8;
+  address &= ~0x03;
+#endif /* GBSP_BACKEND_VARIANT */
   read_memory(32);
+#if defined(RISCV_ARCH) /* GBSP_BACKEND_VARIANT */
   ror(value, value, rotate);
   /* Debug: log ROM data table reads near init code */
   {
     static int rm32_dbg = 0;
-    if (rm32_dbg < 200 && (orig_addr & 0xFF000000) == 0x08000000 &&
+    if (GPSP_TRACE_ENABLED && rm32_dbg < 200 && (orig_addr & 0xFF000000) == 0x08000000 &&
         (orig_addr & 0x00FFFFFF) >= 0x200 && (orig_addr & 0x00FFFFFF) <= 0x260) {
-      printf("RM32[%d]: addr=0x%08x val=0x%08x regPC=0x%08x\n",
+      GPSP_TRACE("RM32[%d]: addr=0x%08x val=0x%08x regPC=0x%08x\n",
              rm32_dbg++, orig_addr, value, reg[15]);
     }
   }
   return value;
+#else /* GBSP_BACKEND_VARIANT */
+  ror(value, value, rotate);
+  return value;
+#endif /* GBSP_BACKEND_VARIANT */
 }
 
 cpu_alert_type function_cc write_memory8(u32 address, u8 value)
@@ -1629,14 +2038,23 @@ cpu_alert_type function_cc write_memory32(u32 address, u32 value)
 }
 
 typedef struct
+#if defined(RISCV_ARCH) /* GBSP_BACKEND_VARIANT */
 {
    char gamepak_code[5];
    u16 flags;
+#else /* GBSP_BACKEND_VARIANT */
+{
+   char gamepak_title[13];
+   char gamepak_code[5];
+   char gamepak_maker[3];
+   u16 flags;
+#endif /* GBSP_BACKEND_VARIANT */
    u32 idle_loop_target_pc;
    u32 translation_gate_target_1;
    u32 translation_gate_target_2;
    u32 translation_gate_target_3;
 } ini_t;
+#if defined(RISCV_ARCH) /* GBSP_BACKEND_VARIANT */
 
 #define FLAGS_FLASH_128KB    0x0100   // Forces 128KB flash.
 #define FLAGS_RUMBLE         0x0200   // Enables GPIO3 rumble support.
@@ -1652,27 +2070,67 @@ typedef struct
 #define FLAGS_SERIAL_AW1     0x0003
 #define FLAGS_SERIAL_AW2     0x0004
 
+#else /* GBSP_BACKEND_VARIANT */
+
+typedef struct
+{
+   char gamepak_title[13];
+   char gamepak_code[5];
+   char gamepak_maker[3];
+} gamepak_info_t;
+
+#define FLAGS_FLASH_128KB    0x0001   // Forces 128KB flash.
+#define FLAGS_RUMBLE         0x0002   // Enables GPIO3 rumble support.
+#define FLAGS_GBA_PLAYER     0x0004   // Enables GBA Player rumble support.
+#define FLAGS_RTC            0x0008   // Enables RTC support by default.
+#define FLAGS_EEPROM         0x0010   // Forces EEPROM storage.
+#define FLAGS_RFU            0x0020   // Enables Wireless Adapter (via serial).
+
+#endif /* GBSP_BACKEND_VARIANT */
 #include "gba_over.h"
+#if defined(RISCV_ARCH) /* GBSP_BACKEND_VARIANT */
 
 static void load_game_config_over(const char *gamecode)
 {
   unsigned i = 0;
-  is_known_game = false;
 
+#else /* GBSP_BACKEND_VARIANT */
+
+static void load_game_config_over(gamepak_info_t *gpinfo)
+{
+  unsigned i = 0;
+
+#endif /* GBSP_BACKEND_VARIANT */
   for (i = 0; i < sizeof(gbaover)/sizeof(gbaover[0]); i++)
+#if defined(RISCV_ARCH) /* GBSP_BACKEND_VARIANT */
   {
      if (strcmp(gbaover[i].gamepak_code, gamecode) != 0)
         continue;
 
-     printf("gamepak code match for : %s\n", gbaover[i].gamepak_code);
-     is_known_game = true;
 
+#else /* GBSP_BACKEND_VARIANT */
+  {
+     if (strcmp(gbaover[i].gamepak_code, gpinfo->gamepak_code))
+        continue;
+
+     if (strcmp(gbaover[i].gamepak_title, gpinfo->gamepak_title))
+        continue;
+
+
+
+#endif /* GBSP_BACKEND_VARIANT */
      if (gbaover[i].idle_loop_target_pc != 0)
         idle_loop_target_pc = gbaover[i].idle_loop_target_pc;
 
+#if defined(RISCV_ARCH) /* GBSP_BACKEND_VARIANT */
      if (gbaover[i].flags & FLAGS_FLASH_128KB) {
        flash_device_id = FLASH_DEVICE_SANYO_128KB;
        flash_bank_cnt = FLASH_SIZE_128KB;
+#else /* GBSP_BACKEND_VARIANT */
+     if (gbaover[i].flags & FLAGS_FLASH_128KB) {
+       flash_device_id = FLASH_DEVICE_MACRONIX_128KB;
+       flash_bank_cnt = FLASH_SIZE_128KB;
+#endif /* GBSP_BACKEND_VARIANT */
      }
 
      if (gbaover[i].flags & FLAGS_RTC)
@@ -1683,12 +2141,22 @@ static void load_game_config_over(const char *gamecode)
 
      if (gbaover[i].flags & FLAGS_EEPROM)
        backup_type_reset = BACKUP_EEPROM;
+#if defined(RISCV_ARCH) /* GBSP_BACKEND_VARIANT */
 
      if (serial_mode == SERIAL_MODE_AUTO && (gbaover[i].flags & FLAGS_SERIAL))
      {
        u32 m = gbaover[i].flags & FLAGS_SERIAL_MASK;
        serial_mode = m + 1;   // Maintain the serial mode list consistently.
      }
+#else /* GBSP_BACKEND_VARIANT */
+
+     if (serial_mode == SERIAL_MODE_AUTO) {
+       if (gbaover[i].flags & FLAGS_RFU)
+         serial_mode = SERIAL_MODE_RFU;
+       if (gbaover[i].flags & FLAGS_GBA_PLAYER)
+         serial_mode = SERIAL_MODE_GBP;
+     }
+#endif /* GBSP_BACKEND_VARIANT */
 
      if (gbaover[i].translation_gate_target_1 != 0)
      {
@@ -1808,9 +2276,15 @@ const dma_region_type dma_region_map[17] =
     }                                                                         \
   }                                                                           \
 
+#if defined(RISCV_ARCH) /* GBSP_BACKEND_VARIANT */
 #define dma_read_iwram(type, tfsize)                                          \
   read_value = readaddress##tfsize(iwram + 0x8000, type##_ptr & 0x7FFF)       \
 
+#else /* GBSP_BACKEND_VARIANT */
+#define dma_read_iwram(type, tfsize)                                          \
+  read_value = readaddress##tfsize(iwram + (0x8000 * SMC_DETECTION), type##_ptr & 0x7FFF) \
+
+#endif /* GBSP_BACKEND_VARIANT */
 #define dma_read_vram(type, tfsize) {                                         \
   u32 rdaddr = type##_ptr & 0x1FFFF;                                          \
   if (rdaddr >= 0x18000) rdaddr -= 0x8000;                                    \
@@ -1838,6 +2312,7 @@ const dma_region_type dma_region_map[17] =
 
 #define dma_read_bus(type, tfsize)
 
+#if defined(RISCV_ARCH) /* GBSP_BACKEND_VARIANT */
 #define dma_read_ext(type, tfsize)                                            \
   read_value = read_memory##tfsize(type##_ptr)                                \
 
@@ -1847,15 +2322,46 @@ const dma_region_type dma_region_map[17] =
   if (address##tfsize(iwram, type##_ptr & 0x7FFF))                            \
     alerts |= CPU_ALERT_SMC;                                                  \
 
+#elif defined(XTENSA_ARCH) /* GBSP_BACKEND_VARIANT */
+#define dma_read_ext(type, tfsize)                                            \
+  read_value = read_memory##tfsize(type##_ptr)                                \
+
+/* (a DMA that rewrites translated code with the same values: no SMC alert,
+   as the dynarec's stores, xtensa_stub.c) */
+#define dma_write_iwram(type, tfsize)                                         \
+  if (SMC_DETECTION && address##tfsize(iwram, type##_ptr & 0x7FFF) &&         \
+      address##tfsize(iwram + (0x8000 * SMC_DETECTION), type##_ptr & 0x7FFF)  \
+        != eswap##tfsize(read_value))                                         \
+    alerts |= CPU_ALERT_SMC;                                                  \
+  address##tfsize(iwram + (0x8000 * SMC_DETECTION), type##_ptr & 0x7FFF) =    \
+                                          eswap##tfsize(read_value);          \
+
+#else /* GBSP_BACKEND_VARIANT */
+#define dma_read_ext(type, tfsize)                                            \
+  read_value = read_memory##tfsize(type##_ptr)                                \
+
+#define dma_write_iwram(type, tfsize)                                         \
+  address##tfsize(iwram + (0x8000 * SMC_DETECTION), type##_ptr & 0x7FFF) =    \
+                                          eswap##tfsize(read_value);          \
+  if (SMC_DETECTION && address##tfsize(iwram, type##_ptr & 0x7FFF))           \
+    alerts |= CPU_ALERT_SMC;                                                  \
+
+#endif /* GBSP_BACKEND_VARIANT */
 #define dma_write_vram(type, tfsize) {                                        \
   u32 wraddr = type##_ptr & 0x1FFFF;                                          \
   if (wraddr >= 0x18000) wraddr -= 0x8000;                                    \
   address##tfsize(vram, wraddr) = eswap##tfsize(read_value);                  \
 }
 
+#if defined(RISCV_ARCH) /* GBSP_BACKEND_VARIANT */
 #define dma_write_io(type, tfsize)                                            \
   alerts |= write_io_register##tfsize(type##_ptr, read_value)                 \
 
+#else /* GBSP_BACKEND_VARIANT */
+#define dma_write_io(type, tfsize)                                            \
+  alerts |= write_io_register##tfsize(type##_ptr & 0x3FF, read_value)         \
+
+#endif /* GBSP_BACKEND_VARIANT */
 #define dma_write_oam_ram(type, tfsize)                                       \
   address##tfsize(oam_ram, type##_ptr & 0x3FF) = eswap##tfsize(read_value)    \
 
@@ -1865,11 +2371,26 @@ const dma_region_type dma_region_map[17] =
 #define dma_write_ext(type, tfsize)                                           \
   write_memory##tfsize(type##_ptr, read_value)                                \
 
+#if defined(RISCV_ARCH) /* GBSP_BACKEND_VARIANT */
 #define dma_write_ewram(type, tfsize)                                         \
   address##tfsize(ewram, type##_ptr & 0x3FFFF) = eswap##tfsize(read_value);   \
   if (address##tfsize(ewram, (type##_ptr & 0x3FFFF) + 0x40000))               \
     alerts |= CPU_ALERT_SMC;                                                  \
 
+#elif defined(XTENSA_ARCH) /* GBSP_BACKEND_VARIANT */
+#define dma_write_ewram(type, tfsize)                                         \
+  if (SMC_DETECTION && address##tfsize(ewram, (type##_ptr & 0x3FFFF) + 0x40000) \
+      && address##tfsize(ewram, type##_ptr & 0x3FFFF) != eswap##tfsize(read_value)) \
+    alerts |= CPU_ALERT_SMC;                                                  \
+  address##tfsize(ewram, type##_ptr & 0x3FFFF) = eswap##tfsize(read_value);   \
+
+#else /* GBSP_BACKEND_VARIANT */
+#define dma_write_ewram(type, tfsize)                                         \
+  address##tfsize(ewram, type##_ptr & 0x3FFFF) = eswap##tfsize(read_value);   \
+  if (SMC_DETECTION && address##tfsize(ewram, (type##_ptr & 0x3FFFF) + 0x40000)) \
+    alerts |= CPU_ALERT_SMC;                                                  \
+
+#endif /* GBSP_BACKEND_VARIANT */
 #define print_line()                                                          \
   dma_print(src_op, dest_op, tfsize);                                         \
 
@@ -2151,8 +2672,10 @@ cpu_alert_type dma_transfer(unsigned dma_chan, int *usedcycles)
   dma_region_type src_reg1 = dma_region_map[src_end >> 24];
   dma_region_type dst_reg0 = dma_region_map[dst_ptr >> 24];
   dma_region_type dst_reg1 = dma_region_map[dst_end >> 24];
-
+  if (dst_reg0 == DMA_REGION_VRAM || dst_reg1 == DMA_REGION_VRAM)
+    gbsp_video_vram_range(MIN(dst_ptr, dst_end), MAX(dst_ptr, dst_end));
   if (src_reg0 == src_reg1 && dst_reg0 == dst_reg1)
+
     ret = dma_transfer_copy(dmach, src_ptr, dst_ptr, byte_length >> tfsizes);
   else if (src_reg0 == src_reg1) {
     // Source stays within the region, dest crosses over
@@ -2264,6 +2787,7 @@ static u32 evict_gamepak_page(void)
 }
 
 u8 *load_gamepak_page(u32 physical_index)
+#if defined(RISCV_ARCH) /* GBSP_BACKEND_VARIANT */
 {
   u32 rom_blocks = gamepak_size >> 15;
   if (rom_blocks == 0)
@@ -2275,32 +2799,183 @@ u8 *load_gamepak_page(u32 physical_index)
     physical_index %= rom_blocks;
 
   u32 entry = evict_gamepak_page();
+#elif defined(XTENSA_ARCH) /* GBSP_BACKEND_VARIANT */
+{
+  if(physical_index >= (gamepak_size >> 15))
+    return &gamepak_buffers[0][0];
+
+  gamepak_page_loads++;
+
+#ifdef GBAPROF
+  { extern u32 gbaprof_pageloads; gbaprof_pageloads++; }
+#endif
+  u32 entry = evict_gamepak_page();
+#else /* GBSP_BACKEND_VARIANT */
+{
+  if(physical_index >= (gamepak_size >> 15))
+    return &gamepak_buffers[0][0];
+
+  u32 entry = evict_gamepak_page();
+#endif /* GBSP_BACKEND_VARIANT */
   u32 block_idx = entry / 32;
   u32 block_off = entry % 32;
   u8 *swap_location = &gamepak_buffers[block_idx][32 * 1024 * block_off];
 
   // Fill in the entry
   gamepak_blk_queue[entry].phy_rom = physical_index;
+#if defined(RISCV_ARCH) /* GBSP_BACKEND_VARIANT */
 
   u32 file_index = physical_index;
   if (gamepak_mirror_1m && gamepak_file_blocks != 0)
     file_index %= gamepak_file_blocks;
 
-  filestream_seek(gamepak_file_large, file_index * (32 * 1024), SEEK_SET);
-  {
-    u32 read_len = (u32)filestream_read(gamepak_file_large, swap_location, (32 * 1024));
-    if (read_len < (32 * 1024))
-      memset(swap_location + read_len, 0xFF, (32 * 1024) - read_len);
-  }
+  if (!gp_rom_read_at(gamepak_file_large, swap_location, 32 * 1024,
+                      file_index * (32 * 1024), gamepak_disk_size))
+    RG_PANIC("ROM page read failed");
 
   // Map it to the read handlers now
   map_rom_entry(read, physical_index, swap_location, rom_blocks);
 
+#elif defined(XTENSA_ARCH) /* GBSP_BACKEND_VARIANT */
+
+  if (!gp_rom_read_at(gamepak_file_large, swap_location, 32 * 1024,
+                      physical_index * (32 * 1024), gamepak_disk_size))
+    RG_PANIC("ROM page read failed");
+
+  // Map it to the read handlers now
+  map_rom_entry(read, physical_index, swap_location, gamepak_size >> 15);
+
+#else /* GBSP_BACKEND_VARIANT */
+
+  if (!gp_rom_read_at(gamepak_file_large, swap_location, 32 * 1024,
+                      physical_index * (32 * 1024), gamepak_disk_size))
+    RG_PANIC("ROM page read failed");
+
+  // Map it to the read handlers now
+  map_rom_entry(read, physical_index, swap_location, gamepak_size >> 15);
+
+#endif /* GBSP_BACKEND_VARIANT */
   // When mapping page 0, we might need to reflect the GPIO regs.
   if (physical_index == 0)
     update_gpio_romregs();
 
   return swap_location;
+}
+
+/* One cache block can be lent between frames on every backend. Keep its queue
+ * metadata, unmap aliases while overwritten, and restore before CPU execution. */
+static int gamepak_lent_block = -1;
+static long gamepak_lent_file_size;
+
+u8 *gamepak_borrow_block(void)
+{
+  if (gamepak_lent_block >= 0 || !gamepak_buffer_count || !gamepak_file_large || !gamepak_size)
+    return NULL;
+  if (fseek(gamepak_file_large, 0, SEEK_END)) return NULL;
+  gamepak_lent_file_size = ftell(gamepak_file_large);
+  if (gamepak_lent_file_size <= 0) return NULL;
+  gamepak_lent_block = (int)gamepak_buffer_count - 1;
+  for (u32 j = 0; j < 32; j++) {
+    s32 phy = gamepak_blk_queue[gamepak_lent_block * 32 + j].phy_rom;
+    if (phy >= 0) map_rom_entry(read, phy, NULL, gamepak_size >> 15);
+  }
+  return gamepak_buffers[gamepak_lent_block];
+}
+
+static bool gamepak_restore_block(u32 idx, long file_size)
+{
+  for (u32 j = 0; j < 32; j++) {
+    s32 phy = gamepak_blk_queue[idx * 32 + j].phy_rom;
+    if (phy < 0) continue;
+    u32 file_index = (u32)phy;
+#if defined(RISCV_ARCH) /* GBSP_BACKEND_VARIANT */
+    if (gamepak_mirror_1m && gamepak_file_blocks) file_index %= gamepak_file_blocks;
+#endif /* GBSP_BACKEND_VARIANT */
+    long offset = (long)file_index * (32 * 1024);
+    if (offset >= file_size) return false;
+    size_t size = (size_t)(file_size - offset);
+    if (size > 32 * 1024) size = 32 * 1024;
+    u8 *slot = &gamepak_buffers[idx][32 * 1024 * j];
+    memset(slot, 0xFF, 32 * 1024); /* final partial ROM page */
+    clearerr(gamepak_file_large);
+    if (fseek(gamepak_file_large, offset, SEEK_SET)) return false;
+#if defined(RISCV_ARCH) /* GBSP_BACKEND_VARIANT */
+    size_t got = (size_t)filestream_read(gamepak_file_large, slot, size);
+#elif defined(XTENSA_ARCH) /* GBSP_BACKEND_VARIANT */
+    size_t got = GAMEPAK_FREAD(slot, size, gamepak_file_large);
+#else /* GBSP_BACKEND_VARIANT */
+    size_t got = fread(slot, 1, size, gamepak_file_large);
+#endif /* GBSP_BACKEND_VARIANT */
+    if (got != size || ferror(gamepak_file_large)) return false;
+    map_rom_entry(read, phy, slot, gamepak_size >> 15);
+    if (phy == 0) update_gpio_romregs();
+  }
+  return true;
+}
+
+bool gamepak_return_block(void)
+{
+  if (gamepak_lent_block < 0 || !gamepak_restore_block((u32)gamepak_lent_block, gamepak_lent_file_size))
+    return false;
+  gamepak_lent_block = -1;
+  return true;
+}
+
+/* Menus decode and enlarge previews using the ordinary heap. A borrowed block
+ * remains allocated, so release one block to the heap for the whole menu. No
+ * CPU execution is allowed until menu_end has restored at least one block. */
+static int gamepak_menu_block = -1;
+static long gamepak_menu_file_size;
+
+static void gamepak_rebuild_lru(void)
+{
+  u32 slots = gamepak_buffer_count * 32;
+  gamepak_lru_head = 0;
+  gamepak_lru_tail = slots ? (u16)(slots - 1) : 0;
+  for (u32 j = 0; j < slots; j++)
+    gamepak_blk_queue[j].next_lru = (u16)((j + 1) % slots);
+}
+
+void gamepak_menu_begin(void)
+{
+  if (gamepak_menu_block >= 0) return;
+  if (gamepak_lent_block >= 0 || !gamepak_buffer_count || !gamepak_file_large)
+    RG_PANIC("Cannot release ROM cache for menu");
+  if (fseek(gamepak_file_large, 0, SEEK_END) || (gamepak_menu_file_size = ftell(gamepak_file_large)) <= 0)
+    RG_PANIC("Cannot read ROM size for menu");
+  u32 idx = gamepak_buffer_count - 1;
+  for (u32 j = 0; j < 32; j++) {
+    s32 phy = gamepak_blk_queue[idx * 32 + j].phy_rom;
+    if (phy >= 0) map_rom_entry(read, phy, NULL, gamepak_size >> 15);
+  }
+  gamepak_menu_block = (int)idx;
+  free(gamepak_buffers[idx]);
+  gamepak_buffers[idx] = NULL;
+  gamepak_buffer_count--;
+  gamepak_rebuild_lru();
+  RG_LOGD("Menu: released 1 MB ROM-cache block for previews");
+}
+
+void gamepak_menu_end(void)
+{
+  if (gamepak_menu_block < 0) return;
+  if (gamepak_lent_block >= 0) RG_PANIC("State buffer still borrowed on menu exit");
+  u32 idx = (u32)gamepak_menu_block;
+  u8 *buffer = malloc(gamepak_buffer_blocksize);
+  if (!buffer) {
+    for (u32 j = 0; j < 32; j++) gamepak_blk_queue[idx * 32 + j].phy_rom = -1;
+    gamepak_menu_block = -1;
+    if (!gamepak_buffer_count) RG_PANIC("Cannot restore ROM cache after menu");
+    RG_LOGW("Menu: could not restore ROM-cache capacity; continuing with %u blocks", (unsigned)gamepak_buffer_count);
+    return;
+  }
+  gamepak_buffers[idx] = buffer;
+  gamepak_buffer_count++;
+  if (!gamepak_restore_block(idx, gamepak_menu_file_size))
+    RG_PANIC("Cannot reload ROM cache after menu");
+  gamepak_rebuild_lru();
+  gamepak_menu_block = -1;
+  RG_LOGD("Menu: restored ROM-cache capacity (%u blocks)", (unsigned)gamepak_buffer_count);
 }
 
 void init_gamepak_buffer(void)
@@ -2328,11 +3003,16 @@ void init_gamepak_buffer(void)
 }
 
 bool gamepak_must_swap(void)
+#if defined(RISCV_ARCH) /* GBSP_BACKEND_VARIANT */
 {
   if (gamepak_mini_materialized)
     return false;
 
   // Returns whether the current gamepak buffer is not big enough to hold
+#else /* GBSP_BACKEND_VARIANT */
+{
+  // Returns whether the current gamepak buffer is not big enough to hold
+#endif /* GBSP_BACKEND_VARIANT */
   // the full gamepak ROM. In these cases the device must swap.
   return gamepak_buffer_count * gamepak_buffer_blocksize < gamepak_size;
 }
@@ -2356,9 +3036,15 @@ void init_memory(void)
   // Fill memory map regions, areas marked as NULL must be checked directly
   map_region(read, 0x0000000, 0x1000000, 1, bios_rom);
   map_null(read, 0x1000000, 0x2000000);
+#if defined(RISCV_ARCH) /* GBSP_BACKEND_VARIANT */
   map_region(read, 0x2000000, 0x3000000, 8, ewram);
   map_region(read, 0x3000000, 0x4000000, 1, &iwram[0x8000]);
   map_region(read, 0x4000000, 0x5000000, 1, io_registers);
+#else /* GBSP_BACKEND_VARIANT */
+  map_region(read, 0x2000000, 0x3000000, 8, ewram);
+  map_region(read, 0x3000000, 0x4000000, 1, &iwram[0x8000 * SMC_DETECTION]);
+  map_region(read, 0x4000000, 0x5000000, 1, io_registers);
+#endif /* GBSP_BACKEND_VARIANT */
   map_null(read, 0x5000000, 0x6000000);
   map_null(read, 0x6000000, 0x7000000);
   map_vram(read);
@@ -2403,14 +3089,21 @@ void init_memory(void)
 void memory_term(void)
 {
   if (gamepak_file_large)
+#if defined(RISCV_ARCH) /* GBSP_BACKEND_VARIANT */
   {
     filestream_close(gamepak_file_large);
     gamepak_file_large = NULL;
+#else /* GBSP_BACKEND_VARIANT */
+  {
+    fclose(gamepak_file_large);
+    gamepak_file_large = NULL;
+#endif /* GBSP_BACKEND_VARIANT */
   }
 
   while (gamepak_buffer_count)
   {
     free(gamepak_buffers[--gamepak_buffer_count]);
+#if defined(RISCV_ARCH) /* GBSP_BACKEND_VARIANT */
   }
 
   if (gamepak_mini_rom)
@@ -2420,6 +3113,10 @@ void memory_term(void)
   }
   gamepak_mini_materialized = false;
 }
+#else /* GBSP_BACKEND_VARIANT */
+  }
+}
+#endif /* GBSP_BACKEND_VARIANT */
 
 bool memory_check_savestate(const u8 *src)
 {
@@ -2439,13 +3136,13 @@ bool memory_check_savestate(const u8 *src)
   if (!memdoc || !bakdoc || !dmadoc)
     return false;
 
-  // Check memory buffers (TODO: check sizes!)
-  if (!bson_contains_key(memdoc, "iwram", BSON_TYPE_BIN) ||
-      !bson_contains_key(memdoc, "ewram", BSON_TYPE_BIN) ||
-      !bson_contains_key(memdoc, "vram", BSON_TYPE_BIN) ||
-      !bson_contains_key(memdoc, "oamram", BSON_TYPE_BIN) ||
-      !bson_contains_key(memdoc, "palram", BSON_TYPE_BIN) ||
-      !bson_contains_key(memdoc, "ioregs", BSON_TYPE_BIN) ||
+  // Validate every destination size before any reader mutates live RAM.
+  if (!bson_read_bytes(memdoc, "iwram", NULL, 0x8000) ||
+      !bson_read_bytes(memdoc, "ewram", NULL, 0x40000) ||
+      !bson_read_bytes(memdoc, "vram", NULL, sizeof(vram)) ||
+      !bson_read_bytes(memdoc, "oamram", NULL, sizeof(oam_ram)) ||
+      !bson_read_bytes(memdoc, "palram", NULL, sizeof(palette_ram)) ||
+      !bson_read_bytes(memdoc, "ioregs", NULL, sizeof(io_registers)) ||
       !bson_contains_key(memdoc, "dma-bus", BSON_TYPE_INT32))
      return false;
 
@@ -2454,8 +3151,8 @@ bool memory_check_savestate(const u8 *src)
     if (!bson_contains_key(bakdoc, vars32[i], BSON_TYPE_INT32))
       return false;
 
-  if (!bson_contains_key(bakdoc, "gpio-regs", BSON_TYPE_BIN) ||
-      !bson_contains_key(bakdoc, "rtc-data-words", BSON_TYPE_ARR))
+  if (!bson_read_bytes(bakdoc, "gpio-regs", NULL, sizeof(gpio_regs)) ||
+      !bson_read_int32_array(bakdoc, "rtc-data-words", NULL, 2))
       return false;
 
   for (i = 0; i < DMA_CHAN_CNT; i++)
@@ -2465,8 +3162,8 @@ bool memory_check_savestate(const u8 *src)
     if (!dmastr)
       return false;
 
-    for (i = 0; i < sizeof(dmavars32)/sizeof(dmavars32[0]); i++)
-      if (!bson_contains_key(dmastr, dmavars32[i], BSON_TYPE_INT32))
+    for (unsigned j = 0; j < sizeof(dmavars32)/sizeof(dmavars32[0]); j++)
+      if (!bson_contains_key(dmastr, dmavars32[j], BSON_TYPE_INT32))
         return false;
   }
   return true;
@@ -2483,9 +3180,15 @@ bool memory_read_savestate(const u8 *src)
   if (!memdoc || !bakdoc || !dmadoc)
     return false;
 
+#if defined(RISCV_ARCH) /* GBSP_BACKEND_VARIANT */
   if (!(
     bson_read_bytes(memdoc, "iwram", &iwram[0x8000], 0x8000) &&
     bson_read_bytes(memdoc, "ewram", ewram, 0x40000) &&
+#else /* GBSP_BACKEND_VARIANT */
+  if (!(
+    bson_read_bytes(memdoc, "iwram", &iwram[0x8000 * SMC_DETECTION], 0x8000) &&
+    bson_read_bytes(memdoc, "ewram", ewram, 0x40000) &&
+#endif /* GBSP_BACKEND_VARIANT */
     bson_read_bytes(memdoc, "vram", vram, sizeof(vram)) &&
     bson_read_bytes(memdoc, "oamram", oam_ram, sizeof(oam_ram)) &&
     bson_read_bytes(memdoc, "palram", palette_ram, sizeof(palette_ram)) &&
@@ -2515,6 +3218,7 @@ bool memory_read_savestate(const u8 *src)
     bson_read_int32(bakdoc, "rtc-bit-cnt", (u32*)&rtc_bit_count) &&
     bson_read_int32_array(bakdoc, "rtc-data-words", rtc_data_array, 2)))
     return false;
+#if defined(RISCV_ARCH) /* GBSP_BACKEND_VARIANT */
 
   /* rtc-base-time is optional for forward-compat with states written
    * before deterministic RTC; if absent, keep whatever load_gamepak
@@ -2526,6 +3230,10 @@ bool memory_read_savestate(const u8 *src)
   }
 
   for (i = 0; i < DMA_CHAN_CNT; i++)
+#else /* GBSP_BACKEND_VARIANT */
+
+  for (i = 0; i < DMA_CHAN_CNT; i++)
+#endif /* GBSP_BACKEND_VARIANT */
   {
     char tname[2] = {'0' + i, 0};
     const u8 *dmastr = bson_find_key(dmadoc, tname);
@@ -2554,9 +3262,15 @@ unsigned memory_write_savestate(u8 *dst)
   u8 *wbptr, *wbptr2, *startp = dst;
   u32 rtc_data_array[2] = { (u32)rtc_data, (u32)(rtc_data >> 32) };
 
+#if defined(RISCV_ARCH) /* GBSP_BACKEND_VARIANT */
   bson_start_document(dst, "memory", wbptr);
   bson_write_bytes(dst, "iwram", &iwram[0x8000], 0x8000);
   bson_write_bytes(dst, "ewram", ewram, 0x40000);
+#else /* GBSP_BACKEND_VARIANT */
+  bson_start_document(dst, "memory", wbptr);
+  bson_write_bytes(dst, "iwram", &iwram[0x8000 * SMC_DETECTION], 0x8000);
+  bson_write_bytes(dst, "ewram", ewram, 0x40000);
+#endif /* GBSP_BACKEND_VARIANT */
   bson_write_bytes(dst, "vram", vram, sizeof(vram));
   bson_write_bytes(dst, "oamram", oam_ram, sizeof(oam_ram));
   bson_write_bytes(dst, "palram", palette_ram, sizeof(palette_ram));
@@ -2585,6 +3299,7 @@ unsigned memory_write_savestate(u8 *dst)
   bson_write_int32(dst, "rtc-status", rtc_status);
   bson_write_int32(dst, "rtc-data-bit-cnt", rtc_data_bits);
   bson_write_int32(dst, "rtc-bit-cnt", rtc_bit_count);
+#if defined(RISCV_ARCH) /* GBSP_BACKEND_VARIANT */
   bson_write_int32array(dst, "rtc-data-words", rtc_data_array, 2);
   {
     u32 base_words[2] = { (u32)(u64)rtc_base_time,
@@ -2592,6 +3307,10 @@ unsigned memory_write_savestate(u8 *dst)
     bson_write_int32array(dst, "rtc-base-time", base_words, 2);
   }
   bson_finish_document(dst, wbptr);
+#else /* GBSP_BACKEND_VARIANT */
+  bson_write_int32array(dst, "rtc-data-words", rtc_data_array, 2);
+  bson_finish_document(dst, wbptr);
+#endif /* GBSP_BACKEND_VARIANT */
 
   bson_start_document(dst, "dma", wbptr);
   for (i = 0; i < DMA_CHAN_CNT; i++)
@@ -2614,124 +3333,99 @@ unsigned memory_write_savestate(u8 *dst)
 
   return (unsigned int)(dst - startp);
 }
+/* Progress notifications are optional and run on the loading thread. */
+void (*gamepak_load_progress)(int percent);
 
 static s32 load_gamepak_raw(const char *name)
 {
-  unsigned i, j;
-  u32 raw_size;
-  int64_t fsize;
-  gamepak_file_large = filestream_open(name, RETRO_VFS_FILE_ACCESS_READ,
-                                       RETRO_VFS_FILE_ACCESS_HINT_NONE);
-  if(gamepak_file_large)
-  {
-    if (gamepak_mini_rom)
-    {
-      free(gamepak_mini_rom);
-      gamepak_mini_rom = NULL;
-    }
-    gamepak_mini_materialized = false;
-
-    /* filestream_get_size() returns int64_t and can yield a negative
-     * value on error or a value above 4 GiB. Silently casting either to
-     * u32 produces a wrong raw_size that downstream code happily uses to
-     * malloc, memset and map. Reject both cases up front. */
-    fsize = filestream_get_size(gamepak_file_large);
-    if (fsize <= 0 || fsize > (int64_t)0x20000000)   /* > 512MiB: not a GBA ROM */
-    {
-      filestream_close(gamepak_file_large);
-      gamepak_file_large = NULL;
-      return -1;
-    }
-    raw_size = (u32)fsize;
-
-    // Round size to 32KB pages
-    raw_size = (raw_size + 0x7FFF) & ~0x7FFF;
-    gamepak_file_blocks = raw_size >> 15;
-    gamepak_mirror_1m = (raw_size == 0x00100000);
-    gamepak_size = gamepak_mirror_1m ? 0x00400000 : raw_size;
-
-    // mGBA/VBA-M style path for 1MiB mirrored mini ROMs:
-    // materialize a dedicated 4MiB ROM image and map it directly.
-    if (gamepak_mirror_1m)
-    {
-      u32 map_blocks = gamepak_size >> 15;
-      u32 phyn;
-      gamepak_mini_rom = (u8*)malloc(gamepak_size);
-      if (gamepak_mini_rom)
-      {
-        u32 read_len = (u32)filestream_read(gamepak_file_large, gamepak_mini_rom, raw_size);
-        if (read_len < raw_size)
-          memset(gamepak_mini_rom + read_len, 0xFF, raw_size - read_len);
-        memcpy(gamepak_mini_rom + 0x100000, gamepak_mini_rom, 0x100000);
-        memcpy(gamepak_mini_rom + 0x200000, gamepak_mini_rom, 0x100000);
-        memcpy(gamepak_mini_rom + 0x300000, gamepak_mini_rom, 0x100000);
-
-        // Keep buffer[0] in sync with ROM start for header-based logic.
-        if (gamepak_buffer_count > 0)
-          memcpy(gamepak_buffers[0], gamepak_mini_rom, gamepak_buffer_blocksize);
-
-        map_null(read, 0x8000000, 0xD000000);
-        for (phyn = 0; phyn < map_blocks; phyn++)
-        {
-          u8 *blkptr = &gamepak_mini_rom[32 * 1024 * phyn];
-          map_rom_entry(read, phyn, blkptr, map_blocks);
-        }
-        update_gpio_romregs();
-
-        gamepak_mirror_1m = false;
-        gamepak_mini_materialized = true;
-        return 0;
-      }
-
-      /* Materialization failed (malloc returned NULL).  Fall back to the
-       * chunked path, but undo the gamepak_size = 4MiB lie: the chunked
-       * loader keys mapping off gamepak_file_blocks (= 32 for a 1 MiB
-       * file) and rom_blocks (= gamepak_size >> 15).  Leaving
-       * gamepak_size at 4 MiB tells map_rom_entry to map 128 pages even
-       * though we only have 32, producing wrong addresses for the
-       * mirrored upper 3 MiB.  Reset to the on-disk size and disable the
-       * mirror flag; the game will see only the first 1 MiB, but at
-       * least the mapping is consistent and the core does not crash. */
-      gamepak_size = raw_size;
-      gamepak_mirror_1m = false;
-      filestream_seek(gamepak_file_large, 0, SEEK_SET);
-    }
-
-    // Load stuff in 1MB chunks
-    u32 buf_blocks = (raw_size + gamepak_buffer_blocksize-1) / (gamepak_buffer_blocksize);
-    u32 rom_blocks = gamepak_size >> 15;
-    u32 ldblks = buf_blocks < gamepak_buffer_count ?
-                    buf_blocks : gamepak_buffer_count;
-
-    // Unmap the ROM space since we will re-map it now
-    map_null(read, 0x8000000, 0xD000000);
-
-    // Proceed to read the whole ROM or as much as possible.
-    for (i = 0; i < ldblks; i++)
-    {
-      // Load 1MB chunk and map it
-      {
-        u32 read_len = (u32)filestream_read(gamepak_file_large, gamepak_buffers[i], gamepak_buffer_blocksize);
-        if (read_len < gamepak_buffer_blocksize)
-          memset(gamepak_buffers[i] + read_len, 0xFF, gamepak_buffer_blocksize - read_len);
-      }
-      for (j = 0; j < 32 && i*32 + j < gamepak_file_blocks; j++)
-      {
-        u32 phyn = i*32 + j;
-        u8* blkptr = &gamepak_buffers[i][32 * 1024 * j];
-        u32 entry = evict_gamepak_page();
-        gamepak_blk_queue[entry].phy_rom = phyn;
-        // Map it to the read handlers now
-        map_rom_entry(read, phyn, blkptr, rom_blocks);
-      }
-    } 
-
-    return 0;
+  gamepak_file_large = fopen(name, "rb");
+  if (!gamepak_file_large) return -1;
+  const char *why;
+  if (!gp_rom_size(gamepak_file_large, &gamepak_disk_size, &why)) {
+    RG_LOGE("ROM: %s", why);
+    fclose(gamepak_file_large); gamepak_file_large = NULL;
+    return -1;
   }
-
+  u32 raw_size = (gamepak_disk_size + 0x7fff) & ~0x7fff;
+  gamepak_size = raw_size;
+#if defined(RISCV_ARCH) /* GBSP_BACKEND_VARIANT */
+  free(gamepak_mini_rom); gamepak_mini_rom = NULL;
+  gamepak_mini_materialized = false;
+  gamepak_file_blocks = raw_size >> 15;
+  gamepak_mirror_1m = (raw_size == 0x00100000);
+  if (gamepak_mirror_1m) {
+    gamepak_mini_rom = (u8 *)malloc(4 * 1024 * 1024);
+    if (gamepak_mini_rom) {
+      if (!gp_rom_read_at(gamepak_file_large, gamepak_mini_rom, raw_size, 0, gamepak_disk_size))
+        goto read_failed;
+      for (u32 i = 1; i < 4; i++)
+        memcpy(gamepak_mini_rom + i * raw_size, gamepak_mini_rom, raw_size);
+      gamepak_size = 4 * raw_size;
+      if (gamepak_buffer_count) memcpy(gamepak_buffers[0], gamepak_mini_rom, gamepak_buffer_blocksize);
+      map_null(read, 0x8000000, 0xD000000);
+      for (u32 phyn = 0; phyn < gamepak_size >> 15; phyn++) {
+        u8 *blkptr = &gamepak_mini_rom[32 * 1024 * phyn];
+        map_rom_entry(read, phyn, blkptr, gamepak_size >> 15);
+      }
+      update_gpio_romregs();
+      gamepak_mirror_1m = false; gamepak_mini_materialized = true;
+      if (gamepak_load_progress) gamepak_load_progress(100);
+      return 0;
+    }
+    /* Existing fallback maps the physical ROM without materialization. */
+    gamepak_mirror_1m = false;
+  }
+#endif /* GBSP_BACKEND_VARIANT */
+  u32 buf_blocks = (raw_size + gamepak_buffer_blocksize - 1) / gamepak_buffer_blocksize;
+  u32 rom_blocks = gamepak_size >> 15;
+  u32 ldblks = buf_blocks < gamepak_buffer_count ? buf_blocks : gamepak_buffer_count;
+  if (!ldblks) { why = "No ROM-cache memory"; goto read_failed; }
+  map_null(read, 0x8000000, 0xD000000);
+  for (u32 i = 0; i < ldblks; i++) {
+#if defined(XTENSA_ARCH) /* GBSP_BACKEND_VARIANT */
+    u32 quarter = gamepak_buffer_blocksize / 4;
+    for (u32 q = 0; q < 4; q++) {
+      if (!gp_rom_read_at(gamepak_file_large, gamepak_buffers[i] + q * quarter,
+                          quarter, i * gamepak_buffer_blocksize + q * quarter, gamepak_disk_size))
+        goto read_failed;
+      if (gamepak_load_progress) gamepak_load_progress((int)((i * 4 + q + 1) * 100 / (ldblks * 4)));
+    }
+#else /* GBSP_BACKEND_VARIANT */
+    if (!gp_rom_read_at(gamepak_file_large, gamepak_buffers[i], gamepak_buffer_blocksize,
+                        i * gamepak_buffer_blocksize, gamepak_disk_size)) goto read_failed;
+    if (gamepak_load_progress) gamepak_load_progress((int)((i + 1) * 100 / ldblks));
+#endif /* GBSP_BACKEND_VARIANT */
+    for (u32 j = 0; j < 32 && i * 32 + j < rom_blocks; j++) {
+      u32 phyn = i * 32 + j;
+      u8 *blkptr = &gamepak_buffers[i][32 * 1024 * j];
+      u32 entry = evict_gamepak_page();
+      gamepak_blk_queue[entry].phy_rom = phyn;
+      map_rom_entry(read, phyn, blkptr, rom_blocks);
+    }
+  }
+  return 0;
+read_failed:
+  RG_LOGE("ROM read failed: %s", name);
+#if defined(RISCV_ARCH) /* GBSP_BACKEND_VARIANT */
+  free(gamepak_mini_rom); gamepak_mini_rom = NULL;
+#endif /* GBSP_BACKEND_VARIANT */
+  fclose(gamepak_file_large); gamepak_file_large = NULL;
   return -1;
 }
+static void configure_flash_capacity(void)
+{
+  /* All cores start at 64 KiB unless database/header/signature hints require
+   * 128 KiB. Runtime bank-switch commands can still promote an unknown chip. */
+  unsigned current = flash_bank_cnt == FLASH_SIZE_128KB ? 128 : 64;
+  size_t size = gamepak_size < gamepak_buffer_blocksize ? gamepak_size : gamepak_buffer_blocksize;
+  if (gpsp_flash_capacity_kb(gamepak_buffers[0], size, current) == 128 &&
+      flash_bank_cnt != FLASH_SIZE_128KB) {
+    flash_bank_cnt = FLASH_SIZE_128KB;
+    flash_device_id = FLASH_DEVICE_MACRONIX_128KB;
+  }
+}
 
+#if defined(RISCV_ARCH) /* GBSP_BACKEND_VARIANT */
 static bool rom_has_signature(const u8 *rom, u32 rom_size, const char *sig)
 {
   u32 i;
@@ -2796,20 +3490,7 @@ static u32 rom_scan_signatures_in_memory(void)
   return found;
 }
 
-static bool rom_is_pokemon_family(const u8 *rom)
-{
-  if (memcmp(&rom[0xA0], "POKEMON", 7) == 0)
-    return true;
 
-  if (memcmp(&rom[0xAC], "AXV", 3) == 0 ||  /* Ruby */
-      memcmp(&rom[0xAC], "AXP", 3) == 0 ||  /* Sapphire */
-      memcmp(&rom[0xAC], "BPE", 3) == 0 ||  /* Emerald */
-      memcmp(&rom[0xAC], "BPR", 3) == 0 ||  /* FireRed */
-      memcmp(&rom[0xAC], "BPG", 3) == 0)    /* LeafGreen */
-    return true;
-	
-  return false;
-}
 
 static void normalize_blank_backup_for_detected_type(void)
 {
@@ -2851,15 +3532,6 @@ static void detect_backup_subcircuit(const u8 *rom, u32 rom_size)
                     rom_has_signature(rom, rom_size, "FLASH_V");
   u32 file_sigs = 0;
 
-  if (!has_eeprom && !has_sram && !has_flash1m && !has_flash5 &&
-      rom_is_pokemon_family(rom))
-  {
-    backup_type_reset = BACKUP_FLASH;
-    flash_bank_cnt = FLASH_SIZE_128KB;
-    flash_device_id = FLASH_DEVICE_SANYO_128KB;
-    return;
-  }
-
   if (!has_eeprom && !has_sram && !has_flash1m && !has_flash5)
     file_sigs = rom_scan_signatures_in_memory();
 
@@ -2897,19 +3569,27 @@ static void detect_backup_subcircuit(const u8 *rom, u32 rom_size)
 }
 
 u32 load_gamepak(const struct retro_game_info* info, const char *name,
+#else /* GBSP_BACKEND_VARIANT */
+
+u32 load_gamepak(const struct retro_game_info* info, const char *name,
+#endif /* GBSP_BACKEND_VARIANT */
                  int force_rtc, int force_rumble, int force_serial)
+#if defined(RISCV_ARCH) /* GBSP_BACKEND_VARIANT */
 {
    char game_code[5] = {0,0,0,0,0};
 
+#else /* GBSP_BACKEND_VARIANT */
+{
+   gamepak_info_t gpinfo;
+
+#endif /* GBSP_BACKEND_VARIANT */
    if (load_gamepak_raw(name))
       return -1;
+   gpsp_log_rom_info(gamepak_buffers[0]);
+#if defined(RISCV_ARCH) /* GBSP_BACKEND_VARIANT */
 
-   gamepak_header_nonstandard =
-      (gamepak_buffers[0][3] != 0xEA) || (gamepak_buffers[0][0xB2] != 0x96);
 
-   /* Buffer 0 always has the first 1MB chunk of the ROM.
-    * Read game code regardless of header validity: ROM hacks usually
-    * preserve the code at 0xAC even when other header bytes are wrong. */
+   /* The loader has validated the header length; read the cartridge code. */
    memcpy(game_code, &gamepak_buffers[0][0xAC], 4);
 
    /* Sanitise game code: if all bytes are non-alphanumeric
@@ -2929,6 +3609,15 @@ u32 load_gamepak(const struct retro_game_info* info, const char *name,
          memcpy(game_code, "UNKN", 4);
    }
 
+#else /* GBSP_BACKEND_VARIANT */
+
+   // Buffer 0 always has the first 1MB chunk of the ROM
+   memset(&gpinfo, 0, sizeof(gpinfo));
+   memcpy(gpinfo.gamepak_title, &gamepak_buffers[0][0xA0], 12);
+   memcpy(gpinfo.gamepak_code,  &gamepak_buffers[0][0xAC],  4);
+   memcpy(gpinfo.gamepak_maker, &gamepak_buffers[0][0xB0],  2);
+
+#endif /* GBSP_BACKEND_VARIANT */
    idle_loop_target_pc = 0xFFFFFFFF;
    translation_gate_targets = 0;
    flash_device_id = FLASH_DEVICE_MACRONIX_64KB;
@@ -2937,6 +3626,7 @@ u32 load_gamepak(const struct retro_game_info* info, const char *name,
    rumble_enabled = false;
    backup_type_reset = BACKUP_UNKN;
    serial_mode = force_serial;
+#if defined(RISCV_ARCH) /* GBSP_BACKEND_VARIANT */
 
    load_game_config_over(game_code);
 
@@ -2946,61 +3636,6 @@ u32 load_gamepak(const struct retro_game_info* info, const char *name,
       detect_backup_subcircuit(gamepak_buffers[0], scan_size);
    }
 
-   bool is_128k_flash = (backup_type_reset == BACKUP_FLASH && flash_bank_cnt == FLASH_SIZE_128KB);
-   bool is_pokemon_engine = rom_is_pokemon_family(gamepak_buffers[0]) || is_128k_flash;
-
-   require_m1_hle_bios = false;
-   
-   bool title_altered = false;
-   bool is_expanded = (gamepak_size > 16777216);
-   
-   if (rom_is_pokemon_family(gamepak_buffers[0]))
-   {
-      char title[13];
-      memcpy(title, &gamepak_buffers[0][0xA0], 12);
-      title[12] = '\0';
-      
-      if (strncmp(title, "POKEMON FIRE", 12) != 0 &&
-          strncmp(title, "POKEMON LEAF", 12) != 0 &&
-          strncmp(title, "POKEMON EMER", 12) != 0 &&
-          strncmp(title, "POKEMON RUBY", 12) != 0 &&
-          strncmp(title, "POKEMON SAPP", 12) != 0)
-      {
-         title_altered = true;
-      }
-   }
-
-   bool is_hack = gamepak_header_nonstandard || !is_known_game || title_altered || (is_expanded && is_pokemon_engine);
-
-   if (is_hack && is_pokemon_engine)
-   {
-      backup_type_reset = BACKUP_FLASH;
-      flash_bank_cnt = FLASH_SIZE_128KB;
-      flash_device_id = FLASH_DEVICE_SANYO_128KB;
-      rtc_enabled = true;
-      require_m1_hle_bios = true;
-      
-      if (force_serial == SERIAL_MODE_AUTO)
-         serial_mode = SERIAL_MODE_SERIAL_POKE;
-   }
-   else if (!is_hack && rom_is_pokemon_family(gamepak_buffers[0]))
-   {
-      if (flash_bank_cnt == FLASH_SIZE_128KB)
-         rtc_enabled = true;
-
-      if (force_serial == SERIAL_MODE_AUTO)
-      {
-         if (strncmp(game_code, "AXV", 3) == 0 || strncmp(game_code, "AXP", 3) == 0)
-         {
-            serial_mode = SERIAL_MODE_SERIAL_POKE;
-         }
-         else
-         {
-            serial_mode = SERIAL_MODE_RFU;
-         }
-      }
-   }
-	
    normalize_blank_backup_for_detected_type();
 
    backup_type = backup_type_reset;
@@ -3008,30 +3643,83 @@ u32 load_gamepak(const struct retro_game_info* info, const char *name,
    flash_bank_num = 0;
 
    if (force_rtc != FEAT_AUTODETECT)
+#else /* GBSP_BACKEND_VARIANT */
+
+   load_game_config_over(&gpinfo);
+
+   // Forced RTC / Rumble modes, override the autodetect logic.
+   if (force_rtc != FEAT_AUTODETECT)
+#endif /* GBSP_BACKEND_VARIANT */
       rtc_enabled = (force_rtc == FEAT_ENABLE);
    if (force_rumble != FEAT_AUTODETECT)
+#if defined(RISCV_ARCH) /* GBSP_BACKEND_VARIANT */
       rumble_enabled = (force_rumble == FEAT_ENABLE);
 
-   /* Capture the RTC baseline once per content load (and only here -
-    * not in init_memory/reset_gba, so a retro_reset does not change the
-    * baseline; the in-game clock instead snaps back to the load-time
-    * point since frame_counter is reset to 0).  This makes the entire
-    * RTC stream a deterministic function of frame_counter and
-    * rtc_base_time, both of which are persisted in the savestate. */
+   /* Keep the legacy savestate field populated for older readers. The new
+    * cartridge clock is initialized by the frontend after loading metadata. */
    rtc_init_base_time();
 
+#else /* GBSP_BACKEND_VARIANT */
+      rumble_enabled = (force_rumble == FEAT_ENABLE);
+
+#endif /* GBSP_BACKEND_VARIANT */
+   configure_flash_capacity();
    return 0;
 }
 
+static const char *gpsp_bios_failure;
+
 s32 load_bios(char *name)
 {
-  RFILE *fd = filestream_open(name, RETRO_VFS_FILE_ACCESS_READ,
-                              RETRO_VFS_FILE_ACCESS_HINT_NONE);
-
-  if(!fd)
+  gpsp_bios_failure = NULL;
+  FILE *fd = fopen(name, "rb");
+  if (!fd) {
+    if (errno != ENOENT) gpsp_bios_failure = "cannot open file";
     return -1;
-
-  filestream_read(fd, bios_rom, 0x4000);
-  filestream_close(fd);
+  }
+  if (fseek(fd, 0, SEEK_END) || ftell(fd) != 0x4000 || fseek(fd, 0, SEEK_SET)) {
+    gpsp_bios_failure = "expected exactly 16384 bytes";
+    fclose(fd);
+    return -1;
+  }
+  /* A failed read must never replace any part of the active BIOS. */
+  u8 *candidate = rg_alloc(0x4000, MEM_SLOW | MEM_NOPANIC);
+  if (!candidate) {
+    gpsp_bios_failure = "not enough memory";
+    fclose(fd);
+    return -1;
+  }
+  bool complete = fread(candidate, 1, 0x4000, fd) == 0x4000 && !ferror(fd);
+  int closed = fclose(fd);
+  if (!complete || closed) {
+    gpsp_bios_failure = "could not read complete file";
+    free(candidate);
+    return -1;
+  }
+#if defined(RISCV_ARCH) /* GBSP_BACKEND_VARIANT */
+  memcpy(bios_rom, candidate, 0x4000);
+  free(candidate);
+#else /* GBSP_BACKEND_VARIANT */
+  free(bios_rom_alloc);
+  bios_rom_alloc = candidate;
+  bios_rom = candidate;
+#endif /* GBSP_BACKEND_VARIANT */
   return 0;
+}
+
+void gpsp_bios_init(const char *path)
+{
+#if defined(RISCV_ARCH) /* GBSP_BACKEND_VARIANT */
+  memcpy(bios_rom, open_gba_bios_rom, 0x4000);
+#else /* GBSP_BACKEND_VARIANT */
+  free(bios_rom_alloc);
+  bios_rom_alloc = NULL;
+  bios_rom = open_gba_bios_rom;
+#endif /* GBSP_BACKEND_VARIANT */
+  if (load_bios((char *)path) == 0) {
+    RG_LOGI("BIOS: external (%s)", path);
+  } else {
+    if (gpsp_bios_failure) RG_LOGW("BIOS: %s: %s; using built-in", path, gpsp_bios_failure);
+    RG_LOGI("BIOS: built-in");
+  }
 }

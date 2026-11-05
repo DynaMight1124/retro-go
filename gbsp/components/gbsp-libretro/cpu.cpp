@@ -35,8 +35,29 @@ const u8 bit_count[256] =
   4, 5, 5, 6, 5, 6, 6, 7, 2, 3, 3, 4, 3, 4, 4, 5, 3, 4, 4, 5, 4, 5, 5,
   6, 3, 4, 4, 5, 4, 5, 5, 6, 4, 5, 5, 6, 5, 6, 6, 7, 3, 4, 4, 5, 4, 5,
   5, 6, 4, 5, 5, 6, 5, 6, 6, 7, 4, 5, 5, 6, 5, 6, 6, 7, 5, 6, 6, 7, 6,
+#if defined(RISCV_ARCH) /* GBSP_BACKEND_VARIANT */
   7, 7, 8
 };
+
+static const u8 gba_header_logo[156] = {
+  0x24, 0xFF, 0xAE, 0x51, 0x69, 0x9A, 0xA2, 0x21, 0x3D, 0x84, 0x82, 0x0A,
+  0x84, 0xE4, 0x09, 0xAD, 0x11, 0x24, 0x8B, 0x98, 0xC0, 0x81, 0x7F, 0x21,
+  0xA3, 0x52, 0xBE, 0x19, 0x93, 0x09, 0xCE, 0x20, 0x10, 0x46, 0x4A, 0x4A,
+  0xF8, 0x27, 0x31, 0xEC, 0x58, 0xC7, 0xE8, 0x33, 0x82, 0xE3, 0xCE, 0xBF,
+  0x85, 0xF4, 0xDF, 0x94, 0xCE, 0x4B, 0x09, 0xC1, 0x94, 0x56, 0x8A, 0xC0,
+  0x13, 0x72, 0xA7, 0xFC, 0x9F, 0x84, 0x4D, 0x73, 0xA3, 0xCA, 0x9A, 0x61,
+  0x58, 0x97, 0xA3, 0x27, 0xFC, 0x03, 0x98, 0x76, 0x23, 0x1D, 0xC7, 0x61,
+  0x03, 0x04, 0xAE, 0x56, 0xBF, 0x38, 0x84, 0x00, 0x40, 0xA7, 0x0E, 0xFD,
+  0xFF, 0x52, 0xFE, 0x03, 0x6F, 0x95, 0x30, 0xF1, 0x97, 0xFB, 0xC0, 0x85,
+  0x60, 0xD6, 0x80, 0x25, 0xA9, 0x63, 0xBE, 0x03, 0x01, 0x4E, 0x38, 0xE2,
+  0xF9, 0xA2, 0x34, 0xFF, 0xBB, 0x3E, 0x03, 0x44, 0x78, 0x00, 0x90, 0xCB,
+  0x88, 0x11, 0x3A, 0x94, 0x65, 0xC0, 0x7C, 0x63, 0x87, 0xF0, 0x3C, 0xAF,
+  0xD6, 0x25, 0xE4, 0x8B, 0x38, 0x0A, 0xAC, 0x72, 0x21, 0xD4, 0xF8, 0x07
+};
+#else /* GBSP_BACKEND_VARIANT */
+  7, 7, 8
+};
+#endif /* GBSP_BACKEND_VARIANT */
 
 
 #define arm_decode_data_proc_reg(opcode)                                      \
@@ -788,6 +809,19 @@ const u32 spsr_masks[4] = { 0x00000000, 0x000000EF, 0xF0000000, 0xF00000EF };
   collapse_flags();                                                           \
   reg[rd] = psr_reg                                                           \
 
+#if defined(XTENSA_ARCH) /* GBSP_BACKEND_VARIANT */
+#define arm_psr_store_cpsr(source)                                            \
+  collapse_flags();                                                           \
+  const u32 store_mask = cpsr_masks[psr_pfield][PRIVMODE(reg[CPU_MODE])];     \
+  reg[REG_CPSR] = (source & store_mask) | (reg[REG_CPSR] & (~store_mask));    \
+  extract_flags();                                                            \
+  if(store_mask & 0xFF)                                                       \
+  {                                                                           \
+    set_cpu_mode(cpu_modes[reg[REG_CPSR] & 0xF]);                             \
+    check_for_interrupts();                                                   \
+  }                                                                           \
+
+#else /* GBSP_BACKEND_VARIANT */
 #define arm_psr_store_cpsr(source)                                            \
   const u32 store_mask = cpsr_masks[psr_pfield][PRIVMODE(reg[CPU_MODE])];     \
   reg[REG_CPSR] = (source & store_mask) | (reg[REG_CPSR] & (~store_mask));    \
@@ -798,6 +832,7 @@ const u32 spsr_masks[4] = { 0x00000000, 0x000000EF, 0xF0000000, 0xF00000EF };
     check_for_interrupts();                                                   \
   }                                                                           \
 
+#endif /* GBSP_BACKEND_VARIANT */
 #define arm_psr_store_spsr(source)                                            \
   const u32 store_mask = spsr_masks[psr_pfield];                              \
   u32 _psr = REG_SPSR(reg[CPU_MODE]);                                         \
@@ -834,6 +869,66 @@ const u32 spsr_masks[4] = { 0x00000000, 0x000000EF, 0xF0000000, 0xF00000EF };
 #define aligned_address_mask16 0xF0000001
 #define aligned_address_mask32 0xF0000003
 
+#if defined(XTENSA_ARCH) /* GBSP_BACKEND_VARIANT */
+#define fast_read_memory(size, type, addr, dest, readfn)                      \
+{                                                                             \
+  u8 *map;                                                                    \
+  u32 _address = addr;                                                        \
+                                                                              \
+  if(_address < 0x10000000)                                                   \
+  {                                                                           \
+    /* Account for cycles and other stats */                                  \
+    u8 region = _address >> 24;                                               \
+    cycles_remaining -= ws_cyc_nseq[region][(size - 8) / 16];                 \
+    STATS_MEMORY_ACCESS(read, type, region);                                  \
+  }                                                                           \
+                                                                              \
+  if (                                                                        \
+     (((_address >> 24) == 0) && (reg[REG_PC] >= 0x4000)) ||  /* BIOS read */ \
+     (_address & aligned_address_mask##size) ||      /* Unaligned access */   \
+     !(map = memory_map_read[_address >> 15])        /* Unmapped memory */    \
+  )                                                                           \
+  {                                                                           \
+    dest = (type)(readfn)(_address);                                          \
+  }                                                                           \
+  else                                                                        \
+  {                                                                           \
+    /* Aligned and mapped read */                                             \
+    dest = (type)readaddress##size(map, (_address & 0x7FFF));                 \
+  }                                                                           \
+}                                                                             \
+
+/* Work RAM stores (the stack, most game data) straight into the arrays, as
+   write_memory##size does for regions 2 and 3; everything else (I/O,
+   palette, VRAM, OAM, save chips) through the handlers. Without the dynarec
+   there is no self-modifying-code tracking to update. */
+#if SMC_DETECTION
+#define fast_write_ram(size, _address, value)                                 \
+  cpu_alert |= write_memory##size(_address, value);
+#else
+#define fast_write_ram(size, _address, value)                                 \
+  if ((_address >> 24) == 0x02)                                               \
+    address##size(ewram, (_address & 0x3FFFF)) = eswap##size(value);          \
+  else if ((_address >> 24) == 0x03)                                          \
+    address##size(iwram, (_address & 0x7FFF)) = eswap##size(value);           \
+  else                                                                        \
+    cpu_alert |= write_memory##size(_address, value);
+#endif
+
+#define fast_write_memory(size, type, address, value)                         \
+{                                                                             \
+  u32 _address = (address) & ~(aligned_address_mask##size & 0x03);            \
+  if(_address < 0x10000000)                                                   \
+  {                                                                           \
+    u8 region = _address >> 24;                                               \
+    cycles_remaining -= ws_cyc_nseq[region][(size - 8) / 16];                 \
+    STATS_MEMORY_ACCESS(write, type, region);                                 \
+  }                                                                           \
+                                                                              \
+  fast_write_ram(size, _address, value)                                       \
+}                                                                             \
+
+#else /* GBSP_BACKEND_VARIANT */
 #define fast_read_memory(size, type, addr, dest, readfn)                      \
 {                                                                             \
   u8 *map;                                                                    \
@@ -875,6 +970,7 @@ const u32 spsr_masks[4] = { 0x00000000, 0x000000EF, 0xF0000000, 0xF00000EF };
   cpu_alert |= write_memory##size(_address, value);                           \
 }                                                                             \
 
+#endif /* GBSP_BACKEND_VARIANT */
 #define load_aligned32(address, dest)                                         \
 {                                                                             \
   u32 _address = address;                                                     \
@@ -896,6 +992,21 @@ const u32 spsr_masks[4] = { 0x00000000, 0x000000EF, 0xF0000000, 0xF00000EF };
   }                                                                           \
 }                                                                             \
 
+#if defined(XTENSA_ARCH) /* GBSP_BACKEND_VARIANT */
+#define store_aligned32(address, value)                                       \
+{                                                                             \
+  u32 _address = address;                                                     \
+  if(_address < 0x10000000)                                                   \
+  {                                                                           \
+    /* Account for cycles and other stats */                                  \
+    u8 region = _address >> 24;                                               \
+    cycles_remaining -= ws_cyc_seq[region][1];                                \
+    STATS_MEMORY_ACCESS(write, u32, region);                                  \
+  }                                                                           \
+  fast_write_ram(32, _address, value)                                         \
+}                                                                             \
+
+#else /* GBSP_BACKEND_VARIANT */
 #define store_aligned32(address, value)                                       \
 {                                                                             \
   u32 _address = address;                                                     \
@@ -909,6 +1020,7 @@ const u32 spsr_masks[4] = { 0x00000000, 0x000000EF, 0xF0000000, 0xF00000EF };
   cpu_alert |= write_memory32(_address, value);                               \
 }                                                                             \
 
+#endif /* GBSP_BACKEND_VARIANT */
 #define load_memory_u8(address, dest)                                         \
   fast_read_memory(8, u8, address, dest, read_memory8)                        \
 
@@ -1351,9 +1463,15 @@ inline cpu_alert_type exec_thumb_block_mem(u32 rn, u32 reglist, s32 &cycles_rema
 const u32 cpu_modes[16] =
 {
   MODE_USER, MODE_FIQ, MODE_IRQ, MODE_SUPERVISOR,
+#if defined(RISCV_ARCH) /* GBSP_BACKEND_VARIANT */
+  MODE_INVALID, MODE_INVALID, MODE_INVALID, MODE_ABORT,
+  MODE_INVALID, MODE_INVALID, MODE_INVALID, MODE_UNDEFINED, 
+  MODE_INVALID, MODE_INVALID, MODE_INVALID, MODE_SYSTEM
+#else /* GBSP_BACKEND_VARIANT */
   MODE_INVALID, MODE_INVALID, MODE_INVALID, MODE_ABORT,
   MODE_INVALID, MODE_INVALID, MODE_INVALID, MODE_UNDEFINED,
   MODE_INVALID, MODE_INVALID, MODE_INVALID, MODE_SYSTEM
+#endif /* GBSP_BACKEND_VARIANT */
 };
 
 // ARM/Thumb mode is stored in the flags directly, this is simpler than
@@ -1403,9 +1521,15 @@ cpu_alert_type check_interrupt() {
 }
 
 // Checks for pending IRQs and raises them. This changes the CPU mode
+#if defined(XTENSA_ARCH) /* GBSP_BACKEND_VARIANT */
+// which means that it must be called with a valid CPU state.
+XT_HOT u32 check_and_raise_interrupts()
+{
+#else /* GBSP_BACKEND_VARIANT */
 // which means that it must be called with a valid CPU state.
 u32 check_and_raise_interrupts()
 {
+#endif /* GBSP_BACKEND_VARIANT */
   // Check any IRQ flag pending, IME and CPSR-IRQ enabled
   if (cpu_has_interrupt())
   {
@@ -1442,6 +1566,201 @@ cpu_alert_type flag_interrupt(irq_type irq_raised)
   return check_interrupt();
 }
 
+#if defined(RISCV_ARCH) /* GBSP_BACKEND_VARIANT */
+#ifndef HAVE_DYNAREC
+
+// When switching modes set spsr[new_mode] to cpsr. Modifying PC as the
+// target of a data proc instruction will set cpsr to spsr[cpu_mode].
+#ifndef ESP_PLATFORM
+u32 reg[64];
+u32 spsr[6];
+u32 reg_mode[7][7];
+
+u8 *memory_map_read [8 * 1024];
+u16 oam_ram[512];
+u16 palette_ram[512];
+u16 palette_ram_converted[512];
+u8 ewram[1024 * 256 * 2];
+u8 iwram[1024 * 32 * 2];
+u8 vram[1024 * 96];
+u16 io_registers[512];
+#endif
+#endif
+
+void execute_arm(u32 cycles)
+{
+#elif defined(XTENSA_ARCH) /* GBSP_BACKEND_VARIANT */
+#ifndef HAVE_DYNAREC
+
+// When switching modes set spsr[new_mode] to cpsr. Modifying PC as the
+// target of a data proc instruction will set cpsr to spsr[cpu_mode].
+u32 reg[80];
+u32 spsr[6];
+u32 reg_mode[7][7];
+
+u16 oam_ram[512];
+u16 palette_ram[512];
+u16 palette_ram_converted[512];
+#ifndef RETRO_GO
+u8 ewram[(1024 * 256) << SMC_DETECTION];
+u8 vram[1024 * 96];
+#endif
+u8 iwram[(1024 * 32) << SMC_DETECTION];
+u8 *memory_map_read[8 * 1024];
+u16 io_registers[512];
+#endif
+
+#ifdef GBAPROF
+extern "C" { u32 gbaprof_instr; }
+#define GBAPROF_COUNT() gbaprof_instr++
+#else
+#define GBAPROF_COUNT()
+#endif
+
+#ifdef PCHIST
+/* PC harness only: how often each PC executes (finding idle loops) */
+#define PCHIST_SIZE (1 << 16)
+static struct { u32 pc, n; } pchist[PCHIST_SIZE];
+static u32 pchist_dropped, pchist_frames;
+/* BREAKPC=a,b,...  print the registers each time one of these PCs runs (first
+   60 hits): the arguments a routine is called with (NFS Underground calls a
+   byte memset at 030066cc with a negative count). */
+static u32 breakpc[8];
+static int breakpc_n = -1, breakpc_hits;
+static int breakreg = -1; static u32 breakmin;   /* BREAKREG=r:min  only hits with reg[r] >= min (unsigned) */
+static u32 breakpc_total;
+static void breakpc_check(u32 pc)
+{
+  if (breakpc_n < 0)
+  {
+    breakpc_n = 0;
+    const char *e = getenv("BREAKPC");
+    while (e && *e && breakpc_n < 8)
+    {
+      char *end;
+      breakpc[breakpc_n++] = (u32)strtoul(e, &end, 0);
+      e = (*end == ',') ? end + 1 : end;
+      if (end == e && *end != ',') break;
+    }
+    const char *r = getenv("BREAKREG");
+    if (r) { breakreg = atoi(r); const char *c = strchr(r, ':'); breakmin = c ? (u32)strtoul(c + 1, NULL, 0) : 0; }
+  }
+  for (int i = 0; i < breakpc_n; i++)
+    if (pc == breakpc[i] && (breakpc_total++, 1) && breakpc_hits < 60 &&
+        (breakreg < 0 || reg[breakreg] >= breakmin))
+    {
+      breakpc_hits++;
+      printf("BREAK #%u %08x", (unsigned)breakpc_total, (unsigned)pc);
+      for (int r = 0; r < 16; r++) printf(" r%d=%08x", r, (unsigned)reg[r]);
+      printf(" cpsr=%08x\n", (unsigned)reg[REG_CPSR]);
+    }
+}
+static inline void pchist_add(u32 pc)
+{
+  breakpc_check(pc);
+  u32 h = (pc * 2654435761u) >> 16;
+  /* a bounded probe: a full table used to walk it for ever looking for a PC
+     that is not in it */
+  for (int i = 0; i < 16; i++, h = (h + 1) & (PCHIST_SIZE - 1))
+    if (!pchist[h].n || pchist[h].pc == pc)
+    {
+      pchist[h].pc = pc;
+      pchist[h].n++;
+      return;
+    }
+  pchist_dropped++;
+}
+/* one frame's worth, so the hits can be read per frame rather than per run */
+extern "C" void pchist_frame(void) { pchist_frames++; }
+extern "C" void pchist_dump(int top)
+{
+  u64 total = 0;
+  double cum = 0;
+  const double f = pchist_frames ? pchist_frames : 1;
+  for (int i = 0; i < PCHIST_SIZE; i++) total += pchist[i].n;
+  /* An idle loop shows up as a run of adjacent PCs with the same count: add
+     their shares together, that sum is the guest work an idle_loop_target_pc
+     in gba_over.h would remove. */
+  printf("PCHIST %u frames, %llu instructions (%.0f a frame)%s\n", (unsigned)pchist_frames,
+         (unsigned long long)total, total / f,
+         pchist_dropped ? " -- TABLE FULL, counts are short" : "");
+  if (pchist_dropped)
+    printf("PCHIST dropped %u hits: raise PCHIST_SIZE\n", (unsigned)pchist_dropped);
+  /* The candidate: the hottest PC, plus every PC within 32 bytes of it that
+     runs at least half as often — one short loop. gpSP burns the rest of the
+     frame when the PC the loop branches *back* to is reached, so the entry
+     for gba_over.h is the lowest PC of that run. */
+  {
+    int hot = -1;
+    for (int i = 0; i < PCHIST_SIZE; i++)
+      if (pchist[i].n && (hot < 0 || pchist[i].n > pchist[hot].n)) hot = i;
+    if (hot >= 0) {
+      u32 head = pchist[hot].pc, tail = pchist[hot].pc;
+      u64 loop = 0;
+      int n = 0;
+      for (int i = 0; i < PCHIST_SIZE; i++)
+        if (pchist[i].n >= pchist[hot].n / 2 && pchist[i].pc - (pchist[hot].pc - 32) <= 64) {
+          if (pchist[i].pc < head) head = pchist[i].pc;
+          if (pchist[i].pc > tail) tail = pchist[i].pc;
+          loop += pchist[i].n;
+          n++;
+        }
+      printf("PCHIST candidate idle loop %08x..%08x (%d PCs, %.1f%% of the instructions): "
+             "try IDLEPC=0x%x, and gba_over.h idle_loop_target_pc 0x%x\n",
+             head, tail, n, 100.0 * loop / (total ? total : 1), head, head);
+    }
+  }
+  for (int k = 0; k < top; k++) {
+    int best = -1;
+    for (int i = 0; i < PCHIST_SIZE; i++)
+      if (pchist[i].n && (best < 0 || pchist[i].n > pchist[best].n)) best = i;
+    if (best < 0) break;
+    const double share = 100.0 * pchist[best].n / (total ? total : 1);
+    cum += share;
+    printf("PCHIST %08x %10u %8.0f/frame %5.2f%% (cum %5.2f%%)\n", pchist[best].pc,
+           pchist[best].n, pchist[best].n / f, share, cum);
+    pchist[best].n = 0;
+  }
+}
+#define PCHIST_ADD() pchist_add(reg[REG_PC])
+#else
+#define PCHIST_ADD()
+#endif
+
+#ifdef RETRO_GO
+#include "m4a_hle.h"
+#ifdef HAVE_DYNAREC
+/* the Xtensa dynarec runs the m4a mixer loop natively too (xtensa_stub.c):
+   a translated instruction at a loop head calls m4a_dynarec_run first */
+extern "C" int m4a_dynarec_head(u32 pc) { return pc == m4a_pc_out || pc == m4a_pc_in; }
+extern "C" void m4a_dynarec_check(void)
+{
+  u32 out = m4a_pc_out;
+  m4a_check();
+  if (m4a_pc_out != out)
+    flush_translation_cache_ram();   /* retranslate with the hook at the new loop */
+}
+/* ~0: not handled (the translated code goes on); else the next PC */
+extern "C" u32 m4a_dynarec_run(u32 pc, s32 *cycles)
+{
+  u32 n = reg[REG_N_FLAG], z = reg[REG_Z_FLAG], c = reg[REG_C_FLAG], v = reg[REG_V_FLAG];
+  if (!m4a_run(pc, *cycles, n, z, c, v))
+    return 0xFFFFFFFF;
+  reg[REG_N_FLAG] = n; reg[REG_Z_FLAG] = z; reg[REG_C_FLAG] = c; reg[REG_V_FLAG] = v;
+  return pc;
+}
+#endif
+#endif
+
+#ifdef HAVE_DYNAREC
+/* the dynarec build keeps the interpreter as a fallback only (games that
+   rewrite their own code in a loop): in flash, the internal RAM is short */
+void execute_arm(u32 cycles)
+#else
+IRAM_ATTR void execute_arm(u32 cycles)
+#endif
+{
+#else /* GBSP_BACKEND_VARIANT */
 #ifndef HAVE_DYNAREC
 
 // When switching modes set spsr[new_mode] to cpsr. Modifying PC as the
@@ -1464,6 +1783,7 @@ u16 io_registers[512];
 
 IRAM_ATTR void execute_arm(u32 cycles)
 {
+#endif /* GBSP_BACKEND_VARIANT */
   u32 opcode;
   u32 condition;
   u32 n_flag, z_flag, c_flag, v_flag;
@@ -1478,8 +1798,24 @@ IRAM_ATTR void execute_arm(u32 cycles)
     pc_address_block = load_gamepak_page(pc_region & 0x3FF);
   touch_gamepak_page(pc_region);
 
+#if defined(XTENSA_ARCH) /* GBSP_BACKEND_VARIANT */
+  cycles_remaining = cycles;
+#ifdef RETRO_GO
+  m4a_check();
+  /* constant for this call (m4a_check above, game load): kept in locals so
+     the per-instruction checks do not reload globals. The two m4a loop heads
+     are 4 or 8 bytes apart: one unsigned range test, then the exact one. */
+  const u32 idle_pc = idle_loop_target_pc;
+  const u32 m4a_lo = m4a_pc_out < m4a_pc_in ? m4a_pc_out : m4a_pc_in;
+  const u32 m4a_span = (m4a_pc_out < m4a_pc_in ? m4a_pc_in : m4a_pc_out) - m4a_lo;
+#else
+  const u32 idle_pc = idle_loop_target_pc;
+#endif
+  while(1)
+#else /* GBSP_BACKEND_VARIANT */
   cycles_remaining = cycles;
   while(1)
+#endif /* GBSP_BACKEND_VARIANT */
   {
     /* Do not execute until CPU is active */
     if (reg[CPU_HALT_STATE] != CPU_ACTIVE) {
@@ -1499,6 +1835,20 @@ IRAM_ATTR void execute_arm(u32 cycles)
     do
     {
 arm_loop:
+#if defined(XTENSA_ARCH) /* GBSP_BACKEND_VARIANT */
+
+#ifndef RETRO_GO
+       collapse_flags();
+
+       /* Process cheats if we are about to execute the cheat hook */
+       if (reg[REG_PC] == cheat_master_hook)
+          process_cheats();
+#endif
+       /* RETRO_GO: no cheats, and the flags live in n/z/c/v_flag: CPSR is
+          rebuilt only where it is read (MRS, MSR, SWI, loop exits, which
+          already collapse), not before every instruction */
+
+#else /* GBSP_BACKEND_VARIANT */
 
        collapse_flags();
 
@@ -1506,14 +1856,44 @@ arm_loop:
        if (reg[REG_PC] == cheat_master_hook)
           process_cheats();
 
+#endif /* GBSP_BACKEND_VARIANT */
        /* Execute ARM instruction */
+#if defined(XTENSA_ARCH) /* GBSP_BACKEND_VARIANT */
+       using_instruction(arm);
+       PCHIST_ADD();
+       GBAPROF_COUNT();
+       check_pc_region();
+       reg[REG_PC] &= ~0x03;
+#ifdef RETRO_GO
+       /* the m4a mixer loop, natively (m4a_hle.h) */
+       if (__builtin_expect(reg[REG_PC] - m4a_lo <= m4a_span, 0) &&
+           (reg[REG_PC] == m4a_pc_out || reg[REG_PC] == m4a_pc_in))
+       {
+         u32 hle_pc = reg[REG_PC];
+         if (m4a_run(hle_pc, cycles_remaining, n_flag, z_flag, c_flag, v_flag))
+         {
+           reg[REG_PC] = hle_pc;
+           goto arm_hle_done;
+         }
+       }
+#endif
+       opcode = readaddress32(pc_address_block, (reg[REG_PC] & 0x7FFF));
+#else /* GBSP_BACKEND_VARIANT */
        using_instruction(arm);
        check_pc_region();
        reg[REG_PC] &= ~0x03;
        opcode = readaddress32(pc_address_block, (reg[REG_PC] & 0x7FFF));
+#endif /* GBSP_BACKEND_VARIANT */
        condition = opcode >> 28;
+#if defined(XTENSA_ARCH) /* GBSP_BACKEND_VARIANT */
+
+       /* nearly every ARM instruction is AL: skip the condition dispatch */
+       if (__builtin_expect(condition != 0xE, 0))
+       switch(condition)
+#else /* GBSP_BACKEND_VARIANT */
 
        switch(condition)
+#endif /* GBSP_BACKEND_VARIANT */
        {
           case 0x0:
              /* EQ */
@@ -2077,8 +2457,14 @@ arm_loop:
                 if(opcode & 0x10)
                 {
                    /* BX rn */
+#if defined(RISCV_ARCH) /* GBSP_BACKEND_VARIANT */
+                   arm_decode_branchx(opcode);
+                   arm_pc_offset(8);
+                   u32 src = reg[rn];
+#else /* GBSP_BACKEND_VARIANT */
                    arm_decode_branchx(opcode);
                    u32 src = reg[rn];
+#endif /* GBSP_BACKEND_VARIANT */
                    if(src & 0x01)
                    {
                       reg[REG_PC] = src - 1;
@@ -3044,12 +3430,27 @@ skip_instruction:
 
        /* End of Execute ARM instruction */
        cycles_remaining -= ws_cyc_seq[(reg[REG_PC] >> 24) & 0xF][1];
+#if defined(XTENSA_ARCH) /* GBSP_BACKEND_VARIANT */
+
+       if (__builtin_expect(reg[REG_PC] == idle_pc, 0) && cycles_remaining > 0) cycles_remaining = 0;
+
+#else /* GBSP_BACKEND_VARIANT */
 
        if (reg[REG_PC] == idle_loop_target_pc && cycles_remaining > 0) cycles_remaining = 0;
 
+#endif /* GBSP_BACKEND_VARIANT */
        if (cpu_alert & (CPU_ALERT_HALT | CPU_ALERT_IRQ))
+#if defined(XTENSA_ARCH) /* GBSP_BACKEND_VARIANT */
+         goto alert;
+#ifdef RETRO_GO
+arm_hle_done:
+       ;
+#endif
+
+#else /* GBSP_BACKEND_VARIANT */
          goto alert;
 
+#endif /* GBSP_BACKEND_VARIANT */
     } while(cycles_remaining > 0);
 
     collapse_flags();
@@ -3062,6 +3463,20 @@ skip_instruction:
     do
     {
 thumb_loop:
+#if defined(XTENSA_ARCH) /* GBSP_BACKEND_VARIANT */
+
+#ifndef RETRO_GO
+       collapse_flags();
+
+       /* Process cheats if we are about to execute the cheat hook */
+       if (reg[REG_PC] == cheat_master_hook)
+          process_cheats();
+#endif
+       /* RETRO_GO: no cheats, and the flags live in n/z/c/v_flag: CPSR is
+          rebuilt only where it is read (MRS, MSR, SWI, loop exits, which
+          already collapse), not before every instruction */
+
+#else /* GBSP_BACKEND_VARIANT */
 
        collapse_flags();
 
@@ -3069,10 +3484,18 @@ thumb_loop:
        if (reg[REG_PC] == cheat_master_hook)
           process_cheats();
 
+#endif /* GBSP_BACKEND_VARIANT */
        /* Execute THUMB instruction */
 
+#if defined(XTENSA_ARCH) /* GBSP_BACKEND_VARIANT */
+       using_instruction(thumb);
+       PCHIST_ADD();
+       GBAPROF_COUNT();
+       check_pc_region();
+#else /* GBSP_BACKEND_VARIANT */
        using_instruction(thumb);
        check_pc_region();
+#endif /* GBSP_BACKEND_VARIANT */
        reg[REG_PC] &= ~0x01;
        opcode = readaddress16(pc_address_block, (reg[REG_PC] & 0x7FFF));
 
@@ -3524,9 +3947,15 @@ thumb_loop:
 
        /* End of Execute THUMB instruction */
        cycles_remaining -= ws_cyc_seq[(reg[REG_PC] >> 24) & 0xF][0];
+#if defined(XTENSA_ARCH) /* GBSP_BACKEND_VARIANT */
+
+       if (__builtin_expect(reg[REG_PC] == idle_pc, 0) && cycles_remaining > 0) cycles_remaining = 0;
+
+#else /* GBSP_BACKEND_VARIANT */
 
        if (reg[REG_PC] == idle_loop_target_pc && cycles_remaining > 0) cycles_remaining = 0;
 
+#endif /* GBSP_BACKEND_VARIANT */
        if (cpu_alert & (CPU_ALERT_HALT | CPU_ALERT_IRQ))
           goto alert;
 
@@ -3555,9 +3984,24 @@ void init_cpu(void)
 
   reg[CPU_HALT_STATE] = CPU_ACTIVE;
   reg[REG_SLEEP_CYCLES] = 0;
+#if defined(RISCV_ARCH) /* GBSP_BACKEND_VARIANT */
+
+  bool force_game_boot = false;
+  if (selected_boot_mode == boot_bios)
+  {
+    u8 *rom0 = memory_map_read[0x8000000 / (32 * 1024)];
+    if (!rom0 || memcmp(&rom0[0x04], gba_header_logo, sizeof(gba_header_logo)) != 0)
+      force_game_boot = true;
+
+  }
+
+  if (selected_boot_mode == boot_game || force_game_boot) {
+    reg[REG_SP] = 0x03007F00;
+#else /* GBSP_BACKEND_VARIANT */
 
   if (selected_boot_mode == boot_game) {
     reg[REG_SP] = 0x03007F00;
+#endif /* GBSP_BACKEND_VARIANT */
     reg[REG_PC] = 0x08000000;
     reg[REG_CPSR] = 0x0000001F;   // system mode
     reg[CPU_MODE] = MODE_SYSTEM;
@@ -3583,9 +4027,9 @@ bool cpu_check_savestate(const u8 *src)
     return false;
 
   return bson_contains_key(cpudoc, "bus-value", BSON_TYPE_INT32) &&
-         bson_contains_key(cpudoc, "regs", BSON_TYPE_ARR) &&
-         bson_contains_key(cpudoc, "spsr", BSON_TYPE_ARR) &&
-         bson_contains_key(cpudoc, "regmod", BSON_TYPE_ARR);
+         bson_read_int32_array(cpudoc, "regs", NULL, REG_ARCH_COUNT) &&
+         bson_read_int32_array(cpudoc, "spsr", NULL, 6) &&
+         bson_read_int32_array(cpudoc, "regmod", NULL, 7*7);
 }
 
 
@@ -3610,5 +4054,3 @@ unsigned cpu_write_savestate(u8 *dst)
   bson_finish_document(dst, wbptr);
   return (unsigned int)(dst - startp);
 }
-
-

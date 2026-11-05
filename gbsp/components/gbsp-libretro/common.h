@@ -19,6 +19,7 @@
 
 #ifndef COMMON_H
 #define COMMON_H
+#if defined(RISCV_ARCH) /* GBSP_BACKEND_VARIANT */
 
 /* Endianness: gpSP uses MSB_FIRST as the single source of truth for big-
  * endian targets. Toolchain-specific macros are mapped onto MSB_FIRST here
@@ -40,12 +41,16 @@
   #endif
 #endif
 
+#else /* GBSP_BACKEND_VARIANT */
+
+#endif /* GBSP_BACKEND_VARIANT */
 #define ror(dest, value, shift)                                               \
   dest = ((value) >> (shift)) | ((value) << (32 - (shift)))                   \
 
 #define MAX(a,b)  ((a) > (b) ? (a) : (b))
 #define MIN(a,b)  ((a) < (b) ? (a) : (b))
 
+#if defined(XTENSA_ARCH) /* GBSP_BACKEND_VARIANT */
 #if defined(_WIN32)
   #define PATH_SEPARATOR "\\"
   #define PATH_SEPARATOR_CHAR '\\'
@@ -53,6 +58,38 @@
   #define PATH_SEPARATOR "/"
   #define PATH_SEPARATOR_CHAR '/'
 #endif
+
+/* hot code called by the Xtensa dynarec's translated code: in IRAM, so that
+   the 32 KB instruction cache is left to the translated code (PSRAM) */
+#if defined(XTENSA_ARCH) && defined(ESP_PLATFORM)
+#include "esp_attr.h"
+#define XT_HOT IRAM_ATTR
+#else
+#define XT_HOT
+#endif
+
+/* Core-1 renderer code that core 0 pays for: its flash fetches go through the
+   same SPI0 cache controller as core 0's PSRAM-resident translated code, so
+   core 1 reading its renderer out of flash is a request core 0 waits behind.
+   Measured on the board, 2026-10-10, Mario Kart Super Circuit: 54% of core 1's
+   ticks were flash code; moving the hot 24.7 KB to IRAM took that to 19% and
+   core 0's frame from 19.30 to 18.44 ms, 51 -> 54 fps. It costs 24.7 KB of the
+   internal RAM every gbsp game shares and left 60 KB free on the board, with
+   nothing refused. */
+#if defined(XTENSA_ARCH) && defined(ESP_PLATFORM)
+#define GBA_C1_HOT IRAM_ATTR
+#else
+#define GBA_C1_HOT
+#endif
+#else /* GBSP_BACKEND_VARIANT */
+#if defined(_WIN32)
+  #define PATH_SEPARATOR "\\"
+  #define PATH_SEPARATOR_CHAR '\\'
+#else
+  #define PATH_SEPARATOR "/"
+  #define PATH_SEPARATOR_CHAR '/'
+#endif
+#endif /* GBSP_BACKEND_VARIANT */
 
 /* On x86 we pass arguments via registers instead of stack */
 #ifdef X86_ARCH
@@ -114,12 +151,21 @@
 // We reserve extra memory at the end for extra effects (winobj rendering).
 #define GBA_SCREEN_BUFFER_SIZE  \
   (GBA_SCREEN_PITCH * (GBA_SCREEN_HEIGHT + 1) * sizeof(uint16_t))
+#if defined(RISCV_ARCH) /* GBSP_BACKEND_VARIANT */
 
 #ifdef MSB_FIRST
   #define netorder32(value) (value)
 #else
   #define netorder32(value) __builtin_bswap32(value)
 #endif
+#else /* GBSP_BACKEND_VARIANT */
+
+#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+  #define netorder32(value) (value)
+#else
+  #define netorder32(value) __builtin_bswap32(value)
+#endif
+#endif /* GBSP_BACKEND_VARIANT */
 
 typedef u32 fixed16_16;
 typedef u32 fixed8_24;
@@ -157,6 +203,7 @@ typedef u32 fixed8_24;
 #define address32(base, offset)                                               \
   *((u32 *)((u8 *)base + (offset)))                                           \
 
+#if defined(RISCV_ARCH) /* GBSP_BACKEND_VARIANT */
 #define eswap8(value)  (value)
 #ifdef MSB_FIRST
   #define eswap16(value) __builtin_bswap16(value)
@@ -165,6 +212,16 @@ typedef u32 fixed8_24;
   #define eswap16(value) (value)
   #define eswap32(value) (value)
 #endif
+#else /* GBSP_BACKEND_VARIANT */
+#define eswap8(value)  (value)
+#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+  #define eswap16(value) __builtin_bswap16(value)
+  #define eswap32(value) __builtin_bswap32(value)
+#else
+  #define eswap16(value) (value)
+  #define eswap32(value) (value)
+#endif
+#endif /* GBSP_BACKEND_VARIANT */
 
 #define  readaddress8(base, offset) eswap8( address8( base, offset))
 #define readaddress16(base, offset) eswap16(address16(base, offset))
@@ -176,6 +233,7 @@ typedef u32 fixed8_24;
 
 #define read_dmareg(regnum, dmachan) (eswap16(io_registers[(regnum) + (dmachan) * 6]))
 #define write_dmareg(regnum, dmachan, val) io_registers[(regnum) + (dmachan) * 6] = eswap16(val)
+#if defined(RISCV_ARCH) /* GBSP_BACKEND_VARIANT */
 
 #ifdef ESP_PLATFORM
   #include "sdkconfig.h"
@@ -192,6 +250,18 @@ typedef u32 fixed8_24;
   #include <stdarg.h>
 #endif
 #include "cpu.h"
+#else /* GBSP_BACKEND_VARIANT */
+
+#ifdef RETRO_GO
+#include <rg_system.h>
+#endif
+#include <unistd.h>
+#include <time.h>
+#include <stdlib.h>
+#include <string.h>
+#include <stdarg.h>
+#include "cpu.h"
+#endif /* GBSP_BACKEND_VARIANT */
 #include "gba_memory.h"
 #include "savestate.h"
 #include "video.h"

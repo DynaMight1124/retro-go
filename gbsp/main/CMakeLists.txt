@@ -1,4 +1,15 @@
-set(COMPONENT_SRCDIRS ".")
+include("${CMAKE_CURRENT_LIST_DIR}/../components/gbsp-libretro/core_selection.cmake")
+set(COMPONENT_SRCS "main.c")
 set(COMPONENT_ADD_INCLUDEDIRS ".")
+set(COMPONENT_REQUIRES "retro-go gbsp-libretro")
 register_component()
 rg_setup_compile_options()
+if(GBSP_CORE STREQUAL "riscv")
+    target_compile_definitions(${COMPONENT_LIB} PRIVATE RISCV_ARCH)
+elseif(GBSP_CORE STREQUAL "s3")
+    rg_setup_compile_options(-O3)
+endif()
+message(STATUS "gpSP backend: ${GBSP_CORE}")
+
+# Retro-Go log macros are compiled in this component, not in the platform library.
+target_compile_definitions(${COMPONENT_LIB} PRIVATE RG_BUILD_RELEASE=$<BOOL:${RG_BUILD_RELEASE}>)

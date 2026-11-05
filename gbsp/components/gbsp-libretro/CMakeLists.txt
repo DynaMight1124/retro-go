@@ -1,35 +1,38 @@
-if(IDF_TARGET MATCHES "esp32p4|esp32s31")
-    set(GPSP_SRCS
-        gpsp_main.c
-        gba_memory.c
-        gba_cc_lut.c
-        memmap.c
-        sound.c
-        input.c
-        cheats.c
-        serial.c
-        serial_proto.c
-        rfu.c
-        gbp.c
-        savestate.c
-        gpsp_esp.c
-        gpsp_memory_alloc.c
-        bios_data.S
-        cpu_threaded.c
-        riscv/riscv_stub.S
-    )
+include("${CMAKE_CURRENT_LIST_DIR}/core_selection.cmake")
 
-    set(GPSP_CXX_SRCS
-        cpu.cc
-        video.cc
-    )
+# All CPU backends compile the same portable core and public headers.
+set(GPSP_SRCS
+    cheats.c
+    cpu.cpp
+    gba_cc_lut.c
+    gpsp_persistence.c
+    gba_memory.c
+    gbp.c
+    input.c
+    main.c
+    memmap.c
+    rfu.c
+    savestate.c
+    serial.c
+    sound.c
+    video.cpp
 
-    idf_component_register(
-        SRCS ${GPSP_SRCS} ${GPSP_CXX_SRCS}
-        INCLUDE_DIRS "."
-        REQUIRES heap esp_mm esp_timer retro-go
-    )
+)
+set(GPSP_REQUIRES retro-go)
+if(GBSP_CORE STREQUAL "riscv")
+    list(APPEND GPSP_SRCS cpu_threaded.c gpsp_esp.c gpsp_memory_alloc.c
+         serial_proto.c gpsp_rom_stream.c bios_data.S riscv/riscv_stub.S)
+    list(APPEND GPSP_REQUIRES heap esp_mm esp_timer)
+elseif(GBSP_CORE STREQUAL "s3")
+    list(APPEND GPSP_SRCS cpu_threaded.c xtensa/xtensa_stub.c xtensa/xt_fastmem.S)
+    list(APPEND GPSP_REQUIRES xjit esp_mm)
+endif()
 
+idf_component_register(SRCS ${GPSP_SRCS}
+    INCLUDE_DIRS "." "libretro/libretro-common/include"
+    REQUIRES ${GPSP_REQUIRES})
+
+if(GBSP_CORE STREQUAL "riscv")
     target_compile_definitions(${COMPONENT_LIB} PUBLIC
         COLOR_16_BIT
         COLOR_5_6_5
@@ -68,20 +71,20 @@ if(IDF_TARGET MATCHES "esp32p4|esp32s31")
     # irom_seg and drom_seg intentionally share a VMA through different flash buses.
     idf_build_set_property(LINK_OPTIONS "-Wl,--no-check-sections" APPEND)
 else()
-    # ESP32 and ESP32-S3 retain Retro-Go's established interpreter core.
-    set(COMPONENT_SRCDIRS "orig")
-    set(COMPONENT_ADD_INCLUDEDIRS "orig" "orig/libretro/libretro-common/include")
-    set(COMPONENT_REQUIRES "retro-go")
-    register_component()
     rg_setup_compile_options(
-        -O3
-        -fomit-frame-pointer -ffast-math
-        -DOVERCLOCK_60FPS
-        -DROM_BUFFER_SIZE=8
-        -Wno-unused-variable
-        -Wno-implicit-fallthrough
-        -Wno-missing-field-initializers
-        -Wno-error=unused-label
-        -Wno-unused-label
+        -O3 -fomit-frame-pointer -ffast-math
+        -DOVERCLOCK_60FPS -DROM_BUFFER_SIZE=8
+        -Wno-unused-variable -Wno-implicit-fallthrough
+        -Wno-missing-field-initializers -Wno-error=unused-label -Wno-unused-label
     )
+    if(GBSP_CORE STREQUAL "s3")
+        # These definitions also control layout in the adapter's shared headers.
+        target_compile_definitions(${COMPONENT_LIB} PUBLIC
+            HAVE_DYNAREC XTENSA_ARCH SMALL_TRANSLATION_CACHE)
+        set_source_files_properties(cpu_threaded.c PROPERTIES
+            COMPILE_OPTIONS "-Os;-mtext-section-literals")
+    endif()
 endif()
+
+# Retro-Go log macros are compiled in this component, not in the platform library.
+target_compile_definitions(${COMPONENT_LIB} PRIVATE RG_BUILD_RELEASE=$<BOOL:${RG_BUILD_RELEASE}>)

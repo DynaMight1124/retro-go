@@ -1,3 +1,4 @@
+#if defined(RISCV_ARCH)
 /* strl shim - strlcpy may already exist on ESP-IDF via newlib */
 #ifndef COMPAT_STRL_H
 #define COMPAT_STRL_H
@@ -18,4 +19,7 @@ static inline size_t compat_strlcpy(char *dst, const char *src, size_t size)
 #define strlcpy compat_strlcpy
 #endif
 
+#endif
+#else
+#include "../libretro/libretro-common/include/compat/strl.h"
 #endif

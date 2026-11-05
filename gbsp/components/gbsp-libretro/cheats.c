@@ -201,6 +201,7 @@ void cheat_clear()
    {
       cheats[i].cheat_count = 0;
       cheats[i].cheat_active = false;
+#if defined(RISCV_ARCH) /* GBSP_BACKEND_VARIANT */
    }
    /* Reset the scan high-water-mark too: otherwise process_cheats keeps
     * iterating over inactive slots from the previous game's cheat set,
@@ -225,10 +226,16 @@ void cheat_disable(unsigned index)
       return;
    cheats[index].cheat_active = false;
 }
+#else /* GBSP_BACKEND_VARIANT */
+   }
+   cheat_master_hook = 0xffffffff;
+}
+#endif /* GBSP_BACKEND_VARIANT */
 
 cheat_error cheat_parse(unsigned index, const char *code)
 {
    int pos = 0;
+#if defined(RISCV_ARCH) /* GBSP_BACKEND_VARIANT */
    int codelen = strlen(code);
    cheat_type *ch;
    char buf[1024];
@@ -237,15 +244,29 @@ cheat_error cheat_parse(unsigned index, const char *code)
     * '&cheats[index]' with an out-of-range index is undefined behavior
     * per C even if the pointer is never dereferenced. */
    if (index >= MAX_CHEATS)
+#else /* GBSP_BACKEND_VARIANT */
+   int codelen = strlen(code);
+   cheat_type *ch = &cheats[index];
+   char buf[1024];
+   
+   if (index >= MAX_CHEATS)
+#endif /* GBSP_BACKEND_VARIANT */
       return CheatErrorTooMany;
    if (codelen >= sizeof(buf))
       return CheatErrorTooBig;
+#if defined(RISCV_ARCH) /* GBSP_BACKEND_VARIANT */
 
    ch = &cheats[index];
 
    memcpy(buf, code, codelen+1);
 
    /* Init to a known good state */
+#else /* GBSP_BACKEND_VARIANT */
+
+   memcpy(buf, code, codelen+1);
+   
+   /* Init to a known good state */
+#endif /* GBSP_BACKEND_VARIANT */
    ch->cheat_count = 0;
    if (index > max_cheat)
       max_cheat = index;
@@ -287,5 +308,3 @@ cheat_error cheat_parse(unsigned index, const char *code)
    /* TODO parse other types here */
    return CheatErrorNotSupported;
 }
-
-

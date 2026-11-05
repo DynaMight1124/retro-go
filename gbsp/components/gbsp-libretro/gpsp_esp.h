@@ -34,6 +34,12 @@ void gpsp_set_buttons(uint16_t buttons);
 /* Get audio samples. Returns number of stereo frames written. */
 unsigned gpsp_get_audio(int16_t *out, unsigned max_frames);
 
+/* Cartridge persistence, accessed only while emulation is stopped. */
+void *gpsp_save_data(void);
+size_t gpsp_save_bytes(void);
+bool gpsp_save_dirty(void);
+void gpsp_save_clean(void);
+
 /* Load/save battery-backed save */
 int gpsp_load_save(const char *path);
 int gpsp_write_save(const char *path);

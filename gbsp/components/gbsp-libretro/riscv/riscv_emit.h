@@ -1949,13 +1949,13 @@ u32 execute_store_cpsr_body(u32 _cpsr, u32 address)
   generate_function_call(riscv_cheat_hook)
 
 /* Tracing (disabled by default) */
-#ifdef TRACE_INSTRUCTIONS
+#if defined(TRACE_INSTRUCTIONS) && GPSP_TRACE_ENABLED
   void trace_instruction(u32 pc, u32 mode)
   {
     if (mode)
-      printf("Executed arm %x\n", pc);
+      GPSP_TRACE("Executed arm %x\n", pc);
     else
-      printf("Executed thumb %x\n", pc);
+      GPSP_TRACE("Executed thumb %x\n", pc);
   }
   #define emit_trace_instruction(pc, mode)                                    \
     emit_save_regs(false);                                                    \
@@ -2364,13 +2364,13 @@ void init_emitter(bool must_swap) {
 u32 execute_arm_translate_internal(u32 cycles, void *regptr);
 u32 execute_arm_translate(u32 cycles) {
   static int dbg_cnt = 0;
-  if (dbg_cnt < 5) {
-    printf("eat_enter[%d]: PC=0x%08x CPSR=0x%08x &reg=%p\n",
+  if (GPSP_TRACE_ENABLED && dbg_cnt < 5) {
+    GPSP_TRACE("eat_enter[%d]: PC=0x%08x CPSR=0x%08x &reg=%p\n",
            dbg_cnt, reg[REG_PC], reg[REG_CPSR], &reg[0]);
   }
   u32 ret = execute_arm_translate_internal(cycles, &reg[0]);
-  if (dbg_cnt < 5) {
-    printf("eat_exit[%d]: PC=0x%08x ret=%u\n",
+  if (GPSP_TRACE_ENABLED && dbg_cnt < 5) {
+    GPSP_TRACE("eat_exit[%d]: PC=0x%08x ret=%u\n",
            dbg_cnt, reg[REG_PC], ret);
     dbg_cnt++;
   }
