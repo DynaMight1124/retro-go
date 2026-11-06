@@ -96,8 +96,14 @@ bool main_read_savestate(const u8 *src);
 extern u32 num_skipped_frames;
 extern int dynarec_enable;
 extern boot_mode selected_boot_mode;
+#if defined(RISCV_ARCH) /* GBSP_BACKEND_VARIANT */
+extern int sprite_limit;
+extern u32 netplay_num_clients, netplay_client_id;
+
+#else /* GBSP_BACKEND_VARIANT */
 extern int sprite_limit;
 
+#endif /* GBSP_BACKEND_VARIANT */
 #ifdef TRACE_REGISTERS
 void print_regs(void);
 #endif
@@ -110,5 +116,3 @@ void print_regs(void);
 #endif
 
 #endif
-
-

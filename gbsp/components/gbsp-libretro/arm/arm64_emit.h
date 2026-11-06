@@ -1779,7 +1779,7 @@ u32 execute_store_cpsr_body(u32 _cpsr, u32 address, u32 store_mask)
 
 #define arm_bx()                                                              \
   arm_decode_branchx(opcode);                                                 \
-  generate_load_reg(reg_a0, rn);                                              \
+  generate_load_reg_pc(reg_a0, rn, 8);                                        \
   generate_indirect_branch_dual()                                             \
 
 #define arm_swi()                                                             \
@@ -1879,6 +1879,8 @@ extern void* ldst_lookup_tables[16*4 + 17*6];
 
 
 void init_emitter(bool must_swap) {
+  /* must_swap is unused on AArch64 (see x86_emit.h for context). */
+  (void)must_swap;
   rom_cache_watermark = INITIAL_ROM_WATERMARK;
   init_bios_hooks();
 

@@ -35,6 +35,19 @@
   *p++ = (u8)((__tval) >> 24);                  \
 }
 
+#if defined(RISCV_ARCH) /* GBSP_BACKEND_VARIANT */
+#define bson_read_u32(p)                        \
+  (((u32)(p)[3] << 24) | ((u32)(p)[2] << 16) |  \
+   ((u32)(p)[1] <<  8) | ((u32)(p)[0] <<  0))
+
+#define bson_write_cstring(p, value)            \
+  do {                                          \
+    size_t __bson_clen = strlen(value) + 1;     \
+    memcpy(p, value, __bson_clen);              \
+    p += __bson_clen;                           \
+  } while (0)
+
+#else /* GBSP_BACKEND_VARIANT */
 #define bson_read_u32(p)                        \
   ((p[3] << 24) | (p[2] << 16) |                \
    (p[1] <<  8) | (p[0] <<  0))
@@ -43,6 +56,7 @@
   memcpy(p, value, strlen(value)+1);            \
   p += strlen(value)+1;
 
+#endif /* GBSP_BACKEND_VARIANT */
 #define bson_write_int32(p, key, value)         \
   *p++ = 0x10;                                  \
   bson_write_cstring(p, key);                   \
@@ -101,4 +115,3 @@ bool gba_load_state(const void *src);
 void gba_save_state(void *dst);
 
 #endif
-

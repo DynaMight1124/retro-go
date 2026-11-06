@@ -500,7 +500,6 @@ ext_io_store_u##store_type:                                                  ;\
   ldr r2, [lr]                            /* load PC                       */;\
   str r2, [reg_base, #REG_PC]             /* write out PC                  */;\
                                                                              ;\
-  mask_addr_##store_type(10)              /* Mask to IO memory (+align)    */;\
   call_c_function(write_io_register##store_type)                             ;\
                                                                              ;\
   cmp r0, #0                                                                 ;\
@@ -949,5 +948,9 @@ defsymbl(ram_translation_cache)
   .space RAM_TRANSLATION_CACHE_SIZE
 .size ram_translation_cache, .-ram_translation_cache
 
+#endif
+
+#if defined(__linux__) && defined(__ELF__)
+  .section .note.GNU-stack,"",%progbits
 #endif
 

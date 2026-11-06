@@ -1,3 +1,4 @@
+#include "gpsp_video.h"
 /* gameplaySP
  *
  * Copyright (C) 2023 David Guillen Fandos <david@davidgf.net>
@@ -22,96 +23,37 @@
 const u8 *state_mem_read_ptr;
 u8 *state_mem_write_ptr;
 
-bool bson_contains_key(const u8 *srcp, const char *key, u8 keytype)
+#include "gpsp_bson.h"
+
+/* All document pointers originate in the fully bounded root validation below. */
+bool bson_contains_key(const u8 *src, const char *key, u8 type)
 {
-  unsigned keyl = strlen(key) + 1;
-  unsigned doclen = bson_read_u32(srcp);
-  const u8* p = &srcp[4];
-  while (*p != 0 && (p - srcp) < doclen) {
-    u8 tp = *p;
-    unsigned tlen = strlen((char*)&p[1]) + 1;
-    if (keyl == tlen && !memcmp(key, &p[1], tlen))
-      return tp == keytype;  // Found it, check type
-    p += 1 + tlen;
-    if (tp == BSON_TYPE_DOC || tp == BSON_TYPE_ARR)
-      p += bson_read_u32(p);
-    else if (tp == BSON_TYPE_BIN)
-      p += bson_read_u32(p) + 1 + 4;
-    else if (tp == BSON_TYPE_INT32)
-      p += 4;
-  }
-  return false;
+  gp_bson_field_t f;
+  return gp_bson_find(src, key, &f) && f.type == type;
+}
+const u8 *bson_find_key(const u8 *src, const char *key)
+{
+  gp_bson_field_t f;
+  return gp_bson_find(src, key, &f) && (f.type == BSON_TYPE_DOC || f.type == BSON_TYPE_ARR) ? f.value : NULL;
+}
+bool bson_read_int32(const u8 *src, const char *key, u32 *out)
+{
+  return gp_bson_i32(src, key, out);
+}
+bool bson_read_int32_array(const u8 *src, const char *key, u32 *out, unsigned count)
+{
+  return gp_bson_array(src, key, out, count);
+}
+bool bson_read_bytes(const u8 *src, const char *key, void *out, unsigned count)
+{
+  return gp_bson_bytes(src, key, out, count);
 }
 
-const u8* bson_find_key(const u8 *srcp, const char *key)
-{
-  unsigned keyl = strlen(key) + 1;
-  unsigned doclen = bson_read_u32(srcp);
-  const u8* p = &srcp[4];
-  while (*p != 0 && (p - srcp) < doclen) {
-    u8 tp = *p;
-    unsigned tlen = strlen((char*)&p[1]) + 1;
-    if (keyl == tlen && !memcmp(key, &p[1], tlen))
-      return &p[tlen + 1];
-    p += 1 + tlen;
-    if (tp == BSON_TYPE_DOC || tp == BSON_TYPE_ARR)
-      p += bson_read_u32(p);
-    else if (tp == BSON_TYPE_BIN)
-      p += bson_read_u32(p) + 1 + 4;
-    else if (tp == BSON_TYPE_INT32)
-      p += 4;
-  }
-  return NULL;
-}
-
-bool bson_read_int32(const u8 *srcp, const char *key, u32* value)
-{
-  const u8* p = srcp ? bson_find_key(srcp, key) : NULL;
-  if (!p)
-    return false;
-  *value = bson_read_u32(p);
-  return true;
-}
-
-bool bson_read_int32_array(const u8 *srcp, const char *key, u32* value, unsigned cnt)
-{
-  const u8* p = srcp ? bson_find_key(srcp, key) : NULL;
-  if (p) {
-    unsigned arrsz = bson_read_u32(p);
-    p += 4;
-    if (arrsz < 5)
-      return false;
-    arrsz = (arrsz - 5) >> 3;
-    while (arrsz--) {
-      p += 4;   // type and name
-      *value++ = bson_read_u32(p);
-      p += 4;   // value
-    }
-    return true;
-  }
-  *value = bson_read_u32(p);
-  return false;
-}
-
-bool bson_read_bytes(const u8 *srcp, const char *key, void* buffer, unsigned cnt)
-{
-  const u8* p = srcp ? bson_find_key(srcp, key) : NULL;
-  if (p) {
-    unsigned bufsz = bson_read_u32(p);
-    if (bufsz != cnt)
-      return false;
-
-    // Skip byte array type and size
-    memcpy(buffer, &p[5], cnt);
-    return true;
-  }
-  return false;
-}
-
-bool gba_load_state(const void* src)
+static bool gba_load_state_impl(const void* src)
 {
   u32 i, tmp;
   u8* srcptr = (u8*)src;
+  if (!gp_bson_validate(src, GBA_STATE_MEM_SIZE)) return false;
   u32 docsize = bson_read_u32(srcptr);
   if (docsize != GBA_STATE_MEM_SIZE)
     return false;
@@ -154,8 +96,23 @@ bool gba_load_state(const void* src)
 #endif
 
   instruction_count = 0;
+#if defined(XTENSA_ARCH) /* GBSP_BACKEND_VARIANT */
+  reg[OAM_UPDATED] = 1;
+#ifdef RETRO_GO
+  {
+    extern u8 gbsp_pal_dirty;   /* video.cpp: the renderer's palette copy */
+    gbsp_pal_dirty = 1;
+#if defined(XTENSA_ARCH) && defined(ESP_PLATFORM)
+    extern void gbsp_vram_mark_all(void);   /* video.cpp: the renderer's VRAM copy */
+    gbsp_vram_mark_all();
+#endif
+  }
+#endif
+
+#else /* GBSP_BACKEND_VARIANT */
   reg[OAM_UPDATED] = 1;
 
+#endif /* GBSP_BACKEND_VARIANT */
   return true;
 }
 
@@ -194,4 +151,11 @@ void gba_save_state(void* dst)
   bson_write_u32(stptr, wrptr - stptr);
 }
 
-
+bool gba_load_state(const void *src)
+{
+  gbsp_render_wait();
+  bool loaded = gba_load_state_impl(src);
+  /* A failed reader can have partially restored RAM too. */
+  gbsp_render_invalidate();
+  return loaded;
+}

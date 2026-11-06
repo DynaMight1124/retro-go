@@ -103,9 +103,15 @@ typedef enum
 
   /* Machine defined storage */
   REG_USERDEF       = 32,
+#if defined(XTENSA_ARCH) /* GBSP_BACKEND_VARIANT */
+
+  REG_MAX           = 80   /* xtensa: its slots run to 64 (xtensa/xt_fastmem.h) */
+} ext_reg_numbers;
+#else /* GBSP_BACKEND_VARIANT */
 
   REG_MAX           = 64
 } ext_reg_numbers;
+#endif /* GBSP_BACKEND_VARIANT */
 
 extern u32 instruction_count;
 
@@ -136,6 +142,25 @@ u8 function_cc *block_lookup_address_thumb(u32 pc);
 u8 function_cc *block_lookup_address_dual(u32 pc);
 bool translate_block_arm(u32 pc, bool ram_region);
 bool translate_block_thumb(u32 pc, bool ram_region);
+#if defined(XTENSA_ARCH) /* GBSP_BACKEND_VARIANT */
+
+#if defined(MMAP_JIT_CACHE) || defined(XTENSA_ARCH)
+extern u8* rom_translation_cache;
+extern u8* ram_translation_cache;
+#elif defined(_3DS)
+#define rom_translation_cache ((u8*)0x02000000 - ROM_TRANSLATION_CACHE_SIZE)
+#define ram_translation_cache (rom_translation_cache - RAM_TRANSLATION_CACHE_SIZE)
+extern u8* rom_translation_cache_ptr;
+extern u8* ram_translation_cache_ptr;
+#elif defined(VITA)
+extern u8* rom_translation_cache;
+extern u8* ram_translation_cache;
+extern int sceBlock;
+#else
+extern u8 rom_translation_cache[ROM_TRANSLATION_CACHE_SIZE];
+extern u8 ram_translation_cache[RAM_TRANSLATION_CACHE_SIZE];
+#endif
+#else /* GBSP_BACKEND_VARIANT */
 
 #if defined(MMAP_JIT_CACHE)
 extern u8* rom_translation_cache;
@@ -153,13 +178,30 @@ extern int sceBlock;
 extern u8 rom_translation_cache[ROM_TRANSLATION_CACHE_SIZE];
 extern u8 ram_translation_cache[RAM_TRANSLATION_CACHE_SIZE];
 #endif
+#endif /* GBSP_BACKEND_VARIANT */
 extern u8 *rom_translation_ptr;
 extern u8 *ram_translation_ptr;
 
 #define MAX_TRANSLATION_GATES 8
 
+#if defined(XTENSA_ARCH) /* GBSP_BACKEND_VARIANT */
+extern u32 idle_loop_target_pc;
+#ifdef GBAPROF
+/* GBAPROF: the same loop in the other convention, for trying a candidate.
+   The interpreter eliminates an idle loop when the PC *lands* on
+   idle_loop_target_pc (cpu.cpp, after the instruction), so a candidate found
+   with the host harness is the PC the loop branches back to; the dynarec
+   eliminates it when the loop's *branch* is at that PC (xtensa_emit_ops.h, at
+   translate time). The two agree only when the loop branches to itself. This
+   holds the branch-target convention and is 0 unless a profiling build was
+   told otherwise, so gba_over.h's entries keep their exact behaviour. */
+extern u32 idle_loop_head_pc;
+#endif
+extern u32 translation_gate_targets;
+#else /* GBSP_BACKEND_VARIANT */
 extern u32 idle_loop_target_pc;
 extern u32 translation_gate_targets;
+#endif /* GBSP_BACKEND_VARIANT */
 extern u32 translation_gate_target_pc[MAX_TRANSLATION_GATES];
 
 extern u32 rom_branch_hash[ROM_BRANCH_HASH_SIZE];

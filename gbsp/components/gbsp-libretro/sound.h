@@ -19,11 +19,18 @@
 
 #ifndef SOUND_H
 #define SOUND_H
+#include "gpsp_audio_format.h"
+#if defined(RISCV_ARCH) /* GBSP_BACKEND_VARIANT */
+
+#define BUFFER_SIZE        (1 << 15)
+#define BUFFER_SIZE_MASK   (BUFFER_SIZE - 1)
+#else /* GBSP_BACKEND_VARIANT */
 
 #define BUFFER_SIZE        (1 << 11)
 #define BUFFER_SIZE_MASK   (BUFFER_SIZE - 1)
+#endif /* GBSP_BACKEND_VARIANT */
 
-#define GBA_SOUND_FREQUENCY   (32768)
+#define GBA_SOUND_FREQUENCY   (GPSP_AUDIO_SAMPLE_RATE)
 
 #ifdef OVERCLOCK_60FPS
   #define GBC_BASE_RATE ((float)(60 * 228 * (272+960)))
@@ -95,9 +102,14 @@ extern u32 gbc_sound_buffer_index;
 extern u32 gbc_sound_last_cpu_ticks;
 
 extern const u32 sound_frequency;
+#if defined(RISCV_ARCH) /* GBSP_BACKEND_VARIANT */
 extern u32 sound_on;
-extern bool sound_master_enable;
 
+#else /* GBSP_BACKEND_VARIANT */
+extern u32 sound_on;
+
+#endif /* GBSP_BACKEND_VARIANT */
+extern bool sound_master_enable;
 void sound_timer_queue32(u32 channel, u32 value);
 unsigned sound_timer(fixed8_24 frequency_step, u32 channel);
 void sound_reset_fifo(u32 channel);

@@ -24,9 +24,81 @@ extern "C" {
 
 u16* gba_screen_pixels = NULL;
 
+#include "gpsp_video.h"
+#include "gpsp_log.h"
+#define GPSP_VIDEO_SNAPSHOTS 1
 #define get_screen_pixels()   gba_screen_pixels
-#define get_screen_pitch()    GBA_SCREEN_PITCH
 
+#if defined(GPSP_VIDEO_SNAPSHOTS)
+/* The renderer (core 1, drawing lines late) reads its own copy of VRAM:
+   CPU and DMA write the live VRAM and mark 1 KB pages dirty, and the dirty
+   pages are copied into the renderer's copy when the next line is queued,
+   after the lines queued before the write are drawn. A VRAM write no longer
+   waits for core 1 (Sonic's vblank DMA, TMNT's OBJ tiles: ~2 ms/frame). */
+#define GBSP_RVRAM 1
+extern "C" { u8 *gbsp_rvram; u32 gbsp_vram_dirty[3]; u8 gbsp_vram_dirty_any; void gbsp_vram_mark_all(void); }
+static inline u8 *gbsp_live_vram(void) { return vram; }   /* before vram is redefined */
+#define live_vram gbsp_live_vram()
+#undef vram
+static u8 *render_vram;
+#define vram render_vram   /* everything below is the renderer's view */
+#endif
+
+#ifdef GPSP_VIDEO_SNAPSHOTS
+/* esp32-emu-turbo: the scanline renderer reads a snapshot of the display
+   registers and affine references taken at that line's hblank (core 0), so
+   it can draw on core 1 while core 0 emulates the following lines. */
+#define RLINE_IO 0x30                 /* DISPCNT .. BLDY (u16 index 0x2A) */
+typedef struct { u16 io[RLINE_IO]; s32 ax[2], ay[2]; u8 oam, oamb, palb; } rline_t;
+/* OAM as the line saw it: core 0 copies OAM into the other of two buffers at
+   the first line after a change, so the game can rewrite OAM (in the vblank,
+   for the next frame) without waiting for core 1 to draw the last lines */
+#ifdef ESP_PLATFORM
+static u16 (*r_oam)[512];   /* PSRAM: gbsp_render_start() */
+#endif
+static const u16 *render_oam = oam_ram;
+static u8 r_oam_cur;
+static u32 r_oam_last[2] = {~0U, ~0U};   /* index of the last queued line using it */
+static bool r_oam_valid;
+/* the same for the converted palette, a ring of buffers (games change it on
+   several lines of a frame): palette writes set gbsp_pal_dirty (gba_memory.c).
+   2026-10-13: 4 -> 32 buffers (32 KB of PSRAM). V-Rally 3 changes it on many
+   lines of a frame; with 4 buffers the ring came round to one still in use
+   and core 0 waited for core 1, drawing the late lines itself (GBAWAIT pal
+   2.4 ms a frame, gbsp_render_sync 27 % of core 0's samples, 55.8 fps). */
+#define R_PAL_N 32
+#ifdef ESP_PLATFORM
+static u16 (*r_pal)[512];   /* PSRAM: gbsp_render_start() */
+#endif
+static u16 *const live_pal = palette_ram_converted;
+static const u16 *render_pal = palette_ram_converted;
+static u8 r_pal_cur;
+static u32 r_pal_last[R_PAL_N];
+extern "C" { u32 gbsp_pal_ring = R_PAL_N; }   /* buffers in use: gba_pal4 on the card sets 4 (the A/B) */
+static struct r_pal_last_init { r_pal_last_init() { for (int i = 0; i < R_PAL_N; i++) r_pal_last[i] = ~0U; } } r_pal_last_init_;
+extern "C" { u8 gbsp_pal_dirty = 1; }
+#define palette_ram_converted render_pal
+#ifdef ESP_PLATFORM
+static rline_t *rlines;   /* 160 lines, PSRAM (internal RAM is full): gbsp_render_start() */
+#else
+static rline_t rlines_pc[160], *rlines = rlines_pc;
+static u16 r_oam_pc[2][512], (*r_oam)[512] = r_oam_pc;
+static u16 r_pal_pc[R_PAL_N][512], (*r_pal)[512] = r_pal_pc;
+#endif
+static const u16 *render_io = io_registers;
+static s32 r_affine_x[2], r_affine_y[2];
+#define live_ioreg(regnum) (eswap16(io_registers[(regnum)]))
+#define live_ioreg32(regnum) (live_ioreg(regnum) | (live_ioreg((regnum)+1) << 16))
+#undef read_ioreg
+#define read_ioreg(regnum) (eswap16(render_io[(regnum)]))
+#else
+#define live_ioreg(regnum) read_ioreg(regnum)
+#define live_ioreg32(regnum) read_ioreg32(regnum)
+#define r_affine_x affine_reference_x
+#define r_affine_y affine_reference_y
+#define render_oam oam_ram
+#endif
+#define get_screen_pitch()    GBA_SCREEN_PITCH
 typedef struct {
   u16 attr0, attr1, attr2, attr3;
 } t_oam;
@@ -134,12 +206,12 @@ static inline s32 signext28(u32 value)
 
 void video_reload_counters()
 {
-  /* This happens every Vblank */
-  affine_reference_x[0] = signext28(read_ioreg32(REG_BG2X_L));
-  affine_reference_y[0] = signext28(read_ioreg32(REG_BG2Y_L));
-  affine_reference_x[1] = signext28(read_ioreg32(REG_BG3X_L));
-  affine_reference_y[1] = signext28(read_ioreg32(REG_BG3Y_L));
+  affine_reference_x[0] = signext28(live_ioreg32(REG_BG2X_L));
+  affine_reference_y[0] = signext28(live_ioreg32(REG_BG2Y_L));
+  affine_reference_x[1] = signext28(live_ioreg32(REG_BG3X_L));
+  affine_reference_y[1] = signext28(live_ioreg32(REG_BG3Y_L));
 }
+
 
 // Renders non-affine tiled background layer.
 // Will process a full or partial tile (start and end within 0..8) and draw
@@ -285,9 +357,15 @@ static inline void render_tile_Nbpp(
 }
 
 
+#if defined(XTENSA_ARCH) /* GBSP_BACKEND_VARIANT */
+template<typename stype, rendtype rdtype, bool isbase, bool is8bpp>
+static inline __attribute__((always_inline)) void render_scanline_text_fast(u32 layer,
+ u32 start, u32 end, void *scanline, const u16 * paltbl)
+#else /* GBSP_BACKEND_VARIANT */
 template<typename stype, rendtype rdtype, bool isbase, bool is8bpp>
 static void render_scanline_text_fast(u32 layer,
  u32 start, u32 end, void *scanline, const u16 * paltbl)
+#endif /* GBSP_BACKEND_VARIANT */
 {
   u32 bg_control = read_ioreg(REG_BGxCNT(layer));
   u16 vcount = read_ioreg(REG_VCOUNT);
@@ -485,12 +563,25 @@ static void render_scanline_text_mosaic(u32 layer,
   u16 bgcolor = paltbl[0];
 
   // Iterate pixel by pixel, loading data every N pixels to honor mosaic effect
+#if defined(RISCV_ARCH) /* GBSP_BACKEND_VARIANT */
+  u8 pval = 0;
+  u32 mctr = 0;
+  for (u32 i = 0; start < end; start++, i++, dest_ptr++) {
+#else /* GBSP_BACKEND_VARIANT */
   u8 pval = 0;
   for (u32 i = 0; start < end; start++, i++, dest_ptr++) {
+#endif /* GBSP_BACKEND_VARIANT */
     u16 tile = eswap16(*map_ptr);
+#if defined(RISCV_ARCH) /* GBSP_BACKEND_VARIANT */
+
+    // Counter-based mosaic (see render_affine_background for rationale).
+    if (!mctr) {
+      const u8 *tile_ptr = &tile_base[(tile & 0x3FF) * (is8bpp ? 64 : 32)];
+#else /* GBSP_BACKEND_VARIANT */
 
     if (!(i % mosh)) {
       const u8 *tile_ptr = &tile_base[(tile & 0x3FF) * (is8bpp ? 64 : 32)];
+#endif /* GBSP_BACKEND_VARIANT */
 
       bool hflip = (tile & 0x400);
       if (tile & 0x800)
@@ -507,9 +598,17 @@ static void render_scanline_text_mosaic(u32 layer,
           pval = (tile_ptr[(7 - hoffset % 8) >> 1] >> (((hoffset & 1) ^ 1) * 4)) & 0xF;
         else
           pval = (tile_ptr[(hoffset % 8) >> 1] >> ((hoffset & 1) * 4)) & 0xF;
+#if defined(RISCV_ARCH) /* GBSP_BACKEND_VARIANT */
+      }
+      mctr = mosh;
+    }
+    mctr--;
+
+#else /* GBSP_BACKEND_VARIANT */
       }
     }
 
+#endif /* GBSP_BACKEND_VARIANT */
     if (is8bpp) {
       if (pval) {
         if (rdtype == FULLCOLOR)
@@ -550,9 +649,15 @@ static void render_scanline_text_mosaic(u32 layer,
   }
 }
 
+#if defined(XTENSA_ARCH) /* GBSP_BACKEND_VARIANT */
+template<typename stype, rendtype rdtype, bool isbase>
+static inline __attribute__((always_inline)) void render_scanline_text_body(u32 layer,
+ u32 start, u32 end, void *scanline, const u16 * paltbl)
+#else /* GBSP_BACKEND_VARIANT */
 template<typename stype, rendtype rdtype, bool isbase>
 static void render_scanline_text(u32 layer,
  u32 start, u32 end, void *scanline, const u16 * paltbl)
+#endif /* GBSP_BACKEND_VARIANT */
 {
   // Tile mode has 4 and 8 bpp modes.
   u32 bg_control = read_ioreg(REG_BGxCNT(layer));
@@ -574,8 +679,36 @@ static void render_scanline_text(u32 layer,
     else
       render_scanline_text_fast<stype, rdtype, isbase, false>(
         layer, start, end, scanline, paltbl);
+#if defined(XTENSA_ARCH) /* GBSP_BACKEND_VARIANT */
   }
 }
+
+template<typename stype, rendtype rdtype, bool isbase>
+static void render_scanline_text(u32 layer,
+ u32 start, u32 end, void *scanline, const u16 * paltbl)
+{
+  render_scanline_text_body<stype, rdtype, isbase>(layer, start, end, scanline, paltbl);
+}
+
+/* the tile layers of the common case (16-bit, no blending) run on core 1
+   next to the Xtensa dynarec on core 0: in IRAM, out of the shared 32 KB
+   instruction cache */
+template<>
+XT_HOT void render_scanline_text<u16, FULLCOLOR, true>(u32 layer,
+ u32 start, u32 end, void *scanline, const u16 * paltbl)
+{
+  render_scanline_text_body<u16, FULLCOLOR, true>(layer, start, end, scanline, paltbl);
+}
+template<>
+XT_HOT void render_scanline_text<u16, FULLCOLOR, false>(u32 layer,
+ u32 start, u32 end, void *scanline, const u16 * paltbl)
+{
+  render_scanline_text_body<u16, FULLCOLOR, false>(layer, start, end, scanline, paltbl);
+}
+#else /* GBSP_BACKEND_VARIANT */
+  }
+}
+#endif /* GBSP_BACKEND_VARIANT */
 
 static inline u8 lookup_pix_8bpp(
   u32 px, u32 py, const u8 *tile_base, const u8 *map_base, u32 map_size
@@ -632,11 +765,26 @@ typedef void (*affine_render_function) (
 // Affine background rendering logic.
 // wrap extends the background infinitely, otherwise transparent/backdrop fill
 // rotate indicates if there's any rotation (optimized version for no-rotation)
+#if defined(XTENSA_ARCH) /* GBSP_BACKEND_VARIANT */
+// mosaic applies to horizontal mosaic (vertical is adjusted via affine ref)
+/* Mario Kart's road is one 195-byte instantiation of this, and on the board
+   of 2026-10-10 it was 14.2% of core 1 -- fetched from flash, through the same
+   SPI0 cache controller core 0 fetches its PSRAM-resident translated code
+   through. The instantiations are reached through a function-pointer table, so
+   the whole template goes to IRAM (64 of them, 14.1 KB) rather than being
+   restructured: the attribute moves the code without changing one instruction
+   of it. */
+template <typename dtype, rendtype rdtype,
+          bool isbase, bool wrap, bool rotate, bool mosaic>
+GBA_C1_HOT static void render_affine_background(
+  u32 layer, u32 start, u32 cnt, const u8 *map_base,
+#else /* GBSP_BACKEND_VARIANT */
 // mosaic applies to horizontal mosaic (vertical is adjusted via affine ref)
 template <typename dtype, rendtype rdtype,
           bool isbase, bool wrap, bool rotate, bool mosaic>
 static inline void render_affine_background(
   u32 layer, u32 start, u32 cnt, const u8 *map_base,
+#endif /* GBSP_BACKEND_VARIANT */
   u32 map_size, const u8 *tile_base, void *dst_ptr_raw,
   const u16* pal) {
 
@@ -647,10 +795,17 @@ static inline void render_affine_background(
 
   s32 dx = (s16)read_ioreg(REG_BGxPA(layer));
   s32 dy = (s16)read_ioreg(REG_BGxPC(layer));
+#if defined(XTENSA_ARCH) /* GBSP_BACKEND_VARIANT */
 
-  s32 source_x = affine_reference_x[layer - 2] + (start * dx);
-  s32 source_y = affine_reference_y[layer - 2] + (start * dy);
+  s32 source_x = r_affine_x[layer - 2] + (start * dx);
+  s32 source_y = r_affine_y[layer - 2] + (start * dy);
 
+#else /* GBSP_BACKEND_VARIANT */
+
+  s32 source_x = r_affine_x[layer - 2] + (start * dx);
+  s32 source_y = r_affine_y[layer - 2] + (start * dy);
+
+#endif /* GBSP_BACKEND_VARIANT */
   // Maps are squared, four sizes available (128x128 to 1024x1024)
   u32 width_height = 128 << map_size;
 
@@ -659,28 +814,61 @@ static inline void render_affine_background(
 
   if (wrap) {
     // In wrap mode the entire space is covered, since it "wraps" at the edges
+#if defined(RISCV_ARCH) /* GBSP_BACKEND_VARIANT */
+    u8 pval = 0;
+    u32 mctr = 0;
+    if (rotate) {
+#else /* GBSP_BACKEND_VARIANT */
     u8 pval = 0;
     if (rotate) {
+#endif /* GBSP_BACKEND_VARIANT */
       for (u32 i = 0; cnt; i++, cnt--) {
         u32 pix_x = (u32)(source_x >> 8) & (width_height-1);
         u32 pix_y = (u32)(source_y >> 8) & (width_height-1);
+#if defined(RISCV_ARCH) /* GBSP_BACKEND_VARIANT */
+
+        // Lookup pixel and draw it (only every Nth if mosaic is on).  The
+        // counter form avoids a divl per pixel: mosh is loop-invariant but
+        // runtime-valued, so gcc/clang do not strength-reduce 'i % mosh'
+        // into a multiply-by-magic-constant sequence.  When mosaic == false
+        // the counter machinery is dead-code-eliminated at compile time.
+        if (!mosaic || !mctr) {
+          pval = lookup_pix_8bpp(pix_x, pix_y, tile_base, map_base, map_size);
+          mctr = mosh;
+        }
+        rend_pix_8bpp<dtype, rdtype, isbase>(dst_ptr++, pval, bg_comb, px_comb, pal);
+        if (mosaic) mctr--;
+
+#else /* GBSP_BACKEND_VARIANT */
 
         // Lookup pixel and draw it (only every Nth if mosaic is on)
         if (!mosaic || !(i % mosh))
           pval = lookup_pix_8bpp(pix_x, pix_y, tile_base, map_base, map_size);
         rend_pix_8bpp<dtype, rdtype, isbase>(dst_ptr++, pval, bg_comb, px_comb, pal);
 
+#endif /* GBSP_BACKEND_VARIANT */
         source_x += dx; source_y += dy;  // Move to the next pixel
       }
     } else {
       // Y coordinate stays contant across the walk.
       const u32 pix_y = (u32)(source_y >> 8) & (width_height-1);
       for (u32 i = 0; cnt; i++, cnt--) {
+#if defined(RISCV_ARCH) /* GBSP_BACKEND_VARIANT */
+        u32 pix_x = (u32)(source_x >> 8) & (width_height-1);
+        if (!mosaic || !mctr) {
+          pval = lookup_pix_8bpp(pix_x, pix_y, tile_base, map_base, map_size);
+          mctr = mosh;
+        }
+        rend_pix_8bpp<dtype, rdtype, isbase>(dst_ptr++, pval, bg_comb, px_comb, pal);
+        if (mosaic) mctr--;
+        source_x += dx;  // Only moving in the X direction.
+#else /* GBSP_BACKEND_VARIANT */
         u32 pix_x = (u32)(source_x >> 8) & (width_height-1);
         if (!mosaic || !(i % mosh))
           pval = lookup_pix_8bpp(pix_x, pix_y, tile_base, map_base, map_size);
         rend_pix_8bpp<dtype, rdtype, isbase>(dst_ptr++, pval, bg_comb, px_comb, pal);
         source_x += dx;  // Only moving in the X direction.
+#endif /* GBSP_BACKEND_VARIANT */
       }
     }
   } else {
@@ -705,19 +893,36 @@ static inline void render_affine_background(
       }
 
       // Draw background pixels by looking them up in the map
+#if defined(RISCV_ARCH) /* GBSP_BACKEND_VARIANT */
+      u8 pval = 0;
+      u32 mctr = 0;
+      for (u32 i = 0; cnt; i++, cnt--) {
+#else /* GBSP_BACKEND_VARIANT */
       u8 pval = 0;
       for (u32 i = 0; cnt; i++, cnt--) {
+#endif /* GBSP_BACKEND_VARIANT */
         u32 pix_x = (u32)(source_x >> 8), pix_y = (u32)(source_y >> 8);
 
         // Check if we run out of background pixels, stop drawing.
         if (pix_x >= width_height || pix_y >= width_height)
           break;
 
+#if defined(RISCV_ARCH) /* GBSP_BACKEND_VARIANT */
+        // Lookup pixel and draw it.
+        if (!mosaic || !mctr) {
+          pval = lookup_pix_8bpp(pix_x, pix_y, tile_base, map_base, map_size);
+          mctr = mosh;
+        }
+        rend_pix_8bpp<dtype, rdtype, isbase>(dst_ptr++, pval, bg_comb, px_comb, pal);
+        if (mosaic) mctr--;
+
+#else /* GBSP_BACKEND_VARIANT */
         // Lookup pixel and draw it.
         if (!mosaic || !(i % mosh))
           pval = lookup_pix_8bpp(pix_x, pix_y, tile_base, map_base, map_size);
         rend_pix_8bpp<dtype, rdtype, isbase>(dst_ptr++, pval, bg_comb, px_comb, pal);
 
+#endif /* GBSP_BACKEND_VARIANT */
         // Move to the next pixel, update coords accordingly
         source_x += dx; source_y += dy;
       }
@@ -739,16 +944,33 @@ static inline void render_affine_background(
           source_x += dx;
           cnt--;
         }
+#if defined(RISCV_ARCH) /* GBSP_BACKEND_VARIANT */
+        // Draw actual background
+        u32 mctr = 0;
+        for (u32 i = 0; cnt; i++, cnt--) {
+#else /* GBSP_BACKEND_VARIANT */
         // Draw actual background
         for (u32 i = 0; cnt; i++, cnt--) {
+#endif /* GBSP_BACKEND_VARIANT */
           u32 pix_x = (u32)(source_x >> 8);
           if (pix_x >= width_height)
             break;
+#if defined(RISCV_ARCH) /* GBSP_BACKEND_VARIANT */
+
+          if (!mosaic || !mctr) {
+            pval = lookup_pix_8bpp(pix_x, pix_y, tile_base, map_base, map_size);
+            mctr = mosh;
+          }
+          rend_pix_8bpp<dtype, rdtype, isbase>(dst_ptr++, pval, bg_comb, px_comb, pal);
+          if (mosaic) mctr--;
+
+#else /* GBSP_BACKEND_VARIANT */
 
           if (!mosaic || !(i % mosh))
             pval = lookup_pix_8bpp(pix_x, pix_y, tile_base, map_base, map_size);
           rend_pix_8bpp<dtype, rdtype, isbase>(dst_ptr++, pval, bg_comb, px_comb, pal);
 
+#endif /* GBSP_BACKEND_VARIANT */
           source_x += dx;
         }
       }
@@ -848,10 +1070,17 @@ static inline void render_scanline_bitmap(
   u32 start, u32 end, void *scanline, const u16 * palptr
 ) {
   s32 dx = (s16)read_ioreg(REG_BG2PA);
+#if defined(XTENSA_ARCH) /* GBSP_BACKEND_VARIANT */
   s32 dy = (s16)read_ioreg(REG_BG2PC);
-  s32 source_x = affine_reference_x[0] + (start * dx); // Always BG2
-  s32 source_y = affine_reference_y[0] + (start * dy);
+  s32 source_x = r_affine_x[0] + (start * dx); // Always BG2
+  s32 source_y = r_affine_y[0] + (start * dy);
 
+#else /* GBSP_BACKEND_VARIANT */
+  s32 dy = (s16)read_ioreg(REG_BG2PC);
+  s32 source_x = r_affine_x[0] + (start * dx); // Always BG2
+  s32 source_y = r_affine_y[0] + (start * dy);
+
+#endif /* GBSP_BACKEND_VARIANT */
   // Premature abort render optimization if bitmap out of Y coordinate.
   if ((rdmode != ROTATED) && ((u32)(source_y >> 8)) >= height)
     return;
@@ -878,6 +1107,19 @@ static inline void render_scanline_bitmap(
     u32 pixel_x = (u32)(source_x >> 8);
     u32 pixcnt = MIN(end - start, width - pixel_x);
     pixfmt *valptr = &src_ptr[pixel_x + (pixel_y * width)];
+#if defined(RISCV_ARCH) /* GBSP_BACKEND_VARIANT */
+    pixfmt val = 0;
+    u32 mctr = 0;
+    for (u32 i = 0; pixcnt; i++, pixcnt--, valptr++) {
+      // Pretty much pixel copier (counter-based mosaic: see render_affine_background)
+      if (!mosaic || !mctr) {
+        val = sizeof(pixfmt) == 2 ? eswap16(*valptr) : *valptr;
+        mctr = mosh;
+      }
+      bitmap_pixel_write<rdtype, dsttype, mode, pixfmt>(dst_ptr++, val, palptr, px_attr);
+      if (mosaic) mctr--;
+    }
+#else /* GBSP_BACKEND_VARIANT */
     pixfmt val = 0;
     for (u32 i = 0; pixcnt; i++, pixcnt--, valptr++) {
       // Pretty much pixel copier
@@ -885,6 +1127,7 @@ static inline void render_scanline_bitmap(
         val = sizeof(pixfmt) == 2 ? eswap16(*valptr) : *valptr;
       bitmap_pixel_write<rdtype, dsttype, mode, pixfmt>(dst_ptr++, val, palptr, px_attr);
     }
+#endif /* GBSP_BACKEND_VARIANT */
   }
   else if (rdmode == SCALED) {
     // Similarly to above, but now we need to sample pixels instead.
@@ -901,19 +1144,40 @@ static inline void render_scanline_bitmap(
     }
 
     u32 cnt = end - start;
+#if defined(RISCV_ARCH) /* GBSP_BACKEND_VARIANT */
+    pixfmt val = 0;
+    u32 mctr = 0;
+    for (u32 i = 0; cnt; i++, cnt--) {
+#else /* GBSP_BACKEND_VARIANT */
     pixfmt val = 0;
     for (u32 i = 0; cnt; i++, cnt--) {
+#endif /* GBSP_BACKEND_VARIANT */
       u32 pixel_x = (u32)(source_x >> 8);
       if (pixel_x >= width)
         break;  // We reached the end of the bitmap
+#if defined(RISCV_ARCH) /* GBSP_BACKEND_VARIANT */
+
+      if (!mosaic || !mctr) {
+        pixfmt *valptr = &src_ptr[pixel_x + (pixel_y * width)];
+        val = sizeof(pixfmt) == 2 ? eswap16(*valptr) : *valptr;
+        mctr = mosh;
+      }
+#else /* GBSP_BACKEND_VARIANT */
 
       if (!mosaic || !(i % mosh)) {
         pixfmt *valptr = &src_ptr[pixel_x + (pixel_y * width)];
         val = sizeof(pixfmt) == 2 ? eswap16(*valptr) : *valptr;
       }
+#endif /* GBSP_BACKEND_VARIANT */
 
+#if defined(RISCV_ARCH) /* GBSP_BACKEND_VARIANT */
+      bitmap_pixel_write<rdtype, dsttype, mode, pixfmt>(dst_ptr++, val, palptr, px_attr);
+      if (mosaic) mctr--;
+      source_x += dx;
+#else /* GBSP_BACKEND_VARIANT */
       bitmap_pixel_write<rdtype, dsttype, mode, pixfmt>(dst_ptr++, val, palptr, px_attr);
       source_x += dx;
+#endif /* GBSP_BACKEND_VARIANT */
     }
   } else {
     // Look for the first pixel to be drawn.
@@ -926,22 +1190,51 @@ static inline void render_scanline_bitmap(
       source_x += dx;  source_y += dy;
     }
 
+#if defined(RISCV_ARCH) /* GBSP_BACKEND_VARIANT */
+    pixfmt val = 0;
+    u32 mctr = 0;
+    for (u32 i = 0; start < end; start++, i++) {
+      u32 pixel_x = (u32)(source_x >> 8), pixel_y = (u32)(source_y >> 8);
+#else /* GBSP_BACKEND_VARIANT */
     pixfmt val = 0;
     for (u32 i = 0; start < end; start++) {
       u32 pixel_x = (u32)(source_x >> 8), pixel_y = (u32)(source_y >> 8);
+#endif /* GBSP_BACKEND_VARIANT */
 
       // Check if we run out of background pixels, stop drawing.
       if (pixel_x >= width || pixel_y >= height)
         break;
+#if defined(RISCV_ARCH) /* GBSP_BACKEND_VARIANT */
+
+      // Lookup pixel and draw it.  Counter-based mosaic (see
+      // render_affine_background).  Before this fix the loop counter
+      // 'i' was declared but never incremented; gcc constant-folded
+      // 'i % mosh' to !0 and the mosaic skip never triggered, so the
+      // rotated-bitmap mode-3/4/5 paths sampled every pixel instead of
+      // every Nth.  Matches the SCALED-bitmap and affine-object paths,
+      // which both honor BG2 horizontal mosaic correctly.
+      if (!mosaic || !mctr) {
+        pixfmt *valptr = &src_ptr[pixel_x + (pixel_y * width)];
+        val = sizeof(pixfmt) == 2 ? eswap16(*valptr) : *valptr;
+        mctr = mosh;
+      }
+#else /* GBSP_BACKEND_VARIANT */
 
       // Lookup pixel and draw it.
       if (!mosaic || !(i % mosh)) {
         pixfmt *valptr = &src_ptr[pixel_x + (pixel_y * width)];
         val = sizeof(pixfmt) == 2 ? eswap16(*valptr) : *valptr;
       }
+#endif /* GBSP_BACKEND_VARIANT */
 
+#if defined(RISCV_ARCH) /* GBSP_BACKEND_VARIANT */
+      bitmap_pixel_write<rdtype, dsttype, mode, pixfmt>(dst_ptr++, val, palptr, px_attr);
+      if (mosaic) mctr--;
+
+#else /* GBSP_BACKEND_VARIANT */
       bitmap_pixel_write<rdtype, dsttype, mode, pixfmt>(dst_ptr++, val, palptr, px_attr);
 
+#endif /* GBSP_BACKEND_VARIANT */
       // Move to the next pixel, update coords accordingly
       source_x += dx;
       source_y += dy;
@@ -956,11 +1249,37 @@ static const u8 obj_dim_table[3][4][2] = {
   { {16, 8}, {32, 8}, {32, 16}, {64, 32} },
   { {8, 16}, {8, 32}, {16, 32}, {32, 64} }
 };
+#if defined(RISCV_ARCH) /* GBSP_BACKEND_VARIANT */
+
+#if defined(CONFIG_IDF_TARGET_ESP32P4) || defined(CONFIG_IDF_TARGET_ESP32S31)
+#include "esp_attr.h"
+EXT_RAM_BSS_ATTR static u8 obj_priority_list[5][160][128];
+EXT_RAM_BSS_ATTR static u8 obj_priority_count[5][160];
+EXT_RAM_BSS_ATTR static u8 obj_alpha_count[160];
+#else
+static u8 obj_priority_list[5][160][128];
+static u8 obj_priority_count[5][160];
+static u8 obj_alpha_count[160];
+#endif
+
+#elif defined(XTENSA_ARCH) /* GBSP_BACKEND_VARIANT */
+
+#if defined(XTENSA_ARCH) && defined(ESP_PLATFORM)
+/* 100 KB: PSRAM, the dynarec needs the internal RAM (IWRAM, IRAM code) */
+static EXT_RAM_BSS_ATTR u8 obj_priority_list[5][160][128];
+#else
+static u8 obj_priority_list[5][160][128];
+#endif
+static u8 obj_priority_count[5][160];
+static u8 obj_alpha_count[160];
+
+#else /* GBSP_BACKEND_VARIANT */
 
 static u8 obj_priority_list[5][160][128];
 static u8 obj_priority_count[5][160];
 static u8 obj_alpha_count[160];
 
+#endif /* GBSP_BACKEND_VARIANT */
 typedef struct {
   s32 obj_x, obj_y;
   s32 obj_w, obj_h;
@@ -1160,10 +1479,19 @@ static void render_object_mosaic(
 
   u32 px_attr = px_comb | palette | 0x100;  // Combine flags + high palette bit
 
+#if defined(RISCV_ARCH) /* GBSP_BACKEND_VARIANT */
+  u8 pval = 0;
+  u32 mctr = 0;
+  for (u32 i = 0; i < cnt; i++, offx++, dst_ptr++) {
+    // Counter-based mosaic (see render_affine_background for rationale).
+    if (!mctr) {
+      // Load tile pixel color.
+#else /* GBSP_BACKEND_VARIANT */
   u8 pval = 0;
   for (u32 i = 0; i < cnt; i++, offx++, dst_ptr++) {
     if (!(i % mosh)) {
       // Load tile pixel color.
+#endif /* GBSP_BACKEND_VARIANT */
       u32 tile_offset = base_tile_offset + (offx / 8) * tile_size_off;
       const u8* tile_ptr = &vram[0x10000 + (tile_offset & 0x7FFF)];
 
@@ -1178,9 +1506,17 @@ static void render_object_mosaic(
           pval = (tile_ptr[(7 - offx % 8) >> 1] >> (((offx & 1) ^ 1) * 4)) & 0xF;
         else
           pval = (tile_ptr[(offx % 8) >> 1] >> ((offx & 1) * 4)) & 0xF;
+#if defined(RISCV_ARCH) /* GBSP_BACKEND_VARIANT */
+      }
+      mctr = mosh;
+    }
+    mctr--;
+
+#else /* GBSP_BACKEND_VARIANT */
       }
     }
 
+#endif /* GBSP_BACKEND_VARIANT */
     // Write the pixel value as required
     const u16 *subpal = &pal[palette];
     if (pval) {
@@ -1268,17 +1604,31 @@ static void render_affine_object(
   }
 
   // Draw sprite pixels by looking them up first. Lookup address is tricky!
+#if defined(RISCV_ARCH) /* GBSP_BACKEND_VARIANT */
+  u8 pixval = 0;
+  u32 mctr = 0;
+  for (u32 i = 0; i < cnt; i++) {
+#else /* GBSP_BACKEND_VARIANT */
   u8 pixval = 0;
   for (u32 i = 0; i < cnt; i++) {
+#endif /* GBSP_BACKEND_VARIANT */
     u32 pixel_x = (u32)(source_x >> 8), pixel_y = (u32)(source_y >> 8);
 
     // Check if we run out of the sprite, then we can safely abort.
     if (pixel_x >= obj_dimw || pixel_y >= obj_dimh)
       return;
+#if defined(RISCV_ARCH) /* GBSP_BACKEND_VARIANT */
+
+    // For mosaic, we "remember" the last looked up pixel.  Counter form
+    // avoids a per-pixel divl (see render_affine_background).
+    if (!mosaic || !mctr) {
+      // Lookup pixel and draw it.
+#else /* GBSP_BACKEND_VARIANT */
 
     // For mosaic, we "remember" the last looked up pixel.
     if (!mosaic || !(i % mosh)) {
       // Lookup pixel and draw it.
+#endif /* GBSP_BACKEND_VARIANT */
       if (is8bpp) {
         // We lookup the byte directly and render it.
         const u32 tile_off =
@@ -1299,9 +1649,17 @@ static void render_affine_object(
 
         u8 pixpair = vram[0x10000 + (tile_off & 0x7FFF)]; // Read 2 pixels @4bpp
         pixval = ((pixel_x & 1) ? pixpair >> 4 : pixpair & 0xF);
+#if defined(RISCV_ARCH) /* GBSP_BACKEND_VARIANT */
+      }
+      mctr = mosh;
+    }
+    if (mosaic) mctr--;
+
+#else /* GBSP_BACKEND_VARIANT */
       }
     }
 
+#endif /* GBSP_BACKEND_VARIANT */
     // Render the pixel value
     if (pixval) {
       if (rdtype == FULLCOLOR)
@@ -1350,9 +1708,15 @@ inline static void render_sprite(
   u16 pal = (is8bpp ? 0 : ((obji->attr2 >> 8) & 0xF0));
 
   if (is_affine) {
+#if defined(XTENSA_ARCH) /* GBSP_BACKEND_VARIANT */
     u32 pnum = (obji->attr1 >> 9) & 0x1f;
-    const t_affp *affp_base = (t_affp*)oam_ram;
+    const t_affp *affp_base = (t_affp*)render_oam;
     const t_affp *affp = &affp_base[pnum];
+#else /* GBSP_BACKEND_VARIANT */
+    u32 pnum = (obji->attr1 >> 9) & 0x1f;
+    const t_affp *affp_base = (t_affp*)render_oam;
+    const t_affp *affp = &affp_base[pnum];
+#endif /* GBSP_BACKEND_VARIANT */
 
     if (affp->dy == 0)     // No rotation happening (just scale)
       render_affine_object<stype, rdtype, mosaic, is8bpp, false>(
@@ -1429,9 +1793,15 @@ void render_scanline_objs(
   // Render all the visible objects for this priority (back to front)
   for (objn = objcnt-1; objn >= 0; objn--) {
     // Objects in the list are pre-filtered and sorted in the appropriate order
+#if defined(XTENSA_ARCH) /* GBSP_BACKEND_VARIANT */
     u32 objoff = objlist[objn];
-    const t_oam *oamentry = &((t_oam*)oam_ram)[objoff];
+    const t_oam *oamentry = &((t_oam*)render_oam)[objoff];
 
+#else /* GBSP_BACKEND_VARIANT */
+    u32 objoff = objlist[objn];
+    const t_oam *oamentry = &((t_oam*)render_oam)[objoff];
+
+#endif /* GBSP_BACKEND_VARIANT */
     u16 obj_attr0 = eswap16(oamentry->attr0);
     u16 obj_attr1 = eswap16(oamentry->attr1);
     u16 obj_shape = obj_attr0 >> 14;
@@ -1508,13 +1878,25 @@ void render_scanline_objs(
 // Goes through the object list in the OAM (from #127 to #0) and adds objects
 // into a sorted list by priority for the current row.
 // Invisible objects are discarded. ST-objects are flagged. Cycle counting is
+#if defined(XTENSA_ARCH) /* GBSP_BACKEND_VARIANT */
+// performed to discard excessive objects (to match HW capabilities).
+GBA_C1_HOT static void order_obj(u32 video_mode)   /* 1.6% of core 1, 519 B */
+{
+#else /* GBSP_BACKEND_VARIANT */
 // performed to discard excessive objects (to match HW capabilities).
 static void order_obj(u32 video_mode)
 {
+#endif /* GBSP_BACKEND_VARIANT */
   u32 obj_num;
+#if defined(XTENSA_ARCH) /* GBSP_BACKEND_VARIANT */
   u32 row;
-  t_oam *oam_base = (t_oam*)oam_ram;
+  t_oam *oam_base = (t_oam*)render_oam;
   u16 rend_cycles[160];
+#else /* GBSP_BACKEND_VARIANT */
+  u32 row;
+  t_oam *oam_base = (t_oam*)render_oam;
+  u16 rend_cycles[160];
+#endif /* GBSP_BACKEND_VARIANT */
 
   bool hblank_free = read_ioreg(REG_DISPCNT) & 0x20;
   u16 max_rend_cycles = !sprite_limit ? REND_CYC_MAX :
@@ -1623,8 +2005,27 @@ static void order_layers(u32 layer_flags, u32 vcnt)
 {
   bool obj_enabled = (layer_flags & 0x10);
   s32 priority;
+#if defined(RISCV_ARCH) /* GBSP_BACKEND_VARIANT */
+
+  // Pre-fetch the 4 layer priorities once instead of reading io_registers
+  // four times per priority (16 reads -> 4 reads per scanline).  The
+  // compiler can't CSE the read across the outer loop because io_registers
+  // is global and could in principle be modified by JIT-translated code
+  // between iterations; that doesn't actually happen here (we are inside
+  // update_scanline which runs to completion before returning to the JIT),
+  // but stating it explicitly costs nothing.
+  const u32 layer_prio[4] = {
+    (u32)(read_ioreg(REG_BGxCNT(0)) & 0x03),
+    (u32)(read_ioreg(REG_BGxCNT(1)) & 0x03),
+    (u32)(read_ioreg(REG_BGxCNT(2)) & 0x03),
+    (u32)(read_ioreg(REG_BGxCNT(3)) & 0x03),
+  };
 
   layer_count = 0;
+#else /* GBSP_BACKEND_VARIANT */
+
+  layer_count = 0;
+#endif /* GBSP_BACKEND_VARIANT */
 
   for(priority = 3; priority >= 0; priority--)
   {
@@ -1633,9 +2034,15 @@ static void order_layers(u32 layer_flags, u32 vcnt)
 
     for(lnum = 3; lnum >= 0; lnum--)
     {
+#if defined(RISCV_ARCH) /* GBSP_BACKEND_VARIANT */
+      if(((layer_flags >> lnum) & 1) &&
+         (layer_prio[lnum] == (u32)priority))
+      {
+#else /* GBSP_BACKEND_VARIANT */
       if(((layer_flags >> lnum) & 1) &&
          ((read_ioreg(REG_BGxCNT(lnum)) & 0x03) == priority))
       {
+#endif /* GBSP_BACKEND_VARIANT */
         layer_order[layer_count++] = lnum;
       }
     }
@@ -1914,9 +2321,16 @@ void tile_render_layers(u32 start, u32 end, dsttype *dst_ptr, u32 enabled_layers
 // buffer (used for darken/brighten effects at later passes) or COLOR32,
 // which similarly uses an indexed color for rendering but recording one
 // color for the background and another one for the object layer.
+#if defined(XTENSA_ARCH) /* GBSP_BACKEND_VARIANT */
+
+/* 12.4% of core 1 on 2026-10-10, 2.2 KB, in flash: IRAM for the same reason */
+GBA_C1_HOT static void render_w_effects(
+  u32 start, u32 end, u16* scanline, u32 enable_flags,
+#else /* GBSP_BACKEND_VARIANT */
 
 static void render_w_effects(
   u32 start, u32 end, u16* scanline, u32 enable_flags,
+#endif /* GBSP_BACKEND_VARIANT */
   const layer_render_struct *renderers
 ) {
   bool effects_enabled = enable_flags & 0x20;   // Window bit for effects.
@@ -2282,24 +2696,33 @@ static const u8 active_layers[] = {
   0,
 };
 
-void update_scanline(void)
-{
-  u32 pitch = get_screen_pitch();
-  u16 dispcnt = read_ioreg(REG_DISPCNT);
-  u32 vcount = read_ioreg(REG_VCOUNT);
-  u16 *screen_offset = get_screen_pixels() + (vcount * pitch);
-  u32 video_mode = dispcnt & 0x07;
 
-  if(skip_next_frame)
-    return;
+#ifdef GBAPROF
+extern "C" { int64_t gbaprof_render_us, gbaprof_wait_us; u32 gbaprof_lag159, gbaprof_syncs, gbaprof_lag80, gbaprof_wakes; }
+/* wait by cause: 1/2 CPU VRAM BG/OBJ, 3/4 DMA VRAM BG/OBJ, 5 OAM, 6 palette, 7 frame end */
+extern "C" { u32 gbsp_sync_src; int64_t gbaprof_wait_by[8]; }   /* scanline rendering time, read by gbsp/main/main.c */
+#endif
+
+#ifdef GPSP_VIDEO_SNAPSHOTS
+/* draws one line from its snapshot (core 1 on the board, inline on the PC) */
+static void render_line(u32 vcount, const rline_t *ls)
+{
+#ifdef GBAPROF
+  const int64_t gbaprof_t0 = rg_system_timer();
+#endif
+  render_io = ls->io;
+  render_oam = r_oam[ls->oamb];
+  render_pal = r_pal[ls->palb];
+  r_affine_x[0] = ls->ax[0]; r_affine_x[1] = ls->ax[1];
+  r_affine_y[0] = ls->ay[0]; r_affine_y[1] = ls->ay[1];
+  u16 dispcnt = read_ioreg(REG_DISPCNT);
+  u16 *screen_offset = get_screen_pixels() + (vcount * get_screen_pitch());
+  u32 video_mode = dispcnt & 0x07;
 
   // If OAM has been modified since the last scanline has been updated then
   // reorder and reprofile the OBJ lists.
-  if(reg[OAM_UPDATED])
-  {
+  if(ls->oam)
     order_obj(video_mode);
-    reg[OAM_UPDATED] = 0;
-  }
 
   order_layers((dispcnt >> 8) & active_layers[video_mode], vcount);
 
@@ -2308,32 +2731,403 @@ void update_scanline(void)
     memset(screen_offset, 0xff, 240*sizeof(u16));
   else
     render_scanline_window(screen_offset);
+#ifdef GBAPROF
+  gbaprof_render_us += rg_system_timer() - gbaprof_t0;
+#endif
+}
 
-  // Mode 0 does not use any affine params at all.
-  if (video_mode) {
-    // Account for vertical mosaic effect, by correcting affine references.
-    const u32 bgmosv = ((read_ioreg(REG_MOSAIC) >> 4) & 0xF) + 1;
+/* Lines queued by core 0 (gbsp_rq) and drawn (gbsp_rd), both counting up;
+   rq_line[] holds each queued line's vcount. Core 0 calls gbsp_render_sync()
+   before any write to palette, VRAM or OAM while lines are outstanding
+   (gba_memory.c) and at the end of the frame, so every line is drawn with the
+   video memory it had when it was emulated, however late core 1 draws it:
+   games rewrite OAM/VRAM/palette in the vblank for the next frame (TMNT's
+   turtles came out half transparent when core 1 drew the last lines after). */
+extern "C" { volatile u32 gbsp_rq, gbsp_rd; }
+static u8 rq_line[256];
 
-    if (read_ioreg(REG_BG2CNT) & 0x40) {   // Mosaic enabled for this BG
-      if ((vcount % bgmosv) == bgmosv-1) { // Correct after the last line
-        affine_reference_x[0] += (s16)read_ioreg(REG_BG2PB) * bgmosv;
-        affine_reference_y[0] += (s16)read_ioreg(REG_BG2PD) * bgmosv;
-      }
-    } else {
-      affine_reference_x[0] += (s16)read_ioreg(REG_BG2PB);
-      affine_reference_y[0] += (s16)read_ioreg(REG_BG2PD);
-    }
+static inline void render_next(void)
+{
+  u32 rd = __atomic_load_n(&gbsp_rd, __ATOMIC_RELAXED);
+  u32 line = rq_line[rd & 255];
+  render_line(line, &rlines[line]);
+  __atomic_store_n(&gbsp_rd, rd + 1, __ATOMIC_RELEASE);
+}
 
-    if (read_ioreg(REG_BG3CNT) & 0x40) {
-      if ((vcount % bgmosv) == bgmosv-1) {
-        affine_reference_x[1] += (s16)read_ioreg(REG_BG3PB) * bgmosv;
-        affine_reference_y[1] += (s16)read_ioreg(REG_BG3PD) * bgmosv;
-      }
-    } else {
-      affine_reference_x[1] += (s16)read_ioreg(REG_BG3PB);
-      affine_reference_y[1] += (s16)read_ioreg(REG_BG3PD);
+#ifdef ESP_PLATFORM
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
+#include <esp_heap_caps.h>
+extern "C" { int gbsp_render_core1; }
+static TaskHandle_t rtask;
+
+static void render_task(void *arg)
+{
+  for (;;)
+  {
+    ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+#ifdef GBAPROF
+    gbaprof_wakes++;
+#endif
+    while (__atomic_load_n(&gbsp_rd, __ATOMIC_ACQUIRE) != __atomic_load_n(&gbsp_rq, __ATOMIC_ACQUIRE))
+    {
+      __sync_synchronize();
+      render_next();
     }
   }
 }
 
+/* retro-go's display task is 6 on core 1: below it the LCD DMA buffers are
+   refilled as soon as they free up (the bus stays busy); since the VRAM copy,
+   a late renderer rarely makes core 0 wait */
+#ifndef GBSP_RENDER_PRIO
+#define GBSP_RENDER_PRIO 5
+#endif
+/* core 0: start the line renderer on core 1 */
+#ifdef GBAPROF
+extern "C" { extern u32 gbsp_opt_rint; }   /* the frontend's card file */
+#endif
 
+extern "C" bool gbsp_render_configure(bool core1)
+{
+  render_vram = live_vram;
+  if (!core1) return false;
+#if !CONFIG_FREERTOS_UNICORE
+  rlines = (rline_t *)heap_caps_malloc(160 * sizeof(rline_t), MALLOC_CAP_SPIRAM);
+  r_oam = (u16 (*)[512])heap_caps_malloc(2 * sizeof(oam_ram), MALLOC_CAP_SPIRAM);
+  r_pal = (u16 (*)[512])heap_caps_malloc(R_PAL_N * 512 * sizeof(u16), MALLOC_CAP_SPIRAM);
+  if (!r_pal && (r_pal = (u16 (*)[512])heap_caps_malloc(4 * 512 * sizeof(u16), MALLOC_CAP_SPIRAM)))
+    gbsp_pal_ring = 4;
+  gbsp_rvram = (u8 *)heap_caps_malloc(96 * 1024, MALLOC_CAP_SPIRAM);
+  if (rlines && r_oam && r_pal && gbsp_rvram &&
+      xTaskCreatePinnedToCore(render_task, "gba_render", 6144, NULL, GBSP_RENDER_PRIO, &rtask, 1) == pdPASS) {
+    render_vram = gbsp_rvram;
+    gbsp_render_core1 = 1;
+    gbsp_render_invalidate();
+    return true;
+  }
+  heap_caps_free(rlines); rlines = NULL;
+  heap_caps_free(r_oam); r_oam = NULL;
+  heap_caps_free(r_pal); r_pal = NULL;
+  heap_caps_free(gbsp_rvram); gbsp_rvram = NULL;
+#endif
+  RG_LOGW("video: Core 1 renderer unavailable; using Sync");
+  return false;
+}
+#ifdef GBAPROF
+#include "esp_cpu.h"
+extern "C" { u32 gbaprof_notify_cycles, gbaprof_notifies; }
+#endif
+/* core 1 is woken every (GBSP_WAKE_MASK + 1) lines: the less it lags, the less
+   core 0 waits in gbsp_render_sync when the game writes VRAM mid-frame */
+#ifndef GBSP_WAKE_MASK
+#define GBSP_WAKE_MASK 7
+#endif
+/* core 0: wait until core 1 has drawn every queued line */
+extern "C" void gbsp_render_sync(void)
+{
+  if (__atomic_load_n(&gbsp_rd, __ATOMIC_ACQUIRE) == __atomic_load_n(&gbsp_rq, __ATOMIC_ACQUIRE))
+    return;
+#ifdef GBAPROF
+  const int64_t t0 = rg_system_timer();
+#endif
+#ifdef GBAPROF
+  gbaprof_syncs++;
+#endif
+  xTaskNotifyGive(rtask);
+  while (__atomic_load_n(&gbsp_rd, __ATOMIC_ACQUIRE) != __atomic_load_n(&gbsp_rq, __ATOMIC_ACQUIRE))
+    ;
+  __sync_synchronize();
+#ifdef GBAPROF
+  gbaprof_wait_us += rg_system_timer() - t0;
+  gbaprof_wait_by[gbsp_sync_src & 7] += rg_system_timer() - t0;
+  gbsp_sync_src = 0;
+#endif
+}
+
+#ifdef GBAPROF
+extern "C" { extern u32 gbsp_opt_core1_idle; }   /* defined by the frontend */
+#endif
+
+static void line_ready(u32 vcount)
+{
+#ifdef GBAPROF
+  /* What core 1 costs core 0 through the 32 KB instruction cache they share.
+     Mario Kart's hot translated code is ~120 KB behind that cache and core 1
+     streams the affine-road renderer from flash through it at the same time,
+     so core 0's misses are not all its own fault. With this on no line is
+     queued, core 1 is never woken, and core 0 runs exactly the same emulation
+     with the cache to itself: the drop in "cpu" is the contention.
+
+     Nothing is queued, so gbsp_rq never advances and core 0's sync loop
+     (gbsp_rd == gbsp_rq) falls straight through -- it cannot hang. The picture
+     holds the last frame drawn: this is a measurement, not a way to play. */
+  if (gbsp_opt_core1_idle)
+    return;
+#endif
+  if (!gbsp_render_core1)
+  {
+    render_line(vcount, &rlines[vcount]);
+    return;
+  }
+  u32 rq = __atomic_load_n(&gbsp_rq, __ATOMIC_RELAXED);
+  rq_line[rq & 255] = vcount;
+  __atomic_store_n(&gbsp_rq, rq + 1, __ATOMIC_RELEASE);
+#ifdef GBAPROF
+  if (vcount == 159)
+    gbaprof_lag159 += gbsp_rq - gbsp_rd;
+  if (vcount == 80)
+    gbaprof_lag80 += gbsp_rq - gbsp_rd;
+#endif
+  if ((vcount & GBSP_WAKE_MASK) == GBSP_WAKE_MASK || vcount == 159)
+  {
+#ifdef GBAPROF
+    u32 c0 = esp_cpu_get_cycle_count();
+#endif
+    xTaskNotifyGive(rtask);
+#ifdef GBAPROF
+    gbaprof_notify_cycles += esp_cpu_get_cycle_count() - c0;
+    gbaprof_notifies++;
+#endif
+  }
+}
+#else
+extern "C" void gbsp_render_start(void) {}
+/* PC harness: RLAG=n draws each line n lines late (and the frame's last
+   ones only at the next sync), like core 1 on the board */
+static int rlag = -1;
+#include <stdio.h>
+static u32 syncstat[4][232];   /* SYNCSTAT: syncs with lines outstanding, by region and vcount */
+extern "C" u32 gbsp_sync_region;
+u32 gbsp_sync_region;
+static void syncstat_dump(void)
+{
+  static const char *n[4] = {"pal", "vram", "oam", "dma/end"};
+  for (int r = 0; r < 4; r++) {
+    u32 t = 0; for (int v = 0; v < 232; v++) t += syncstat[r][v];
+    printf("SYNC %s total %u:", n[r], t);
+    for (int v = 0; v < 232; v++) if (syncstat[r][v]) printf(" %d:%u", v, syncstat[r][v]);
+    printf("\n");
+  }
+}
+extern "C" void gbsp_render_sync(void)
+{
+  static int init;
+  if (!init) { init = 1; if (getenv("SYNCSTAT")) atexit(syncstat_dump); }
+  if (gbsp_rd != gbsp_rq) syncstat[gbsp_sync_region & 3][live_ioreg(REG_VCOUNT) % 232]++;
+  gbsp_sync_region = 3;
+  while (__atomic_load_n(&gbsp_rd, __ATOMIC_ACQUIRE) != __atomic_load_n(&gbsp_rq, __ATOMIC_ACQUIRE))
+    render_next();
+}
+static void line_ready(u32 vcount)
+{
+  if (rlag < 0) rlag = getenv("RLAG") ? atoi(getenv("RLAG")) : 0;
+  rq_line[gbsp_rq & 255] = vcount;
+  gbsp_rq++;
+  while (gbsp_rq - gbsp_rd > (u32)rlag)
+    render_next();
+}
+#endif
+extern "C" void gbsp_render_wait(void)
+{
+#ifdef GBAPROF
+  gbsp_sync_src = 7;
+#endif
+  gbsp_render_sync();
+}
+
+#ifdef GPSP_VIDEO_SNAPSHOTS
+extern "C" void gbsp_display_poll(void);
+#endif
+#ifdef GBSP_RVRAM
+extern "C" void gbsp_vram_mark_all(void)
+{
+  gbsp_vram_dirty[0] = gbsp_vram_dirty[1] = gbsp_vram_dirty[2] = 0xFFFFFFFF;
+  gbsp_vram_dirty_any = 1;
+}
+/* before a line is queued: the lines queued before the VRAM writes are drawn
+   with the old contents, then the written pages are copied.
+
+   2026-10-13: in the bitmap modes with two frames (4 and 5) the line being
+   queued reads only the frame DISPCNT selects (and the OBJ tiles from
+   0x14000), so the pages of the other frame - the one the game is drawing -
+   stay dirty and are not copied, and nothing waits for core 1 for them. They
+   are copied at the first line that reads them (the flip). Not copying is
+   always right for the lines already queued: they must see the old contents.
+   NFS Underground's race draws its 3D scene into the back frame through the
+   whole frame: the same pages were copied again at every line, with a wait
+   for core 1 each time (memcpy 25 % + render sync 8 % of core 0, board
+   16cae1d4). GBAPROF counts the pages copied and deferred. */
+#ifdef GBAPROF
+extern "C" { u32 gbsp_prof_vram_copied, gbsp_prof_vram_deferred; }
+#endif
+static void gbsp_vram_flush(u16 dispcnt)
+{
+  u32 keep[3] = {0, 0, 0};
+  u32 mode = dispcnt & 7;
+  if (mode == 4 || mode == 5)
+  {
+    /* the back frame: pages 0-39 (0x0000-0x9FFF) or 40-79 (0xA000-0x13FFF) */
+    if (dispcnt & 0x10)
+      keep[0] = 0xFFFFFFFF, keep[1] = 0x000000FF;
+    else
+      keep[1] = 0xFFFFFF00, keep[2] = 0x0000FFFF;
+  }
+  u32 copy[3], any = 0;
+  for (int w = 0; w < 3; w++)
+    any |= copy[w] = gbsp_vram_dirty[w] & ~keep[w];
+  if (!any)
+  {
+#ifdef GBAPROF
+    gbsp_prof_vram_deferred++;
+#endif
+    return;                 /* only back-frame pages written: nothing to wait for */
+  }
+  if (__atomic_load_n(&gbsp_rq, __ATOMIC_ACQUIRE) != __atomic_load_n(&gbsp_rd, __ATOMIC_ACQUIRE))
+  {
+#ifdef GBAPROF
+    gbsp_sync_src = 3;
+#endif
+    gbsp_render_sync();
+  }
+  for (int w = 0; w < 3; w++)
+  {
+    u32 bits = copy[w];
+    gbsp_vram_dirty[w] &= ~bits;
+    while (bits)
+    {
+      u32 p = w * 32 + __builtin_ctz(bits);
+      bits &= bits - 1;
+      memcpy(gbsp_rvram + p * 1024, live_vram + p * 1024, 1024);
+#ifdef GBAPROF
+      gbsp_prof_vram_copied++;
+#endif
+    }
+  }
+  gbsp_vram_dirty_any = (gbsp_vram_dirty[0] | gbsp_vram_dirty[1] | gbsp_vram_dirty[2]) != 0;
+}
+#endif
+
+void update_scanline(void)
+{
+  u16 dispcnt = live_ioreg(REG_DISPCNT);
+  u32 vcount = live_ioreg(REG_VCOUNT);
+#ifdef GBSP_RVRAM
+  if (gbsp_render_core1 && gbsp_vram_dirty_any && vcount < 160)
+    gbsp_vram_flush(dispcnt);
+#endif
+#ifdef GPSP_VIDEO_SNAPSHOTS
+  if ((vcount & 31) == 31)
+    gbsp_display_poll();   /* a frame finished while the display was busy */
+#endif
+  u32 video_mode = dispcnt & 0x07;
+
+  if(skip_next_frame)
+    return;
+
+  if (vcount >= 160) return;
+  if (!gbsp_render_core1) {
+    render_io = io_registers;
+    render_oam = oam_ram;
+    render_pal = live_pal;
+    r_affine_x[0] = affine_reference_x[0]; r_affine_x[1] = affine_reference_x[1];
+    r_affine_y[0] = affine_reference_y[0]; r_affine_y[1] = affine_reference_y[1];
+    if (reg[OAM_UPDATED]) { order_obj(video_mode); reg[OAM_UPDATED] = 0; }
+    order_layers((dispcnt >> 8) & active_layers[video_mode], vcount);
+    u16 *screen_offset = get_screen_pixels() + vcount * get_screen_pitch();
+    if (dispcnt & 0x80) memset(screen_offset, 0xff, 240 * sizeof(u16));
+    else render_scanline_window(screen_offset);
+  } else {
+  rline_t *ls = &rlines[vcount];
+  memcpy(ls->io, io_registers, sizeof(ls->io));
+  ls->ax[0] = affine_reference_x[0]; ls->ax[1] = affine_reference_x[1];
+  ls->ay[0] = affine_reference_y[0]; ls->ay[1] = affine_reference_y[1];
+  ls->oam = reg[OAM_UPDATED] || !r_oam_valid;
+  if (ls->oam)
+  {
+    u32 nb = r_oam_cur ^ 1;
+    if ((s32)(r_oam_last[nb] - __atomic_load_n(&gbsp_rd, __ATOMIC_ACQUIRE)) >= 0)   /* a queued line still reads it */
+    {
+#ifdef GBAPROF
+      gbsp_sync_src = 5;
+#endif
+      gbsp_render_sync();
+    }
+    memcpy(r_oam[nb], oam_ram, sizeof(oam_ram));
+    r_oam_cur = nb;
+    r_oam_valid = true;
+  }
+  ls->oamb = r_oam_cur;
+  if (gbsp_pal_dirty)
+  {
+    u32 nb = (r_pal_cur + 1) % gbsp_pal_ring;
+    if ((s32)(r_pal_last[nb] - __atomic_load_n(&gbsp_rd, __ATOMIC_ACQUIRE)) >= 0)
+    {
+#ifdef GBAPROF
+      gbsp_sync_src = 6;
+#endif
+      gbsp_render_sync();
+    }
+    memcpy(r_pal[nb], live_pal, 512 * sizeof(u16));
+    r_pal_cur = nb;
+    gbsp_pal_dirty = 0;
+  }
+  ls->palb = r_pal_cur;
+  r_pal_last[r_pal_cur] = gbsp_rq;
+  r_oam_last[r_oam_cur] = gbsp_rq;   /* this line's queue index */
+  reg[OAM_UPDATED] = 0;
+  line_ready(vcount);
+
+  }
+
+  // Mode 0 does not use any affine params at all.
+  if (video_mode) {
+    // Account for vertical mosaic effect, by correcting affine references.
+    const u32 bgmosv = ((live_ioreg(REG_MOSAIC) >> 4) & 0xF) + 1;
+
+    if (live_ioreg(REG_BG2CNT) & 0x40) {   // Mosaic enabled for this BG
+      if ((vcount % bgmosv) == bgmosv-1) { // Correct after the last line
+        affine_reference_x[0] += (s16)live_ioreg(REG_BG2PB) * bgmosv;
+        affine_reference_y[0] += (s16)live_ioreg(REG_BG2PD) * bgmosv;
+      }
+    } else {
+      affine_reference_x[0] += (s16)live_ioreg(REG_BG2PB);
+      affine_reference_y[0] += (s16)live_ioreg(REG_BG2PD);
+    }
+
+    if (live_ioreg(REG_BG3CNT) & 0x40) {
+      if ((vcount % bgmosv) == bgmosv-1) {
+        affine_reference_x[1] += (s16)live_ioreg(REG_BG3PB) * bgmosv;
+        affine_reference_y[1] += (s16)live_ioreg(REG_BG3PD) * bgmosv;
+      }
+    } else {
+      affine_reference_x[1] += (s16)live_ioreg(REG_BG3PB);
+      affine_reference_y[1] += (s16)live_ioreg(REG_BG3PD);
+    }
+  }
+}
+#endif /* GPSP_VIDEO_SNAPSHOTS */
+
+#if !RG_BUILD_RELEASE
+extern "C" int gbsp_render_stack_free(void)
+{
+#if defined(GPSP_VIDEO_SNAPSHOTS) && defined(ESP_PLATFORM)
+  if (gbsp_render_core1 && rtask)
+    return (int)(uxTaskGetStackHighWaterMark(rtask) * sizeof(StackType_t));
+#endif
+  return -1;
+}
+#endif
+
+extern "C" void gbsp_video_set_framebuffer(uint16_t *pixels) { gba_screen_pixels = pixels; }
+
+extern "C" void gbsp_render_invalidate(void)
+{
+  gbsp_render_wait();
+  r_oam_valid = false;
+  reg[OAM_UPDATED] = 1;
+  for (unsigned i = 0; i < 512; i++)
+    live_pal[i] = convert_palette(eswap16(palette_ram[i]));
+  gbsp_pal_dirty = 1;
+  gbsp_vram_mark_all();
+}

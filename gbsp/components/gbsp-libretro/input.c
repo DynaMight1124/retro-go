@@ -1,3 +1,8 @@
+#if defined(RISCV_ARCH) /* GBSP_BACKEND_VARIANT */
+/* Stubbed input.c for ESP32-P4 standalone build.
+   update_input() is provided by gpsp_esp.c */
+#include "common.h"
+#else /* GBSP_BACKEND_VARIANT */
 /* gameplaySP
  *
  * Copyright (C) 2006 Exophase <exophase@gmail.com>
@@ -18,16 +23,33 @@
  */
 
 #include "common.h"
+#endif /* GBSP_BACKEND_VARIANT */
 
 bool libretro_supports_bitmasks    = false;
 bool libretro_supports_ff_override = false;
 bool libretro_ff_enabled           = false;
 bool libretro_ff_enabled_prev      = false;
+#if defined(RISCV_ARCH) /* GBSP_BACKEND_VARIANT */
+
+unsigned turbo_period      = 6;
+unsigned turbo_pulse_width = 3;
+unsigned turbo_a_counter   = 0;
+#else /* GBSP_BACKEND_VARIANT */
 
 unsigned turbo_period      = TURBO_PERIOD_MIN;
 unsigned turbo_pulse_width = TURBO_PULSE_WIDTH_MIN;
 unsigned turbo_a_counter   = 0;
+#endif /* GBSP_BACKEND_VARIANT */
 unsigned turbo_b_counter   = 0;
+#if defined(RISCV_ARCH) /* GBSP_BACKEND_VARIANT */
+
+/* Savestate stubs */
+bool input_check_savestate(const u8 *src) { (void)src; return true; }
+bool input_read_savestate(const u8 *src)  { (void)src; return true; }
+unsigned input_write_savestate(u8 *dst)   { (void)dst; return 0; }
+
+void set_fastforward_override(bool ff)    { (void)ff; }
+#else /* GBSP_BACKEND_VARIANT */
 
 static u32 old_key = 0;
 static retro_input_state_t input_state_cb;
@@ -170,5 +192,4 @@ unsigned input_write_savestate(u8 *dst)
   bson_finish_document(dst, wbptr1);
   return (unsigned int)(dst - startp);
 }
-
-
+#endif /* GBSP_BACKEND_VARIANT */

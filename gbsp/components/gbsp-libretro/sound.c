@@ -19,17 +19,30 @@
 
 
 #include "common.h"
+#include "gpsp_audio_output.h"
 
 direct_sound_struct direct_sound_channel[2];
 gbc_sound_struct gbc_sound_channel[4];
 
 const u32 sound_frequency = GBA_SOUND_FREQUENCY;
-
 bool sound_master_enable = true;
+#if defined(RISCV_ARCH) /* GBSP_BACKEND_VARIANT */
+
+u32 sound_on;
+#if defined(CONFIG_IDF_TARGET_ESP32P4) || defined(CONFIG_IDF_TARGET_ESP32S31)
+#include "esp_attr.h"
+EXT_RAM_BSS_ATTR static s16 sound_buffer[BUFFER_SIZE];
+#else
+static s16 sound_buffer[BUFFER_SIZE];
+#endif
+static u32 sound_buffer_base;
+#else /* GBSP_BACKEND_VARIANT */
+
 
 u32 sound_on;
 static s16 sound_buffer[BUFFER_SIZE];
 static u32 sound_buffer_base;
+#endif /* GBSP_BACKEND_VARIANT */
 
 static fixed16_16 gbc_sound_tick_step;
 
@@ -52,9 +65,15 @@ void sound_timer_queue32(u32 channel, u32 value)
   ds->fifo_top &= 31;
 }
 
+#if defined(XTENSA_ARCH) /* GBSP_BACKEND_VARIANT */
+
+XT_HOT unsigned sound_timer(fixed8_24 frequency_step, u32 channel)
+{
+#else /* GBSP_BACKEND_VARIANT */
 
 unsigned sound_timer(fixed8_24 frequency_step, u32 channel)
 {
+#endif /* GBSP_BACKEND_VARIANT */
   int ret = 0;
   u32 sample_status = DIRECT_SOUND_INACTIVE;
   direct_sound_struct *ds = &direct_sound_channel[channel];
@@ -66,9 +85,15 @@ unsigned sound_timer(fixed8_24 frequency_step, u32 channel)
   current_sample = ds->fifo[ds->fifo_base] * 16;
   ds->fifo_base = (ds->fifo_base + 1) % 32;
   next_sample = ds->fifo[ds->fifo_base] * 16;
+#if defined(RISCV_ARCH) /* GBSP_BACKEND_VARIANT */
+
+  if(sound_on == 1)
+  {
+#else /* GBSP_BACKEND_VARIANT */
 
   if(sound_on == 1 && sound_master_enable)
   {
+#endif /* GBSP_BACKEND_VARIANT */
     current_sample >>= ds->volume_halve;
     next_sample >>= ds->volume_halve;
 
@@ -425,9 +450,15 @@ void render_gbc_sound()
     buffer_ticks += 1;
     gbc_sound_partial_ticks &= 0xFFFF;
   }
+#if defined(RISCV_ARCH) /* GBSP_BACKEND_VARIANT */
+
+  if(sound_on == 1)
+  {
+#else /* GBSP_BACKEND_VARIANT */
 
   if(sound_on == 1 && sound_master_enable)
   {
+#endif /* GBSP_BACKEND_VARIANT */
     s8 *wave_bank;
     gs = gbc_sound_channel + 0;
     if(gs->active_flag)
@@ -614,7 +645,7 @@ bool sound_check_savestate(const u8 *src)
   for (i = 0; i < sizeof(gvars)/sizeof(gvars[0]); i++)
     if (!bson_contains_key(snddoc, gvars[i], BSON_TYPE_INT32))
       return false;
-  if (!bson_contains_key(snddoc, "wav-samples", BSON_TYPE_BIN))
+  if (!bson_read_bytes(snddoc, "wav-samples", NULL, sizeof(wave_samples)))
     return false;
 
 
@@ -625,11 +656,11 @@ bool sound_check_savestate(const u8 *src)
     if (!sndchan)
       return false;
 
-    for (i = 0; i < sizeof(dsvars)/sizeof(dsvars[0]); i++)
-      if (!bson_contains_key(sndchan, dsvars[i], BSON_TYPE_INT32))
+    for (unsigned j = 0; j < sizeof(dsvars)/sizeof(dsvars[0]); j++)
+      if (!bson_contains_key(sndchan, dsvars[j], BSON_TYPE_INT32))
         return false;
 
-    if (!bson_contains_key(sndchan, "fifo-bytes", BSON_TYPE_BIN))
+    if (!bson_read_bytes(sndchan, "fifo-bytes", NULL, sizeof(direct_sound_channel[0].fifo)))
       return false;
   }
 
@@ -640,8 +671,8 @@ bool sound_check_savestate(const u8 *src)
     if (!sndchan)
       return false;
 
-    for (i = 0; i < sizeof(gsvars)/sizeof(gsvars[0]); i++)
-      if (!bson_contains_key(sndchan, gsvars[i], BSON_TYPE_INT32))
+    for (unsigned j = 0; j < sizeof(gsvars)/sizeof(gsvars[0]); j++)
+      if (!bson_contains_key(sndchan, gsvars[j], BSON_TYPE_INT32))
         return false;
   }
 
@@ -653,8 +684,24 @@ bool sound_read_savestate(const u8 *src)
 {
   int i;
   const u8 *snddoc = bson_find_key(src, "sound");
+#if defined(RISCV_ARCH) /* GBSP_BACKEND_VARIANT */
+
+  /* The 128KiB ring buffer holding rendered samples is intentionally not
+   * serialized (it would inflate the savestate well beyond its hard size
+   * cap). Zero it on load so that the gbc_sound and direct_sound mixers,
+   * which use += into this buffer, do not pick up stale data from before
+   * the load. The saved buffer_base / buffer_index pair remains valid
+   * against this zero-filled ring: any range that was 'in flight' at save
+   * time decodes as silence after load instead of random pre-load mix.
+   * This makes audio output deterministic across save/load at the cost of
+   * up to one frame of silence at the load point. */
+  memset(sound_buffer, 0, sizeof(sound_buffer));
 
   if (!(
+#else /* GBSP_BACKEND_VARIANT */
+
+  if (!(
+#endif /* GBSP_BACKEND_VARIANT */
     bson_read_int32(snddoc, "on", &sound_on) &&
     bson_read_int32(snddoc, "buf-base", &sound_buffer_base) &&
     bson_read_int32(snddoc, "gbc-buf-idx", &gbc_sound_buffer_index) &&
@@ -812,7 +859,6 @@ u32 sound_read_samples(s16 *out, u32 frames)
    if (samples_to_read > samples_available)
       samples_to_read = samples_available;
 
-   if (sound_master_enable)
    for(i = 0; i < samples_to_read; i++)
    {
       u32 source_index   = (sound_buffer_base + i) & BUFFER_SIZE_MASK;
@@ -820,12 +866,13 @@ u32 sound_read_samples(s16 *out, u32 frames)
 
       sound_buffer[source_index] = 0;
 
-      if(current_sample > 2047)
-         current_sample = 2047;
-      if(current_sample < -2048)
-         current_sample = -2048;
-
-      out[i] = current_sample * 16;
+      /* Muting must still drain the ring and return paced stereo frames. */
+      if (!sound_master_enable)
+      {
+         out[i] = 0;
+         continue;
+      }
+      out[i] = gpsp_audio_convert_sample((s16)current_sample);
    }
 
    sound_buffer_base += samples_to_read;

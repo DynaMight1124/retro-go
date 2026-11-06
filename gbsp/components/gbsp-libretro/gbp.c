@@ -39,17 +39,74 @@ static const u32 gbp_seq[16] = {
 };
 
 static u32 gbp_seq_n = 0;
+#if defined(RISCV_ARCH) /* GBSP_BACKEND_VARIANT */
+static bool gbp_rumble = false;
+static bool gbp_allow_rumble = false;
+
+/* Savestate accessors for the GBP SIO handshake state.  Without these,
+ * a state captured mid-handshake (the first ~16 SIO transfers after
+ * game boot) resumes at the wrong step in the sequence: gbp_transfer
+ * reads gbp_seq[gbp_seq_n] which is the canned response for "where
+ * are we in the handshake", and the GB Player ROM verifies those
+ * responses against its expected sequence.  Late-handshake states are
+ * less affected (gbp_seq_n loops over indices 12..15 once connected)
+ * but the rumble-active flag and the allow-rumble safety latch must
+ * also persist - the latch is set on first execution from ROM space
+ * and saving before it triggers would defer rumble forever otherwise.
+ *
+ * Packed as one u32 since the values are small: 4 bits of sequence
+ * counter (0..15) + 1 bit each of rumble flags. */
+u32 gbp_get_state(void) {
+  return (gbp_seq_n & 0xF)
+       | (gbp_rumble ? 0x10 : 0)
+       | (gbp_allow_rumble ? 0x20 : 0);
+}
+
+void gbp_set_state(u32 v) {
+  gbp_seq_n = v & 0xF;
+  gbp_rumble = (v & 0x10) != 0;
+  gbp_allow_rumble = (v & 0x20) != 0;
+}
+
+void gbp_reset(void) {
+  write_rumble(gbp_rumble, false);
+  gbp_rumble = false;
+  gbp_seq_n = 0;
+  gbp_allow_rumble = false;
+}
+
+#else /* GBSP_BACKEND_VARIANT */
 static bool gbp_rumble = false;
 
+#endif /* GBSP_BACKEND_VARIANT */
 // GB Player sequencing
 u32 gbp_transfer(u32 value) {
+#if defined(RISCV_ARCH) /* GBSP_BACKEND_VARIANT */
+  u32 ret = gbp_seq[gbp_seq_n++];
+
+  if (!gbp_allow_rumble &&
+      reg[REG_PC] >= 0x08000000 && reg[REG_PC] < 0x0E000000)
+    gbp_allow_rumble = true;
+
+  if (gbp_seq_n == 16) {
+    if (!gbp_allow_rumble) {
+      if (gbp_rumble) {
+        write_rumble(gbp_rumble, false);
+        gbp_rumble = false;
+      }
+      gbp_seq_n = 0;
+      return ret;
+    }
+
+    bool rumble_active = (value & 2);
+#else /* GBSP_BACKEND_VARIANT */
   u32 ret = gbp_seq[gbp_seq_n++];
   if (gbp_seq_n == 16) {
     bool rumble_active = (value & 2);
+#endif /* GBSP_BACKEND_VARIANT */
     write_rumble(gbp_rumble, rumble_active);
     gbp_rumble = rumble_active;
     gbp_seq_n = 0;
   }
   return ret;
 }
-
