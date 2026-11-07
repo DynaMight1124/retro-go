@@ -1,0 +1,130 @@
+#!/bin/bash
+build_seabios() {
+    git clone https://github.com/coreboot/seabios.git &&
+	cd seabios &&
+	patch -p1 < ../../seabios/patch &&
+	cp ../../seabios/config ./.config &&
+	make oldconfig &&
+	make &&
+	cp out/bios.bin out/vgabios.bin ../../out/ &&
+	cd ..
+}
+
+build_sdl() {
+    git clone https://github.com/libsdl-org/SDL-1.2.git &&
+	cd SDL-1.2 &&
+	patch -p1 < ../../scripts/sdl.patch &&
+	mkdir -p build && cd build &&
+	CFLAGS="-Os -ffunction-sections -fdata-sections" ../configure --disable-shared --disable-joystick --disable-cdrom --enable-alsa --disable-oss --disable-esd --disable-sndio --disable-pulseaudio --prefix="$PWD" &&
+	make &&
+	make install &&
+	cd .. &&
+	mkdir -p build-mingw32 && cd build-mingw32 &&
+	CFLAGS="-Os -ffunction-sections -fdata-sections" ../configure --disable-shared --host=i686-w64-mingw32 --disable-stdio-redirect --prefix="$PWD" &&
+	make &&
+	make install &&
+	cd .. &&
+	cd ..
+}
+
+build_slirp() {
+    cp -r ../scripts/slirp . &&
+	cd slirp &&
+	git clone -b v4.9.5 --depth=1 https://gitlab.freedesktop.org/slirp/libslirp.git slirp &&
+	cd slirp && patch -p1 < ../patch && cd .. &&
+	make && make install DESTDIR=build && make clean &&
+	make win32 && make install DESTDIR=build-mingw32 && make clean &&
+	cd ..
+}
+
+build_thirdparty() {
+    mkdir -p out &&
+    mkdir -p build && cd build &&
+	build_seabios &&
+	build_slirp &&
+    cd .. &&
+    make prepare ENABLE_RAWDRAW_WAYLAND=y
+}
+
+build_tiny386() {
+    mkdir -p out &&
+	cd linuxstart && make && cd .. && cp linuxstart/linuxstart.bin out/ &&
+	make \
+	     USE_GLIBC_FIX=y \
+	     USE_CPUABS=y \
+	     ENABLE_RAWDRAW_WAYLAND=y \
+	     SLIRP_INC="-I$PWD/build/slirp/build" \
+	     SLIRP_LIB="-L$PWD/build/slirp/build -lslirp" clean all &&
+	strip -s tiny386 wifikbd initnet &&
+	cp tiny386 wifikbd initnet out &&
+	mkdir -p out/win32 &&
+	make \
+	     SLIRP_INC="-I$PWD/build/slirp/build-mingw32 -DLIBSLIRP_STATIC" \
+	     SLIRP_LIB="-L$PWD/build/slirp/build-mingw32 -lslirp" clean win32 &&
+	strip -s tiny386.exe wifikbd.exe &&
+	cp tiny386.exe wifikbd.exe out/win32 &&
+	make clean &&
+	rm tiny386.exe wifikbd.exe &&
+	cd wasm && make && cd .. &&
+	mkdir -p out/wasm &&
+	cp wasm/html/tiny386.wasm out/wasm &&
+	cp wasm/html/index.html out/wasm &&
+	cp wasm/html/main.js out/wasm
+}
+
+patch_idf() {
+    PDIR="$PWD"
+    cd "$IDF_PATH" &&
+    patch -p1 < "$PDIR/esp/esp-idf.patch" &&
+    cd "$PDIR"
+}
+
+patch_idf_60() {
+    PDIR="$PWD"
+    cd "$IDF_PATH" &&
+    patch -p1 < "$PDIR/esp/esp-idf-6.0.patch" &&
+    cd "$PDIR"
+}
+
+build_esp() {
+    mkdir -p out/esp &&
+	cd esp && rm -rf build sdkconfig && idf.py update-dependencies build &&
+	cd build &&
+	esptool.py --chip esp32s3 merge_bin -o flash_image_JC3248W535.bin '@flash_args' &&
+	cd .. &&
+	cp build/flash_image*.bin ../out/esp &&
+	cp tiny386.ini ../out/esp &&
+	cd ..
+}
+
+build_esp_p4() {
+    mkdir -p out/esp &&
+	cd esp && rm -rf build sdkconfig && idf.py -DBOARD=jc4880p443 update-dependencies build &&
+	cd build &&
+	esptool.py --chip esp32p4 merge_bin -o flash_image_JC4880P443.bin '@flash_args' &&
+	cd .. &&
+	cp build/flash_image*.bin ../out/esp &&
+	cp tiny386.ini ../out/esp &&
+	cd ..
+}
+
+bundle() {
+    cp README.md LICENSE out
+    tar cJf tiny386.tar.xz out --transform 's/^out/tiny386/'
+}
+
+if [ "$1" == "thirdparty" ]; then
+    build_thirdparty
+elif [ "$1" == "tiny386" ]; then
+    build_tiny386
+elif [ "$1" == "patch_idf" ]; then
+    patch_idf
+elif [ "$1" == "patch_idf_60" ]; then
+    patch_idf_60
+elif [ "$1" == "esp" ]; then
+    build_esp
+elif [ "$1" == "esp_p4" ]; then
+    build_esp_p4
+elif [ "$1" == "bundle" ]; then
+    bundle
+fi

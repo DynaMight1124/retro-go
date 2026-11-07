@@ -1,0 +1,39 @@
+{
+  "seabios_revision": "81ec9ec0bcf45df11fb7f98339ec9036b546fca0",
+  "source_url": "https://github.com/coreboot/seabios/tree/81ec9ec0bcf45df11fb7f98339ec9036b546fca0",
+  "toolchain": "gcc (Ubuntu 9.4.0-1ubuntu1~20.04.2) 9.4.0; GNU binutils 2.34",
+  "files": {
+    "bios.bin": {
+      "size": 131072,
+      "sha256": "07801e28912b9249d8fa49ae38edd57a878a733280d1c1d10980a05eba29a51d"
+    },
+    "vgabios.bin": {
+      "size": 39936,
+      "sha256": "55b2088c69baa0bdf648f501043c58806499af7074d55af4044e47264cad8f96"
+    },
+    "source/seabios-81ec9ec0bcf45df11fb7f98339ec9036b546fca0.tar.gz": {
+      "size": 616854,
+      "sha256": "150cf902e7d37ead4ce5db96c777fe64f8da2ebb4e1844e91741c57d25faccbc"
+    },
+    "source/tiny386.config": {
+      "size": 2383,
+      "sha256": "539b50349b82d5359b1e796c07824149fdfb6a467e92ab34c83d6ed699bd7f1b"
+    },
+    "source/tiny386.patch": {
+      "size": 7023,
+      "sha256": "6121475eebee1550a7e04311368d3b981bd9e783c4710a6798e431662593cccd"
+    },
+    "source/resolved.config": {
+      "size": 2383,
+      "sha256": "539b50349b82d5359b1e796c07824149fdfb6a467e92ab34c83d6ed699bd7f1b"
+    },
+    "COPYING": {
+      "size": 35147,
+      "sha256": "8ceb4b9ee5adedde47b31e975c1d90c73ad27b6b165a1dcd80c7c545eb65b903"
+    },
+    "COPYING.LESSER": {
+      "size": 7639,
+      "sha256": "a853c2ffec17057872340eee242ae4d96cbf2b520ae27d903e1b2fef1a5f9d1c"
+    }
+  }
+}

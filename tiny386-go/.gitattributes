@@ -1,0 +1,3 @@
+# Preserve verified upstream bytes across Windows/Linux checkouts.
+/firmware/** -text
+

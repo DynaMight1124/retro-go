@@ -1,0 +1,44 @@
+SRCS = \
+main.c \
+../ini.c \
+../i8259.c \
+../i8254.c \
+../ide.c \
+../vga.c \
+../vgafont.c \
+../i8042.c \
+../misc.c \
+../fmopl.c \
+../adlib.c \
+../ne2000.c \
+../i8257.c \
+../sb16.c \
+../pcspk.c \
+../pci.c \
+../pc.c \
+libc/libc.c libc/compiler-rt.c
+
+CFLAGS = --target=wasm32 -nostdlib -fno-builtin -ffunction-sections -fdata-sections -I libc
+CFLAGS += -DUSE_AMD64 -DAMD64_ENABLE_LEG32
+CFLAGS += -DI386_ENABLE_FPU
+CFLAGS += -DI386_ENABLE_MMX -DI386_ENABLE_SSE -DI386_ENABLE_SSE2 -DI386_ENABLE_SSE3
+CFLAGS += -DI386_ENABLE_SSSE3
+CFLAGS += -DUSE_FMOPL
+
+.PHONY: all
+
+all:
+	clang ${CFLAGS} -c ../amd64.c -o amd64.o
+	clang ${CFLAGS} -c ../fpu.c -o fpu.o
+	llvm-nm amd64.o fpu.o | awk '$$2=="T" || $$2=="D" {print "#define " $$3 " amd64_" $$3}' | grep -v -f ../amd64_syms.txt > amd64-map.h
+	clang -O3 ${CFLAGS} -include amd64-map.h -c ../amd64.c -o amd64.o
+	clang -O3 ${CFLAGS} -include amd64-map.h -c ../fpu.c -o fpu.o
+	rm -f amd64-map.h
+	clang ${CFLAGS} -UUSE_AMD64 -c ../i386.c -o i386-leg32.o
+	clang ${CFLAGS} -UUSE_AMD64 -c ../fpu.c -o fpu-leg32.o
+	llvm-nm i386-leg32.o fpu-leg32.o | awk '$$2=="T" || $$2=="D" {print "#define " $$3 " i386_" $$3}' | grep -v -f ../i386_syms.txt > i386-map.h
+	clang -O3 ${CFLAGS} -UUSE_AMD64 -c -include i386-map.h ../i386.c -o i386-leg32.o
+	clang -O3 ${CFLAGS} -UUSE_AMD64 -c -include i386-map.h ../fpu.c -o fpu-leg32.o
+	rm -f i386-map.h
+	clang -O3 ${CFLAGS} -Wl,--gc-sections -Wl,--export-dynamic -Wl,--no-entry -Wl,--strip-all -Wl,--allow-undefined -o html/tinyamd64x.wasm ${SRCS} i386-leg32.o fpu-leg32.o amd64.o fpu.o
+	rm -f i386-leg32.o fpu-leg32.o amd64.o fpu.o

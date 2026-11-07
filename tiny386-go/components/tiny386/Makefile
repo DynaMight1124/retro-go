@@ -1,0 +1,205 @@
+Q = @
+CC_ = gcc
+CC_win32 = i686-w64-mingw32-gcc
+CC = ${CC_${PLAT}}
+LD_ = ld
+LD_win32 = i686-w64-mingw32-ld
+LD = ${LD_${PLAT}}
+OBJCOPY_ = objcopy
+OBJCOPY_win32 = i686-w64-mingw32-objcopy
+OBJCOPY = ${OBJCOPY_${PLAT}}
+HOSTCC = ${CC}
+
+SDL_CONFIG = sdl-config
+SLIRP_INC =
+SLIRP_LIB = -lslirp
+
+CFLAGS_ = -I . -Wall -O3 -ffunction-sections -fdata-sections -g -Wl,--gc-sections
+CFLAGS_win32 = -I . -Wall -O3 -ffunction-sections -g -Wl,--gc-sections
+CFLAGS = ${CFLAGS_${PLAT}}
+CFLAGS += -DI386_ENABLE_FPU
+CFLAGS += -DI386_ENABLE_MMX -DI386_ENABLE_SSE -DI386_ENABLE_SSE2 -DI386_ENABLE_SSE3
+CFLAGS += -DI386_ENABLE_SSSE3
+CFLAGS_SDL = ${CFLAGS} `${SDL_CONFIG} --cflags`
+
+LDFLAGS_ =
+LDFLAGS_win32 = -mconsole
+LDFLAGS = ${LDFLAGS_${PLAT}}
+
+LIBS = -lm
+
+SRCS =
+
+#USE_GLIBC_FIX = y/n
+#build with recent glibc, can run with older glibc (experimental)
+USE_GLIBC_FIX = n
+CFLAGS_GLIBC_FIX_y = -include glibc-fix/glibc-fix.h
+CFLAGS_GLIBC_FIX = ${CFLAGS_GLIBC_FIX_${USE_GLIBC_FIX}}
+SRCS_GLIBC_FIX_y = glibc-fix/glibc-fix.c
+SRCS_GLIBC_FIX = ${SRCS_GLIBC_FIX_${USE_GLIBC_FIX}}
+LIBS_GLIBC_FIX_y = -Wl,--no-as-needed -l:libdl.so.2 -l:libpthread.so.0 -Wl,--as-needed
+LIBS_GLIBC_FIX = ${LIBS_GLIBC_FIX_${USE_GLIBC_FIX}}
+SRCS += ${SRCS_GLIBC_FIX}
+CFLAGS += ${CFLAGS_GLIBC_FIX}
+LIBS += ${LIBS_GLIBC_FIX}
+
+LIBS_SDL_ = `${SDL_CONFIG} --libs` ${LIBS}
+LIBS_SDL_win32 = `${SDL_CONFIG} --libs` ${LIBS}
+LIBS_SDL = ${LIBS_SDL_${PLAT}}
+
+LIBS_RAWDRAW_ = -ldl ${LIBS}
+LIBS_RAWDRAW_win32 = -lgdi32 -lwinmm ${LIBS}
+LIBS_RAWDRAW = ${LIBS_RAWDRAW_${PLAT}}
+
+#USE_SDL = y/n
+USE_SDL = n
+
+#USE_FMOPL = y/n
+USE_FMOPL = y
+FMOPL_y = fmopl.c
+CFLAGS_FMOPL_y = -DUSE_FMOPL
+CFLAGS += ${CFLAGS_FMOPL_${USE_FMOPL}}
+
+#USE_CPUABS = y/n
+USE_CPUABS = n
+CPUABS_y = kvm.c
+CFLAGS_CPUABS_y = -DUSE_CPUABS
+CFLAGS += ${CFLAGS_CPUABS_${USE_CPUABS}}
+
+#USE_SLIRP = y/n
+USE_SLIRP = y
+CFLAGS_SLIRP_y = -DUSE_SLIRP ${SLIRP_INC}
+LIBS_SLIRP_y_ = ${SLIRP_LIB}
+LIBS_SLIRP_y_win32 = ${SLIRP_LIB} -lws2_32 -liphlpapi
+CFLAGS += ${CFLAGS_SLIRP_${USE_SLIRP}}
+LIBS += ${LIBS_SLIRP_${USE_SLIRP}_${PLAT}}
+
+#USE_TUNTAP = y/n
+USE_TUNTAP_ = y
+USE_TUNTAP_win32 = n
+USE_TUNTAP = ${USE_TUNTAP_${PLAT}}
+CFLAGS_TUNTAP_y = -DUSE_TUNTAP
+CFLAGS += ${CFLAGS_TUNTAP_${USE_TUNTAP}}
+
+SUFF_SDL_SDL_y =
+SUFF_SDL_SDL_n = _sdl
+SUFF_RAWDRAW_SDL_y = _rawdraw
+SUFF_RAWDRAW_SDL_n =
+SUFF_SDL = ${SUFF_SDL_SDL_${USE_SDL}}
+SUFF_RAWDRAW = ${SUFF_RAWDRAW_SDL_${USE_SDL}}
+
+#ENABLE_CISO = n/zlib/miniz
+ENABLE_CISO = n
+CFLAGS_zlib = -DIDE_ENABLE_CISO -include zlib.h
+LIBS_zlib = -lz
+MINIZ_PATH = build/miniz
+CFLAGS_miniz = -DIDE_ENABLE_CISO -include ${MINIZ_PATH}/miniz.h
+SRCS_miniz = ${MINIZ_PATH}/miniz.c
+CFLAGS += ${CFLAGS_${ENABLE_CISO}}
+LIBS += ${LIBS_${ENABLE_CISO}}
+SRCS += ${SRCS_${ENABLE_CISO}}
+
+#USE_AMD64 = n/y/full
+USE_AMD64 = n
+CFLAGS_AMD64_y = -DUSE_AMD64
+CFLAGS_AMD64_full = -DUSE_AMD64 -DAMD64_ENABLE_LEG32
+SRCS_AMD64_n = i386.c fpu.c
+SRCS_AMD64_y = amd64.c fpu.c
+SRCS_AMD64_full = amd64-comb.o i386-comb.o
+CFLAGS += ${CFLAGS_AMD64_${USE_AMD64}}
+SRCS += ${SRCS_AMD64_${USE_AMD64}}
+
+#ENABLE_RAWDRAW_WAYLAND = n/y
+ENABLE_RAWDRAW_WAYLAND = n
+CFLAGS_RAWDRAW_WAYLAND_y = -DCNFG_WAYLAND
+CFLAGS += ${CFLAGS_RAWDRAW_WAYLAND_${ENABLE_RAWDRAW_WAYLAND}}
+PREPARE_WAYLAND_y = prepare_wayland
+PREPARE_WAYLAND = ${PREPARE_WAYLAND_${ENABLE_RAWDRAW_WAYLAND}}
+
+PROGS_ = tiny386 tiny386_headless wifikbd initnet
+PROGS_win32 = tiny386 tiny386_headless wifikbd
+PROGS = ${PROGS_${PLAT}}
+
+SRCS += ini.c i8259.c i8254.c ide.c vga.c vgafont.c i8042.c misc.c adlib.c ne2000.c i8257.c sb16.c pcspk.c
+SRCS += ${FMOPL_${USE_FMOPL}}
+SRCS += ${CPUABS_${USE_CPUABS}}
+SRCS += pc.c
+SRCS += pci.c
+SRCS += win32.c
+SRCS += term.c
+# OSD
+SRCS += osd/microui.c osd/osd.c
+
+OBJS = ${SRCS:.c=.o}
+
+.PHONY: all clean dep prepare
+.SUFFIXES: .c
+.c.o:
+	@/bin/echo -e " \e[1;32mCC\e[0m\t\e[1;37m$<\e[0m \e[1;32m->\e[0m \e[1;37m$@\e[0m"
+	${Q}${CC} ${CFLAGS} -c $< -o $@
+
+all: ${PROGS}
+
+win32:
+	make -C . PLAT=win32
+
+clean:
+	rm -f ${OBJS} i386.o amd64.o fpu.o amd64-comb.o i386-comb.o fpu-leg32.o i386-leg32.o .depends ${PROGS}
+
+prepare: fmopl.inc ${PREPARE_WAYLAND}
+
+prepare_wayland:
+	make -C rawdraw/wayland
+
+fmopl.inc: fmopl.c
+	${HOSTCC} -DGENTABLE $^$> -o fmoplgen -lm && ./fmoplgen > $@ && rm -f ./fmoplgen
+
+fpu-leg32.o: fpu.c
+	@/bin/echo -e " \e[1;32mCC\e[0m\t\e[1;37m$<\e[0m \e[1;32m->\e[0m \e[1;37m$@\e[0m"
+	${Q}${CC} ${CFLAGS} -UUSE_AMD64 -c $< -o $@
+
+i386-leg32.o: i386.c
+	@/bin/echo -e " \e[1;32mCC\e[0m\t\e[1;37m$<\e[0m \e[1;32m->\e[0m \e[1;37m$@\e[0m"
+	${Q}${CC} ${CFLAGS} -UUSE_AMD64 -c $< -o $@
+
+i386-comb.o: i386-leg32.o fpu-leg32.o
+	@/bin/echo -e " \e[1;32mLD\e[0m\t\e[1;37m$^$>\e[0m \e[1;32m->\e[0m \e[1;37m$@\e[0m"
+	${Q}${LD} -r -o $@ $^$>
+	${Q}${OBJCOPY} --localize-hidden --keep-global-symbols=i386_syms.txt $@
+
+amd64-comb.o: amd64.o fpu.o
+	@/bin/echo -e " \e[1;32mLD\e[0m\t\e[1;37m$^$>\e[0m \e[1;32m->\e[0m \e[1;37m$@\e[0m"
+	${Q}${LD} -r -o $@ $^$>
+	${Q}${OBJCOPY} --localize-hidden --keep-global-symbols=amd64_syms.txt $@
+
+tiny386${SUFF_SDL}: sdl/main.c ${OBJS}
+	@/bin/echo -e " \e[1;32mCCLD\e[0m\t\e[1;32m->\e[0m \e[1;37m$@\e[0m"
+	${Q}${CC} ${LDFLAGS} ${CFLAGS_SDL} -o $@ $^$> ${LIBS_SDL}
+
+tiny386${SUFF_RAWDRAW}: rawdraw/main.c ${OBJS}
+	@/bin/echo -e " \e[1;32mCCLD\e[0m\t\e[1;32m->\e[0m \e[1;37m$@\e[0m"
+	${Q}${CC} ${LDFLAGS} ${CFLAGS} -o $@ $^$> ${LIBS_RAWDRAW}
+
+tiny386_headless: main.c ${OBJS}
+	@/bin/echo -e " \e[1;32mCCLD\e[0m\t\e[1;32m->\e[0m \e[1;37m$@\e[0m"
+	${Q}${CC} ${LDFLAGS} ${CFLAGS} -o $@ $^$> ${LIBS}
+
+wifikbd${SUFF_SDL}: tools/wifikbd.c win32.c ${SRCS_GLIBC_FIX}
+	@/bin/echo -e " \e[1;32mCCLD\e[0m\t\e[1;32m->\e[0m \e[1;37m$@\e[0m"
+	${Q}${CC} ${LDFLAGS} ${CFLAGS_SDL} -o $@ $^$> ${LIBS_SDL}
+
+wifikbd${SUFF_RAWDRAW}: rawdraw/wifikbd.c win32.c vgafont.o ${SRCS_GLIBC_FIX}
+	@/bin/echo -e " \e[1;32mCCLD\e[0m\t\e[1;32m->\e[0m \e[1;37m$@\e[0m"
+	${Q}${CC} ${LDFLAGS} ${CFLAGS} -o $@ $^$> ${LIBS_RAWDRAW}
+
+initnet: tools/initnet.c ${SRCS_GLIBC_FIX}
+	@/bin/echo -e " \e[1;32mCCLD\e[0m\t\e[1;32m->\e[0m \e[1;37m$@\e[0m"
+	${Q}${CC} ${CFLAGS_GLIBC_FIX} -o $@ $^$> ${LIBS_GLIBC_FIX}
+
+.depends: ${SRCS}
+	@/bin/echo -e " \e[1;32mDEP\e[0m\t\e[1;37m$^$>\e[0m \e[1;32m->\e[0m \e[1;37m$@\e[0m"
+	${Q}rm -f $@
+	${Q}for i in $^$>; do ${CC} ${CFLAGS} -MT $$(dirname $$i)/$$(basename -s .c $$i).o -MM $$i 2> /dev/null >> $@ || exit 0; done
+
+dep: .depends
+-include .depends

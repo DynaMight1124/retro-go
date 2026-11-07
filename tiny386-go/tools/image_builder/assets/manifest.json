@@ -1,0 +1,104 @@
+{
+  "kernel": "2043 8086 FAT16",
+  "freecom": "0.85a Borland plain English",
+  "files": {
+    "bc-English.zip": {
+      "sha256": "c4b7c78c4a497bd2a90d74ef4131f0f13c4a0e526f3e31b8c35818ba7fc81c54",
+      "source": "https://github.com/FDOS/freecom/releases/download/com085a/bc-English.zip"
+    },
+    "bc-freecom-source.zip": {
+      "sha256": "73a69ff500d822dd4614bbc85397125d9bbb432b616f3d07d77b5c6f5ce62ca0",
+      "source": "https://github.com/FDOS/freecom/releases/download/com085a/bc-freecom-source.zip"
+    },
+    "boot.asm": {
+      "sha256": "1c903f5de249298f8954512fc0e16a8b95f1b9d772ef8883924ba2cc686c6688",
+      "source": "Derived locally; see assets/README.md"
+    },
+    "COMMAND.COM": {
+      "sha256": "2300e9afb8fa31b9f2d79b8f3a66e0847758a9d617f31ce1410037def1662395",
+      "source": "Derived locally; see assets/README.md"
+    },
+    "COPYING.FREECOM.txt": {
+      "sha256": "45ece956c40ccac10202a455c0841da8bf42b28412f8c992357da826bb107eae",
+      "source": "Derived locally; see assets/README.md"
+    },
+    "COPYING.KERNEL.txt": {
+      "sha256": "2ec21c4f10e9fc6bafbc619cf905424162a0b6443e482d599a6d0d7718e9ae58",
+      "source": "Derived locally; see assets/README.md"
+    },
+    "fat16.bin": {
+      "sha256": "c5e05c1b79525275814d8a9408e0ace39e6b6ad7128dd48e98748d773edc7f40",
+      "source": "Derived locally; see assets/README.md"
+    },
+    "ke2043s.zip": {
+      "sha256": "f6eea42ed25b2a5b7941846bbb5d99a823b434c3df7701beb336883e76e4af6e",
+      "source": "https://github.com/FDOS/kernel/releases/download/ke2043/ke2043s.zip"
+    },
+    "ke2043_86f16.zip": {
+      "sha256": "5af57a43337a2576e9395714af9692f547ea6ed7fd1c6cb71f4e61d7afad9b4b",
+      "source": "https://github.com/FDOS/kernel/releases/download/ke2043/ke2043_86f16.zip"
+    },
+    "KERNEL.SYS": {
+      "sha256": "00339579bf8a1c9beb23217ad2cf95a3b3dc6df386e82fbe611f0af7bb4c60c3",
+      "source": "Derived locally; see assets/README.md"
+    },
+    "mbr.asm": {
+      "sha256": "6fe8d4b97e54fcc17bb727b74c1ef2be8f422a14841d97998fe38e20cf0e6487",
+      "source": "Derived locally; see assets/README.md"
+    },
+    "mbr.bin": {
+      "sha256": "4a340f68fec61d967d77fb1fee8fc21ca20f370774d653f4470bb71127dfb37d",
+      "source": "Derived locally; see assets/README.md"
+    },
+    "HimemX338.zip": {
+      "sha256": "65fefe1f8153380b5c2243bf5a309ad4a8147ee89a387473bc08191a75df6d80",
+      "source": "https://github.com/Baron-von-Riedesel/HimemX/releases/download/v3.38/HimemX338.zip"
+    },
+    "HIMEMX.EXE": {
+      "sha256": "abd7a5f5cae2a3a34e577e20097076062dd9177bb754058b35d754537d32fbbd",
+      "source": "https://github.com/Baron-von-Riedesel/HimemX/releases/download/v3.38/HimemX338.zip"
+    },
+    "README.HIMEMX.txt": {
+      "sha256": "be54cf4a34e96935e2abe2c1cd86ea902c7680be96b5b2d155ed55419edc5dbd",
+      "source": "https://github.com/Baron-von-Riedesel/HimemX/releases/download/v3.38/HimemX338.zip"
+    },
+    "COPYING.HIMEMX.txt": {
+      "sha256": "2ec21c4f10e9fc6bafbc619cf905424162a0b6443e482d599a6d0d7718e9ae58",
+      "source": "GPL v2 text; see README.HIMEMX.txt and assets/README.md"
+    },
+    "JemmB_v586.zip": {
+      "sha256": "94838a1836f94d95dcf84d250f7968dfca2eb6b5cfa7ac664d6e01f22f0d296e",
+      "source": "https://github.com/Baron-von-Riedesel/Jemm/releases/download/v5.86/JemmB_v586.zip"
+    },
+    "JemmS_v586.zip": {
+      "sha256": "60dfa23dc0e2150eaba2b4fb5b249cf1be2d60c90ada22092e8267b61d615f9a",
+      "source": "https://github.com/Baron-von-Riedesel/Jemm/archive/refs/tags/v5.86.zip"
+    },
+    "JEMM386.EXE": {
+      "sha256": "35537652a83c2c2b4d8be0a1d8ebb9b295a4f9cb2416a106167e2bad600b9d53",
+      "source": "https://github.com/Baron-von-Riedesel/Jemm/releases/download/v5.86/JemmB_v586.zip"
+    },
+    "README.JEMM.txt": {
+      "sha256": "793f54bf616cb3230d6fa40096dbe7c6183bfbc63091daad7d2a7d7c0b57461c",
+      "source": "https://github.com/Baron-von-Riedesel/Jemm/releases/download/v5.86/JemmB_v586.zip"
+    },
+    "COPYING.JEMM.txt": {
+      "sha256": "47e9026e597eb214ec7e9c0a5fe72311b67a81d26bcf4a3cfa6ab21eb8ffeca0",
+      "source": "https://github.com/Baron-von-Riedesel/Jemm/releases/download/v5.86/JemmB_v586.zip"
+    },
+    "XMSCAP.COM": {
+      "sha256": "b33764974946d2fcecf0337095d95ea0415a68ef9a47b1b3efa2151a2018afaf",
+      "source": "Local MIT-licensed NASM source; see assets/README.md"
+    },
+    "xmscap.asm": {
+      "sha256": "93baa954e2e3c7b7eddc50c192b3f3bfbeaf19e247076bc02ebc7c6ff3082570",
+      "source": "Local MIT-licensed NASM source; see assets/README.md"
+    },
+    "COPYING.XMSCAP.txt": {
+      "sha256": "afa606761efe559e32909f36aaeb2d63224427ea5a3610a89fa3fe0a2f29770c",
+      "source": "MIT licence for local xmscap.asm; see assets/README.md"
+    }
+  },
+  "himemx": "3.38 (upstream release v3.38)",
+  "jemm": "5.86 (upstream release v5.86)"
+}

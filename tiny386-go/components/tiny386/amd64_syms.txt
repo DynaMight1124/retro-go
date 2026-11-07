@@ -1,0 +1,9 @@
+cpuamd64_new
+cpuamd64_delete
+cpuamd64_reset
+cpuamd64_reset_pm
+cpuamd64_step
+cpuamd64_raise_irq
+cpuamd64_set_gpr
+cpuamd64_get_cycle
+cpuamd64_set_vendor

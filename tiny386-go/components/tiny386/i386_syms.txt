@@ -1,0 +1,11 @@
+cpui386_new
+cpui386_delete
+cpui386_reset
+cpui386_reset_pm
+cpui386_step
+cpui386_raise_irq
+cpui386_set_gpr
+cpui386_get_cycle
+cpui386_enable_fpu
+cpui386_get_excno
+cpui386_get_state

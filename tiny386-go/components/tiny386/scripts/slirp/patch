@@ -1,0 +1,281 @@
+diff --git a/src/dnssearch.c b/src/dnssearch.c
+index cbd1a197..fdd7c7c6 100644
+--- a/src/dnssearch.c
++++ b/src/dnssearch.c
+@@ -232,6 +232,7 @@ static size_t domain_compactify(CompactDomain *domains, size_t n)
+     return outptr - start;
+ }
+ 
++#if 0
+ int translate_dnssearch(Slirp *s, const char **names)
+ {
+     size_t blocks, bsrc_start, bsrc_end, bdst_start;
+@@ -304,3 +305,4 @@ int translate_dnssearch(Slirp *s, const char **names)
+     s->vdnssearch_len = memreq;
+     return 0;
+ }
++#endif
+diff --git a/src/ip.h b/src/ip.h
+index f0859f0c..31159a25 100644
+--- a/src/ip.h
++++ b/src/ip.h
+@@ -180,18 +180,14 @@ struct ip_timestamp {
+ 
+ #define IP_MSS 576 /* default maximum segment size */
+ 
+-#if GLIB_SIZEOF_VOID_P == 4
+ SLIRP_PACKED_BEGIN
+ struct mbuf_ptr {
+-    struct mbuf *mptr;
+-    uint32_t dummy;
+-} SLIRP_PACKED_END;
+-#else
+-SLIRP_PACKED_BEGIN
+-struct mbuf_ptr {
+-    struct mbuf *mptr;
++    union {
++        struct mbuf *mptr;
++        uint64_t _;
++    };
+ } SLIRP_PACKED_END;
+-#endif
++
+ struct qlink {
+     void *next, *prev;
+ };
+diff --git a/src/libslirp.h b/src/libslirp.h
+index 240dfe8b..8bc342cd 100644
+--- a/src/libslirp.h
++++ b/src/libslirp.h
+@@ -339,6 +339,12 @@ int slirp_add_exec(Slirp *slirp, const char *cmdline,
+ SLIRP_EXPORT
+ int slirp_add_unix(Slirp *slirp, const char *unixsock,
+                    struct in_addr *guest_addr, int guest_port);
++#define SLIRP_EXTENSION
++/* Set up port forwarding between a port in the guest network and a
++ * tcp port on the host */
++SLIRP_EXPORT
++int slirp_add_tcp(Slirp *slirp, struct sockaddr_in tcpsock,
++                  struct in_addr *guest_addr, int guest_port);
+ /* Set up port forwarding between a port in the guest network and a
+  * callback that will receive the data coming from the port */
+ SLIRP_EXPORT
+diff --git a/src/misc.c b/src/misc.c
+index e5e21644..42340680 100644
+--- a/src/misc.c
++++ b/src/misc.c
+@@ -63,6 +63,16 @@ struct gfwd_list *add_unix(struct gfwd_list **ex_ptr, const char *unixsock,
+     return f;
+ }
+ 
++struct gfwd_list *add_tcp(struct gfwd_list **ex_ptr, struct sockaddr_in tcpsock,
++                          struct in_addr addr, int port)
++{
++    struct gfwd_list *f = add_guestfwd(ex_ptr, NULL, NULL, addr, port);
++
++    f->ex_tcp = tcpsock;
++
++    return f;
++}
++
+ int remove_guestfwd(struct gfwd_list **ex_ptr, struct in_addr addr, int port)
+ {
+     for (; *ex_ptr != NULL; ex_ptr = &((*ex_ptr)->ex_next)) {
+@@ -133,6 +143,7 @@ err:
+     return -1;
+ }
+ 
++#if 0
+ static void fork_exec_child_setup(gpointer data)
+ {
+ #ifndef _WIN32
+@@ -254,6 +265,7 @@ int fork_exec(struct socket *so, const char *ex)
+     slirp_register_poll_socket(so);
+     return 1;
+ }
++#endif
+ 
+ int open_unix(struct socket *so, const char *unixpath)
+ {
+@@ -298,6 +310,33 @@ int open_unix(struct socket *so, const char *unixpath)
+ #endif
+ }
+ 
++int open_tcp(struct socket *so, struct sockaddr_in tcp)
++{
++    int s;
++
++    DEBUG_CALL("open_tcp");
++    DEBUG_ARG("so = %p", so);
++
++    s = slirp_socket(PF_INET, SOCK_STREAM, 0);
++    if (not_valid_socket(s)) {
++        g_critical("open_tcp(): %s", g_strerror(errno));
++        return 0;
++    }
++
++    if (connect(s, (struct sockaddr *)&tcp, sizeof(tcp)) < 0) {
++        g_critical("open_tcp(): %s", g_strerror(errno));
++        closesocket(s);
++        return 0;
++    }
++
++    so->s = s;
++    slirp_set_nonblock(so->s);
++    slirp_register_poll_socket(so);
++
++    return 1;
++}
++
++#if 0
+ SLIRP_EXPORT
+ char *slirp_connection_info(Slirp *slirp)
+ {
+@@ -438,6 +477,7 @@ char *slirp_neighbor_info(Slirp *slirp)
+ 
+     return g_string_free(str, FALSE);
+ }
++#endif
+ 
+ int slirp_bind_outbound(struct socket *so, unsigned short af)
+ {
+diff --git a/src/misc.h b/src/misc.h
+index ff50e79e..ec656001 100644
+--- a/src/misc.h
++++ b/src/misc.h
+@@ -15,6 +15,7 @@ struct gfwd_list {
+     int ex_fport; /* Port to telnet to (network order) */
+     char *ex_exec; /* Command line of what to exec */
+     char *ex_unix; /* unix socket */
++    struct sockaddr_in ex_tcp;
+     struct gfwd_list *ex_next;
+ };
+ 
+@@ -63,6 +64,9 @@ int fork_exec(struct socket *so, const char *ex);
+ /* Create a Unix socket, and expose it as a socket */
+ int open_unix(struct socket *so, const char *unixsock);
+ 
++/* Create a tcp socket, and expose it as a socket */
++int open_tcp(struct socket *so, struct sockaddr_in unixsock);
++
+ /* Add a guest forward on the given address and port, with guest data being
+  * forwarded by calling write_cb */
+ struct gfwd_list *add_guestfwd(struct gfwd_list **ex_ptr, SlirpWriteCb write_cb,
+@@ -78,6 +82,11 @@ struct gfwd_list *add_exec(struct gfwd_list **ex_ptr, const char *cmdline,
+ struct gfwd_list *add_unix(struct gfwd_list **ex_ptr, const char *unixsock,
+                            struct in_addr addr, int port);
+ 
++/* Create a tcp socket, and expose it to the guest on the given address and
++ * port */
++struct gfwd_list *add_tcp(struct gfwd_list **ex_ptr, struct sockaddr_in tcpsock,
++                          struct in_addr addr, int port);
++
+ /* Remove the guest forward bound to the given address and port */
+ int remove_guestfwd(struct gfwd_list **ex_ptr, struct in_addr addr, int port);
+ 
+diff --git a/src/slirp.c b/src/slirp.c
+index 0fc51a96..088073dc 100644
+--- a/src/slirp.c
++++ b/src/slirp.c
+@@ -387,6 +387,8 @@ int get_dns6_addr(struct in6_addr *pdns6_addr, uint16_t *pdns6_port,
+ 
+ #if defined(__HAIKU__)
+ #define RESOLV_CONF_PATH "/boot/system/settings/network/resolv.conf"
++#elif defined(ANDROID)
++#define RESOLV_CONF_PATH "resolv.conf"
+ #else
+ #define RESOLV_CONF_PATH "/etc/resolv.conf"
+ #endif
+@@ -576,6 +578,7 @@ static void slirp_init_once(void)
+     loopback_addr.s_addr = htonl(INADDR_LOOPBACK);
+     loopback_mask = htonl(IN_CLASSA_NET);
+ 
++#if 0
+     debug = g_getenv("SLIRP_DEBUG");
+     if (debug) {
+         const GDebugKey keys[] = {
+@@ -587,6 +590,7 @@ static void slirp_init_once(void)
+         };
+         slirp_debug = g_parse_debug_string(debug, keys, G_N_ELEMENTS(keys));
+     }
++#endif
+ }
+ 
+ static void ra_timer_handler_cb(void *opaque)
+@@ -679,7 +683,7 @@ Slirp *slirp_new(const SlirpConfig *cfg, const SlirpCb *callbacks, void *opaque)
+     slirp->tftp_server_name = g_strdup(cfg->tftp_server_name);
+ 
+     if (cfg->vdnssearch) {
+-        translate_dnssearch(slirp, cfg->vdnssearch);
++        assert(false);
+     }
+     slirp->if_mtu = cfg->if_mtu == 0 ? IF_MTU_DEFAULT : cfg->if_mtu;
+     slirp->if_mru = cfg->if_mru == 0 ? IF_MRU_DEFAULT : cfg->if_mru;
+@@ -1627,6 +1631,17 @@ int slirp_add_unix(Slirp *slirp, const char *unixsock,
+ #endif
+ }
+ 
++int slirp_add_tcp(Slirp *slirp, struct sockaddr_in tcpsock,
++                  struct in_addr *guest_addr, int guest_port)
++{
++    if (!check_guestfwd(slirp, guest_addr, guest_port)) {
++        return -1;
++    }
++
++    add_tcp(&slirp->guestfwd_list, tcpsock, *guest_addr, htons(guest_port));
++    return 0;
++}
++
+ int slirp_add_guestfwd(Slirp *slirp, SlirpWriteCb write_cb, void *opaque,
+                        struct in_addr *guest_addr, int guest_port)
+ {
+diff --git a/src/tcp_subr.c b/src/tcp_subr.c
+index 1542f187..bec2b5fc 100644
+--- a/src/tcp_subr.c
++++ b/src/tcp_subr.c
+@@ -650,7 +650,7 @@ int tcp_emu(struct socket *so, struct mbuf *m)
+             struct socket *tmpso;
+             struct sockaddr_in addr;
+             socklen_t addrlen = sizeof(struct sockaddr_in);
+-            char *eol = g_strstr_len(m->m_data, m->m_len, "\r\n");
++            char *eol = NULL;
+ 
+             if (!eol) {
+                 return 1;
+@@ -990,7 +990,6 @@ int tcp_ctl(struct socket *so)
+ 
+     DEBUG_CALL("tcp_ctl");
+     DEBUG_ARG("so = %p", so);
+-
+     /* TODO: IPv6 */
+     /* Check if it's pty_exec */
+     for (ex_ptr = slirp->guestfwd_list; ex_ptr; ex_ptr = ex_ptr->ex_next) {
+@@ -1004,8 +1003,12 @@ int tcp_ctl(struct socket *so)
+             DEBUG_MISC(" executing %s", ex_ptr->ex_exec);
+             if (ex_ptr->ex_unix)
+                 return open_unix(so, ex_ptr->ex_unix);
+-            else
++#if 0
++            else if (ex_ptr->ex_exec)
+                 return fork_exec(so, ex_ptr->ex_exec);
++#endif
++            else
++                return open_tcp(so, ex_ptr->ex_tcp);
+         }
+     }
+     sb->sb_cc = slirp_fmt(sb->sb_wptr, sb->sb_datalen - (sb->sb_wptr - sb->sb_data),
+diff --git a/src/version.c b/src/version.c
+index 93e0be9c..e439f786 100644
+--- a/src/version.c
++++ b/src/version.c
+@@ -1,8 +1,10 @@
+ /* SPDX-License-Identifier: BSD-3-Clause */
+ #include "libslirp.h"
+ 
++#if 0
+ const char *
+ slirp_version_string(void)
+ {
+     return SLIRP_VERSION_STRING;
+ }
++#endif

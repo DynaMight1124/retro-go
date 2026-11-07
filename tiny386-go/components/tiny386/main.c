@@ -1,0 +1,146 @@
+// "headless" tiny386
+// for SDL port, see `sdl/main.c`
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <errno.h>
+#include "pc.h"
+
+// platform HAL implementation
+#include <time.h>
+uint32_t get_uticks()
+{
+	struct timespec ts;
+	clock_gettime(CLOCK_MONOTONIC, &ts);
+	return ((uint32_t) ts.tv_sec * 1000000 +
+		(uint32_t) ts.tv_nsec / 1000);
+}
+
+#ifndef _WIN32
+#include <sys/mman.h>
+void *bigmalloc(size_t size)
+{
+	return mmap(NULL, size, PROT_READ | PROT_WRITE,
+		    MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+}
+#else
+void *bigmalloc(size_t size)
+{
+	return malloc(size);
+}
+#endif
+
+int load_rom(void *phys_mem, const char *file, uword addr, int backward)
+{
+	FILE *fp = fopen(file, "rb");
+	if (fp == NULL) {
+		fprintf(stderr, "load_rom: open %s failed: %s\n", file, strerror(errno));
+		abort();
+	}
+
+	fseek(fp, 0, SEEK_END);
+	int len = ftell(fp);
+	fprintf(stderr, "load_rom: %s, len %d\n", file, len);
+	rewind(fp);
+	if (backward)
+		fread(phys_mem + addr - len, 1, len, fp);
+	else
+		fread(phys_mem + addr, 1, len, fp);
+	fclose(fp);
+	return len;
+}
+
+//
+static void redraw(void *opaque,
+		   int x, int y, int w, int h)
+{
+}
+
+#include "term.h"
+static void put_key(void *o, unsigned char scan_code, int is_pressed)
+{
+	ps2_put_keycode(o, is_pressed, scan_code);
+}
+
+static void usage(const char *argv0)
+{
+	fprintf(stderr,
+		"Usage: %s [-kvm] [-term] inifile\n",
+		argv0);
+}
+
+#ifndef _WIN32
+#include <signal.h>
+volatile int g_running = 1;
+static void sig_handler(int _)
+{
+	g_running = 0;
+}
+static void set_sig_handler()
+{
+	signal(SIGTERM, sig_handler);
+	signal(SIGINT, sig_handler);
+}
+#else
+#define g_running 1
+#define set_sig_handler()
+#endif
+
+int main(int argc, char *argv[])
+{
+	PCConfig conf;
+	memset(&conf, 0, sizeof(conf));
+	conf.mem_size = 8 * 1024 * 1024;
+	conf.vga_mem_size = 256 * 1024;
+	conf.width = 720;
+	conf.height = 480;
+	conf.cpu_gen = 4;
+	conf.fpu = 0;
+
+	const char *argv1;
+	bool enable_kvm = false;
+	bool use_term = false;
+	if (argc > 1) {
+		for (int i = 1; i < argc - 1; i++) {
+			if (strcmp(argv[i], "-kvm") == 0)
+				enable_kvm = true;
+			else if (strcmp(argv[i], "-term") == 0)
+				use_term = true;
+			else {
+				usage(argv[0]);
+				return 1;
+			}
+		}
+		argv1 = argv[argc - 1];
+		ne2000_set_config_file(argv1);
+	} else {
+		usage(argv[0]);
+		return 1;
+	}
+
+	int err = ini_parse(argv1, parse_conf_ini, &conf);
+	if (err) {
+		fprintf(stderr, "error %d\n", err);
+		return err;
+	}
+	if (enable_kvm)
+		conf.cpu_gen = -1;
+
+	set_sig_handler();
+
+	void *fb = bigmalloc(conf.width * conf.height * 4);
+	PC *pc = pc_new(redraw, NULL, fb, &conf);
+	Term *term = NULL;
+	if (use_term)
+		term = term_init(pc->vga, put_key, pc->kbd);
+	load_bios_and_reset(pc);
+
+	pc->boot_start_time = get_uticks();
+	for (; g_running && pc->shutdown_state != 8;) {
+		pc_step(pc);
+		pc_vga_step(pc);
+		if (use_term)
+			term_step(term);
+	}
+	return 0;
+}

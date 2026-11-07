@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <title>Tiny386</title>
+    </head>
+    <body>
+        <canvas id="screen" width="720" height="480" tabindex="1"
+                style="background-color: #000000;"></canvas>
+        <p>
+        <input id="configname">
+        <button onclick="start()">Start</button>
+        <button onclick="stop()">Stop</button>
+        <button onclick="request_pointer_lock()">Grab</button>
+        <button onclick="request_fullscreen()">Fullscreen</button>
+        <button onclick="sendCAD()">CtrlAltDel</button>
+        <button onclick="sendMR()">RightClick</button>
+        </p>
+        <textarea id="logarea" rows="20" cols="88" readonly></textarea>
+        <script type="importmap">
+            {
+                "imports": {
+                    "tcpip": "https://unpkg.com/tcpip/dist/index.js",
+                    "@tcpip/dns": "https://unpkg.com/@tcpip/dns/dist/index.js",
+                    "@tcpip/wire": "https://unpkg.com/@tcpip/wire/dist/index.js",
+                    "@tcpip/transport": "https://unpkg.com/@tcpip/transport/dist/index.js",
+                    "@tcpip/http": "https://unpkg.com/@tcpip/http/dist/index.js",
+                    "@tcpip/dhcp": "https://unpkg.com/@tcpip/dhcp/dist/index.js",
+                    "@bjorn3/browser_wasi_shim": "https://unpkg.com/@bjorn3/browser_wasi_shim"
+                }
+            }
+        </script>
+        <script src="main.js"></script>
+        <script>
+            let inst = null;
+            function start() {
+                if (inst === null) {
+                    inst = get_tiny386(document.getElementById('screen'));
+                    const o = document.getElementById('logarea');
+                    const logbuf = [];
+                    let rending = false;
+                    inst.set_logger(function (message) {
+                        logbuf.push(message);
+                        if (logbuf.length > 2000) {
+                            logbuf.shift();
+                        }
+
+                        if (!rending) {
+                            rending = true;
+                            requestAnimationFrame(() => {
+                                o.value = logbuf.join('');
+                                o.scrollTop = o.scrollHeight;
+                                rending = false;
+                            });
+                        }
+                    });
+
+                    const inifile = document.getElementById('configname').value;
+                    inst.start(inifile);
+                }
+            }
+
+            function stop() {
+                if (inst !== null) {
+                    inst.stop();
+                    inst = null;
+                }
+            }
+
+            function request_pointer_lock()
+            {
+                const screen = document.getElementById('screen');
+                screen.tabIndex = 1;
+                screen.focus();
+                screen.requestPointerLock();
+            }
+
+            function request_fullscreen()
+            {
+                const screen = document.getElementById('screen');
+                screen.tabIndex = 1;
+                screen.focus();
+                screen.requestFullscreen();
+                screen.style.cursor = 'none';
+            }
+
+            function sendCAD() {
+                inst.send_kbd(1, 0x1d);
+                inst.send_kbd(1, 0x38);
+                inst.send_kbd(1, 0x53);
+                inst.send_kbd(0, 0x53);
+                inst.send_kbd(0, 0x38);
+                inst.send_kbd(0, 0x1d);
+            };
+
+            function sendMR() {
+                inst.send_mouse(0, 0, 0, 2);
+                inst.send_mouse(0, 0, 0, 0);
+            };
+        </script>
+    </body>
+</html>
