@@ -22,6 +22,7 @@ endif()
 # (CONFIG_COMPILER_OPTIMIZATION_PERF). Applied per-source so the rest of the
 # engine keeps the default flags.
 set(QUAKE2_REF_SOFT_SOURCES
+	${QUAKE_SOURCE_DIR}/ref_soft/r_colormap.c
 	${QUAKE_SOURCE_DIR}/ref_soft/r_aclip.c
 	${QUAKE_SOURCE_DIR}/ref_soft/r_alias.c
 	${QUAKE_SOURCE_DIR}/ref_soft/r_bsp.c
@@ -32,11 +33,13 @@ set(QUAKE2_REF_SOFT_SOURCES
 	${QUAKE_SOURCE_DIR}/ref_soft/r_main.c
 	${QUAKE_SOURCE_DIR}/ref_soft/r_misc.c
 	${QUAKE_SOURCE_DIR}/ref_soft/r_model.c
+	${QUAKE_SOURCE_DIR}/ref_soft/r_model_size.c
 	${QUAKE_SOURCE_DIR}/ref_soft/r_part.c
 	${QUAKE_SOURCE_DIR}/ref_soft/r_poly.c
 	${QUAKE_SOURCE_DIR}/ref_soft/r_polyse.c
 	${QUAKE_SOURCE_DIR}/ref_soft/r_rast.c
 	${QUAKE_SOURCE_DIR}/ref_soft/r_scan.c
+	${QUAKE_SOURCE_DIR}/ref_soft/r_world_scan.c
 	${QUAKE_SOURCE_DIR}/ref_soft/r_sprite.c
 	${QUAKE_SOURCE_DIR}/ref_soft/r_surf.c
 )
@@ -175,3 +178,11 @@ set_source_files_properties(${QUAKE_SOURCE_DIR}/game/q_shared.c PROPERTIES
 set_source_files_properties(${QUAKE2_REF_SOFT_SOURCES} PROPERTIES
 	COMPILE_OPTIONS "-O3;-funroll-loops;-fno-math-errno;-fno-stack-protector"
 )
+
+# Accepted P4 optimization: use single precision in rendering/shared geometry,
+# while retaining the existing math behavior in other engine translation units.
+set(Q2_FLOAT_SOURCES ${QUAKE2_REF_SOFT_SOURCES} ${QUAKE_SOURCE_DIR}/game/q_shared.c)
+set_property(SOURCE ${Q2_FLOAT_SOURCES} APPEND PROPERTY
+    COMPILE_DEFINITIONS Q2_FLOAT_MATH=1)
+set_property(SOURCE ${Q2_FLOAT_SOURCES} APPEND PROPERTY
+    COMPILE_OPTIONS -fsingle-precision-constant)

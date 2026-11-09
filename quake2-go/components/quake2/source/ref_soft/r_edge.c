@@ -20,6 +20,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 // r_edge.c
 
 #include "r_local.h"
+#include "r_world.h"
 #include "p4_memset.h"
 #include "esp_attr.h"
 #ifndef id386
@@ -789,6 +790,74 @@ D_BackgroundSurf
 The grey background filler seen when there is a hole in the map
 ==============
 */
+// Stage 1: capture and batch world draws, executed synchronously on the
+// engine thread. Legacy pixel math is unchanged; this is not thread-safe yet.
+#define WORLD_BATCH_SIZE 128
+
+typedef struct {
+  world_span_state_t state;
+  espan_t *spans;
+  int kind, color;
+  float zorigin, zstepu, zstepv;
+} world_draw_t;
+static world_draw_t world_batch[WORLD_BATCH_SIZE] EXT_RAM_BSS;
+static unsigned world_count;
+static void D_CaptureWorld(world_span_state_t *s) {
+  s->d_sdivzstepu = d_sdivzstepu;
+  s->d_tdivzstepu = d_tdivzstepu;
+  s->d_zistepu = d_zistepu;
+  s->d_sdivzstepv = d_sdivzstepv;
+  s->d_tdivzstepv = d_tdivzstepv;
+  s->d_zistepv = d_zistepv;
+  s->d_sdivzorigin = d_sdivzorigin;
+  s->d_tdivzorigin = d_tdivzorigin;
+  s->d_ziorigin = d_ziorigin;
+  s->sadjust = sadjust;
+  s->tadjust = tadjust;
+  s->bbextents = bbextents;
+  s->bbextentt = bbextentt;
+  s->cachewidth = cachewidth;
+  s->cacheblock = cacheblock;
+}
+extern void QG_WorldDraw(void (*draw)(void *, int), void *arg, bool parallel);
+static void D_DrawWorldRows(void *arg, int rows) {
+  (void)arg;
+  for (unsigned i = 0; i < world_count; i++) {
+    const world_draw_t *r = &world_batch[i];
+    if (r->kind == 0) D_WorldSpans(r->spans, &r->state, rows);
+    else if (r->kind == 1) D_WorldTurb(r->spans, &r->state, rows);
+    else if (r->kind == 2) D_WorldFlow(r->spans, &r->state, rows);
+    else for (espan_t *p = r->spans; p; p = p->pnext) {
+      if (rows && ((p->v & 1) != rows - 1)) continue;
+      memset((byte *)d_viewbuffer + r_screenwidth * p->v + p->u, r->color, p->count);
+    }
+    world_span_state_t depth = r->state;
+    depth.d_ziorigin = r->zorigin; depth.d_zistepu = r->zstepu; depth.d_zistepv = r->zstepv;
+    D_WorldZ(r->spans, &depth, rows);
+  }
+}
+void D_FlushWorldBatch(void) {
+  static cvar_t *parallel;
+  static int last_mode = -1;
+  if (!world_count) return;
+  if (!parallel) parallel = ri.Cvar_Get("sw_world_parallel", "1", 0);
+  int mode = parallel->value != 0;
+  if (mode != last_mode) {
+    ri.Con_Printf(PRINT_ALL, "World row drawing: %s\n", mode ? "parallel requested" : "single core");
+    last_mode = mode;
+  }
+  QG_WorldDraw(D_DrawWorldRows, NULL, mode);
+  world_count = 0;
+}
+static void D_QueueWorld(surf_t *s, int kind, int color,
+                         float zo, float zu, float zv) {
+  if (world_count == WORLD_BATCH_SIZE) D_FlushWorldBatch();
+  world_draw_t *r = &world_batch[world_count++];
+  D_CaptureWorld(&r->state);
+  r->spans = s->spans; r->kind = kind; r->color = color;
+  r->zorigin = zo; r->zstepu = zu; r->zstepv = zv;
+}
+
 void D_BackgroundSurf(surf_t *s) {
   // set up a gradient for the background surface that places it
   // effectively at infinity distance from the viewpoint
@@ -796,8 +865,7 @@ void D_BackgroundSurf(surf_t *s) {
   d_zistepv = 0;
   d_ziorigin = -0.9;
 
-  D_FlatFillSurface(s, (int)sw_clearcolor->value & 0xFF);
-  D_DrawZSpans(s->spans);
+  D_QueueWorld(s, 3, (int)sw_clearcolor->value & 0xFF, -0.9f, 0, 0);
 }
 
 /*
@@ -829,17 +897,8 @@ void D_TurbulentSurf(surf_t *s) {
 
   D_CalcGradients(pface);
 
-  //============
-  // PGM
-  // textures that aren't warping are just flowing. Use NonTurbulent8 instead
-  if (!(pface->texinfo->flags & SURF_WARP))
-    NonTurbulent8(s->spans);
-  else
-    Turbulent8(s->spans);
-  // PGM
-  //============
-
-  D_DrawZSpans(s->spans);
+  D_QueueWorld(s, (pface->texinfo->flags & SURF_WARP) ? 1 : 2, 0,
+               s->d_ziorigin, s->d_zistepu, s->d_zistepv);
 
   if (s->insubmodel) {
     //
@@ -875,15 +934,7 @@ void D_SkySurf(surf_t *s) {
 
   D_CalcGradients(pface);
 
-  D_DrawSpans16(s->spans);
-
-  // set up a gradient for the background surface that places it
-  // effectively at infinity distance from the viewpoint
-  d_zistepu = 0;
-  d_zistepv = 0;
-  d_ziorigin = -0.9;
-
-  D_DrawZSpans(s->spans);
+  D_QueueWorld(s, 0, 0, -0.9f, 0, 0);
 }
 
 /*
@@ -948,9 +999,7 @@ void D_SolidSurf(surf_t *s) {
 
   D_CalcGradients(pface);
 
-  D_DrawSpans16(s->spans);
-
-  D_DrawZSpans(s->spans);
+  D_QueueWorld(s, 0, 0, s->d_ziorigin, s->d_zistepu, s->d_zistepv);
 
   if (s->insubmodel) {
     //
@@ -1026,6 +1075,8 @@ void D_DrawSurfaces(void) {
     }
   } else
     D_DrawflatSurfaces();
+
+  D_FlushWorldBatch(); // spans must finish before scan storage is reused
 
   currententity = NULL; //&r_worldentity;
   VectorSubtract(r_origin, vec3_origin, modelorg);

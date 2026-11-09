@@ -205,10 +205,10 @@ a seperate file.
 int file_from_pak = 0;
 
 // User configuration belongs to Retro-Go's config tree, never the game PAKs.
-static int FS_FOpenConfig(FILE **file)
+static int FS_FOpenConfig(const char *filename, FILE **file)
 {
 	char path[MAX_OSPATH];
-	Com_sprintf(path, sizeof(path), "%s/config.cfg", QG_ConfigDirectory());
+	Com_sprintf(path, sizeof(path), "%s/%s", QG_ConfigDirectory(), filename);
 	*file = fopen(path, "rb");
 	return *file ? FS_filelength(*file) : -1;
 }
@@ -223,7 +223,8 @@ int FS_FOpenFile (char *filename, FILE **file)
 	filelink_t		*link;
 
 	file_from_pak = 0;
-	if (!strcmp(filename, "config.cfg")) return FS_FOpenConfig(file);
+	if (!strcmp(filename, "config.cfg") || !strcmp(filename, "autoexec.cfg"))
+		return FS_FOpenConfig(filename, file);
 
 	// check for links first
 	for (link = fs_links ; link ; link=link->next)
@@ -300,7 +301,8 @@ int FS_FOpenFile (char *filename, FILE **file)
 
 	file_from_pak = 0;
 
-	if (!strcmp(filename, "config.cfg")) return FS_FOpenConfig(file);
+	if (!strcmp(filename, "config.cfg") || !strcmp(filename, "autoexec.cfg"))
+		return FS_FOpenConfig(filename, file);
 	// get players from directory, everything else from pak
 	if (!strncmp(filename, "players/", 8))
 	{
@@ -686,8 +688,8 @@ void FS_ExecAutoexec (void)
 {
 	char name [MAX_OSPATH];
 
-	// Retro-Go basedir is the launcher-selected PAK directory.
-	Com_sprintf(name, sizeof(name), "%s/autoexec.cfg", fs_basedir->string);
+	// User startup commands share the Retro-Go configuration directory.
+	Com_sprintf(name, sizeof(name), "%s/autoexec.cfg", QG_ConfigDirectory());
 	if (Sys_FindFirst(name, 0, SFF_SUBDIR | SFF_HIDDEN | SFF_SYSTEM))
 		Cbuf_AddText ("exec autoexec.cfg\n");
 	Sys_FindClose();

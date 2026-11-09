@@ -1,4 +1,5 @@
 #include "adapter.h"
+#include "world_worker.h"
 #include "music_esp32.h"
 #include "port_logic.h"
 #include "timing.h"
@@ -109,6 +110,7 @@ static void event_handler(int event, void *data)
         // Shared-menu exits run on main with the engine blocked. Native Quit
         // already wrote configuration during CL_Shutdown on the engine task.
         // Stop the consumer before Retro-Go deinitializes its audio driver.
+        q2_world_shutdown();
         Music_Shutdown();
         SNDDMA_Shutdown();
         if (initialized && !native_shutdown) CL_WriteConfiguration();
@@ -234,6 +236,7 @@ void app_main(void)
             .options = options_handler},
     };
     app = rg_system_init(&config);
+    q2_world_init();
     q2_control_init(control_handler);
     auto_frameskip = rg_settings_get_number(NS_APP, "AutoFrameskip", 1) != 0;
     show_fps = rg_settings_get_number(NS_APP, "ShowFPS", 0) != 0;

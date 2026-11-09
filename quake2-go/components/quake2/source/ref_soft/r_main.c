@@ -22,6 +22,9 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include "../other/q_arena.h"
 #include "esp_heap_caps.h"
 #include "r_local.h"
+#include "r_colormap.h"
+
+static q2_colormap_t fast_colormap;
 
 viddef_t vid;
 refimport_t ri;
@@ -356,10 +359,8 @@ void R_Shutdown(void) {
   }
 
   // free colormap
-  if (vid.colormap) {
-    free(vid.colormap);
-    vid.colormap = NULL;
-  }
+  q2_colormap_free(&fast_colormap);
+  vid.colormap = vid.alphamap = NULL;
   R_UnRegister();
   Mod_FreeAll();
   R_ShutdownImages();
@@ -1247,7 +1248,9 @@ void Draw_GetPalette(void) {
   if (!vid.colormap)
     ri.Sys_Error(ERR_FATAL, "Couldn't load pics/colormap.pcx");
 
-  vid.alphamap = vid.colormap + 64 * 256;
+  q2_colormap_init(&fast_colormap, vid.colormap);
+  vid.alphamap = fast_colormap.alpha;
+  vid.colormap = fast_colormap.lighting;
 
   out = (byte *)d_8to24table;
   for (i = 0; i < 256; i++, out += 4) {

@@ -506,6 +506,7 @@ D_SCAlloc
 */
 surfcache_t     *D_SCAlloc (int width, int size)
 {
+    D_FlushWorldBatch(); // finish reads before any cached texture can be reused
 	surfcache_t             *new;
 	qboolean                wrapped_this_time;
 
@@ -705,6 +706,7 @@ surfcache_t *D_CacheSurface (msurface_t *surface, int miplevel)
 	c_surf++;
 
 	// calculate the lightings
+	D_FlushWorldBatch(); // an existing cache block can also be rebuilt in place
 	R_BuildLightMap ();
 	
 	// rasterize the surface into the cache

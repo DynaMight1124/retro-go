@@ -581,15 +581,20 @@ void SCR_BeginLoadingPlaque (void)
 	S_StopAllSounds ();
 	cl.sound_prepped = false;		// don't play ambients
 	CDAudio_Stop ();
-	if (cls.disable_screen)
+	if (cls.disable_screen && cls.state != ca_disconnected)
 		return;
 	if (developer->value)
 		return;
-	if (cls.state == ca_disconnected)
-		return;	// if at console, don't bring up the plaque
+	if (cls.state == ca_uninitialized)
+		return;
 	if (cls.key_dest == key_console)
 		return;
-	if (cl.cinematictime > 0)
+	// Fresh games load while disconnected. CL_Disconnect's palette reset can
+	// also clear a plaque that is still marked displayed; repaint it before
+	// freezing screen updates again. Console-only loads stay excluded above.
+	if (cls.state == ca_disconnected)
+		cls.disable_screen = 0;
+	if (cls.state == ca_disconnected || cl.cinematictime > 0)
 		scr_draw_loading = 2;	// clear to balack first
 	else
 		scr_draw_loading = 1;

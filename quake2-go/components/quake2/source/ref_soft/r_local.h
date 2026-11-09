@@ -847,3 +847,6 @@ void		SWimp_Shutdown( void );
 rserr_t		SWimp_SetMode( int *pwidth, int *pheight, int mode, qboolean fullscreen );
 void		SWimp_AppActivate( qboolean active );
 
+
+// Synchronous world batching; drain before texture-cache storage is changed.
+void D_FlushWorldBatch(void);

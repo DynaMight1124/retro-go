@@ -23,6 +23,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 // on the same machine.
 
 #include "r_local.h"
+#include "r_model_size.h"
 #include "p4_memcpy.h"
 
 model_t	*loadmodel;
@@ -92,7 +93,7 @@ model_t *Mod_ForName (char *name, qboolean crash)
 {
 	model_t	*mod;
 	unsigned *buf;
-	int		i;
+	int		i, reservation;
 	
 	if (!name[0])
 		ri.Sys_Error (ERR_DROP,"Mod_ForName: NULL name");
@@ -149,22 +150,28 @@ model_t *Mod_ForName (char *name, qboolean crash)
 	// fill it in
 	//
 
-	// call the apropriate loader
-	
+    // Reserve only what the existing loader will allocate, before it mutates
+    // the header. Keep the whole file buffer and all resident data unchanged.
+    reservation = Mod_ReservationSize(buf, modfilelen);
+    if (!reservation) {
+        ri.FS_FreeFile(buf);
+        mod->name[0] = 0;
+        ri.Sys_Error(ERR_DROP, "Invalid model header or allocation size: %s", name);
+        return NULL;
+    }
+    loadmodel->extradata = Hunk_Begin(reservation);
+
 	switch (LittleLong(*(unsigned *)buf))
 	{
 	case IDALIASHEADER:
-		loadmodel->extradata = Hunk_Begin (0x100000);
 		Mod_LoadAliasModel (mod, buf);
 		break;
 		
 	case IDSPRITEHEADER:
-		loadmodel->extradata = Hunk_Begin (0x10000);
 		Mod_LoadSpriteModel (mod, buf);
 		break;
 	
 	case IDBSPHEADER:
-		loadmodel->extradata = Hunk_Begin (0x400000);
 		Mod_LoadBrushModel (mod, buf);
 		break;
 
@@ -174,6 +181,10 @@ model_t *Mod_ForName (char *name, qboolean crash)
 	}
 
 	loadmodel->extradatasize = Hunk_End ();
+    // Catch any future loader change that was not reflected in the size plan.
+    if (loadmodel->extradatasize != reservation)
+        ri.Sys_Error(ERR_DROP, "Model allocation mismatch: %s (%d != %d)",
+                     name, loadmodel->extradatasize, reservation);
 
 	extern void ri_esp_log_model (const char *name, int filelen, int datasize);
 	ri_esp_log_model (mod->name, modfilelen, loadmodel->extradatasize);
