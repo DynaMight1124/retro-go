@@ -28,6 +28,7 @@
 #define RG_STORAGE_ROOT              "/sd"
 #define RG_STORAGE_SDSPI_HOST        SPI3_HOST
 #define RG_STORAGE_SDSPI_SPEED       SDMMC_FREQ_DEFAULT
+#define RG_STORAGE_SDSPI_HOLD_CS
 #define RG_GPIO_SDSPI_MISO           GPIO_NUM_9
 #define RG_GPIO_SDSPI_MOSI           GPIO_NUM_11
 #define RG_GPIO_SDSPI_CLK            GPIO_NUM_12
