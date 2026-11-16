@@ -1,0 +1,7 @@
+# User-supplied originals, generated audio and local FFmpeg binaries
+/import/*
+!/import/.gitkeep
+/export/*
+!/export/.gitkeep
+/ffmpeg
+/ffmpeg.exe

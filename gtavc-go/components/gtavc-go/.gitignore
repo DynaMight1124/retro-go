@@ -1,0 +1,10 @@
+build/
+build_sf2000/
+*.a
+*.o
+*.gb3k
+*.sf2k
+screenshots/*.ppm
+screenshots_mips/*.ppm
+screenshots_legacy/*.ppm
+screenshots_legacy_mips/*.ppm
