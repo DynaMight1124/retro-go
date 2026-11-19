@@ -1,0 +1,20 @@
+display_name = "VeMUlator"
+authors = "Mahmoud Jaoune"
+supported_extensions = "vms|dci|bin"
+corename = "VeMUlator"
+categories = "Game"
+systemname = "SEGA Visual Memory Unit"
+license = "GPL v3"
+permissions = ""
+display_version = "0.1"
+supports_no_game = "false"
+
+// BIOS/Firmware
+firmware_count = 2
+firmware0_desc = "en1005-19991026-315-6208-05.bin (American VMU BIOS)"
+firmware0_path = "en1005-19991026-315-6208-05.bin"
+firmware0_opt = "true"
+firmware1_desc = "jp1004-19980930-315-6208-01.bin (Japanese VMU BIOS)"
+firmware1_path = "jp1004-19980930-315-6208-01.bin"
+firmware1_opt = "true"
+notes = "(!) The BIOS is optional; without it the core boots games with high level emulation. Place the BIOS dump in the system directory."
