@@ -6,4 +6,4 @@ IDF_TARGET = "esp32s3"
 # .fw file format, if supported by the device
 FW_FORMAT = "none"
 # Default apps to build when none is specified (comment to build all)
-# DEFAULT_APPS = f"{DEFAULT_APPS} gbsp updater"
+DEFAULT_APPS = "launcher retro-core prboom-go snes9x gwenesis gbsp duke3d-go quake-go stella openlara wolf4sdl rott pico8 frodo retro-ports vmu-go"

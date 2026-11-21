@@ -694,6 +694,7 @@ void applications_init(void)
     application("Sega Master System", "sms", "sms sg zip", "retro-core", 0);
     application("Sega Game Gear", "gg", "gg zip", "retro-core", 0);
     application("Sega Mega Drive", "md", "md gen bin zip", "gwenesis", 0);
+    application("Dreamcast VMU", "vmu", "vms bin dci zip", "vmu-go", 0);
     application("Coleco ColecoVision", "col", "col rom zip", "retro-core", 0);
     application("NEC PC Engine", "pce", "pce zip", "retro-core", 0);
     application("Atari Lynx", "lnx", "lnx zip", "retro-core", 64);

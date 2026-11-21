@@ -1,0 +1,17 @@
+# Build artifacts.
+#
+# Objects land next to their sources rather than in a build directory, so
+# without this a build leaves several dozen untracked files in the tree and
+# anything genuinely new gets lost among them.
+
+*.o
+*.d
+*.bc
+
+# The core itself, under any of the names the Makefile gives it per platform.
+*_libretro.so
+*_libretro.dll
+*_libretro.dylib
+*_libretro_*.so
+*_libretro_*.dylib
+*_libretro_*.a

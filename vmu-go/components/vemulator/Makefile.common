@@ -1,0 +1,35 @@
+LIBRETRO_COMM_DIR = $(CORE_DIR)/libretro-common
+INCFLAGS := -I. \
+	    -I$(LIBRETRO_COMM_DIR)/include
+
+SOURCES_C   := \
+	     $(LIBRETRO_COMM_DIR)/compat/compat_posix_string.c \
+	     $(LIBRETRO_COMM_DIR)/compat/compat_strcasestr.c \
+	     $(LIBRETRO_COMM_DIR)/compat/compat_snprintf.c \
+	     $(LIBRETRO_COMM_DIR)/compat/compat_strl.c \
+	     $(LIBRETRO_COMM_DIR)/compat/fopen_utf8.c \
+	     $(LIBRETRO_COMM_DIR)/encodings/encoding_utf.c \
+	     $(LIBRETRO_COMM_DIR)/file/file_path.c \
+	     $(LIBRETRO_COMM_DIR)/file/file_path_io.c \
+	     $(LIBRETRO_COMM_DIR)/time/rtime.c \
+	     $(LIBRETRO_COMM_DIR)/streams/file_stream.c \
+	     $(LIBRETRO_COMM_DIR)/streams/file_stream_transforms.c \
+	     $(LIBRETRO_COMM_DIR)/string/stdstring.c \
+	     $(LIBRETRO_COMM_DIR)/vfs/vfs_implementation.c
+
+SOURCES_CXX := \
+	       $(CORE_DIR)/audio.cpp \
+	       $(CORE_DIR)/basetimer.cpp \
+	       $(CORE_DIR)/bitwisemath.cpp \
+	       $(CORE_DIR)/cpu.cpp \
+	       $(CORE_DIR)/flash.cpp \
+	       $(CORE_DIR)/flashfile.cpp \
+	       $(CORE_DIR)/interrupts.cpp \
+	       $(CORE_DIR)/main.cpp \
+	       $(CORE_DIR)/ram.cpp \
+	       $(CORE_DIR)/rom.cpp \
+	       $(CORE_DIR)/t0.cpp \
+	       $(CORE_DIR)/t1.cpp \
+	       $(CORE_DIR)/serial.cpp \
+	       $(CORE_DIR)/video.cpp \
+	       $(CORE_DIR)/vmu.cpp

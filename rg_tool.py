@@ -37,7 +37,7 @@ PROJECT_APPS = {
   'ngp-go':       [0, 16, 655360],
   'frodo':        [0, 16, 655360],
   'retro-ports':  [0, 16, 851968],
-
+  'vmu-go':       [0, 16, 524288],
 }
 # PROJECT_APPS = {}
 # for t in glob.glob("*/CMakeLists.txt"):
