@@ -782,12 +782,28 @@ static int try_loadtile_from_override_png(short tilenume)
 void setviewtotile(short tilenume, int32_t tileWidth, int32_t tileHeight)
 {
     int32_t i, j;
+    int32_t viewRows = tileWidth;  /* the view's y extent (the tile's height) */
+    int32_t viewCols = tileHeight; /* the view's x extent (the tile's width) */
+
+    /* The off-screen view is drawn into arrays sized for the screen: lastx
+     * has MAXYDIM rows and startumost/startdmost MAXXDIM columns. The 320x320
+     * view used while the player is dead is larger than a 240-row profile's
+     * tables, and a GRP or mod can declare a camera/monitor texture larger
+     * than either. Keep the tile's own dimensions and pixels, but clamp the
+     * preview view to what the screen arrays hold; the rest of the tile is
+     * left as it was. */
+    if (viewRows > MAXYDIM)
+        viewRows = MAXYDIM;
+    if (viewCols > MAXXDIM)
+        viewCols = MAXXDIM;
+    if (viewCols > MAXYDIM) /* ylookup is indexed by column */
+        viewCols = MAXYDIM;
 
     /* DRAWROOMS TO TILE BACKUP&SET CODE */
     tiles[tilenume].dim.width = tileWidth;
     tiles[tilenume].dim.height = tileHeight;
-    bakxsiz[setviewcnt] = max(xdimen, tileWidth);
-    bakysiz[setviewcnt] = max(ydimen, tileHeight);
+    bakxsiz[setviewcnt] = max(xdimen, viewCols);
+    bakysiz[setviewcnt] = max(ydimen, viewRows);
     bakvidoption[setviewcnt] = vidoption;
     vidoption = 2;
     bakframeplace[setviewcnt] = frameplace;
@@ -798,10 +814,10 @@ void setviewtotile(short tilenume, int32_t tileWidth, int32_t tileHeight)
     bakwindowy2[setviewcnt] = windowy2;
     copybufbyte(&startumost[windowx1],&bakumost[windowx1],(windowx2-windowx1+1)*sizeof(bakumost[0]));
     copybufbyte(&startdmost[windowx1],&bakdmost[windowx1],(windowx2-windowx1+1)*sizeof(bakdmost[0]));
-    setview(0,0,tileHeight-1,tileWidth-1);
+    setview(0,0,viewCols-1,viewRows-1);
     setaspect(65536,65536);
     j = 0;
-    for(i=0; i<=tileWidth; i++) {
+    for(i=0; i<=viewCols; i++) {
         ylookup[i] = j;
         j += tileHeight;
     }
