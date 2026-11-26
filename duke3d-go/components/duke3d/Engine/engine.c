@@ -224,7 +224,9 @@ int32_t pageoffset, ydim16, qsetmode = 0;
 int32_t startposx, startposy, startposz;
 int16_t startang, startsectnum;
 int16_t pointhighlight, linehighlight, highlightcnt;
-EXT_RAM_BSS_ATTR static int32_t lastx[MAXYDIM];
+/* One past the last row: the scans store at y2 == dmost, which is
+ * windowy2+1, and a full-height view reaches MAXYDIM. */
+EXT_RAM_BSS_ATTR static int32_t lastx[MAXYDIM + 1];
 uint8_t  paletteloaded = 0;
 
 #define FASTPALGRIDSIZ 8
@@ -9231,9 +9233,16 @@ void setviewback(void)
         k = bakxsiz[0];
     else
         k = max(bakxsiz[setviewcnt-1],bakxsiz[setviewcnt]);
+    if (k > MAXYDIM) k = MAXYDIM;
     j = 0;
     for(i=0; i<=k; i++) ylookup[i] = j, j += bytesperline;
     setBytesPerLine(bytesperline);
+    /* drawrooms() recomputes frameoffset from frameplace, so a view drawn
+     * into a tile leaves it pointing into the tile. Everything drawn after
+     * setviewback (status bar, weapon, menus) belongs to the restored
+     * buffer, so recompute it here. */
+    viewoffset = windowy1*bytesperline + windowx1;
+    frameoffset = frameplace+viewoffset;
 }
 
 
